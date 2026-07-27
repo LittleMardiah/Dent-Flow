@@ -1,0 +1,107 @@
+import { Request, Response } from 'express';
+import { checkinService } from '../services/checkin.service';
+import { logger } from '../utils/logger';
+
+export const adminCheckin = async (req: Request, res: Response) => {
+  try {
+    const { check_in_code, branch_id } = req.body;
+    const adminId = req.user?.userId;
+
+    console.log('🔍 [DEBUG] adminId:', adminId);
+    console.log('🔍 [DEBUG] req.user:', JSON.stringify(req.user, null, 2));
+
+    if (!check_in_code || !branch_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'check_in_code dan branch_id wajib diisi',
+      });
+    }
+
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Admin tidak terautentikasi',
+      });
+    }
+
+    const result = await checkinService.checkinPatient(
+      check_in_code,
+      branch_id,
+      adminId
+    );
+
+    if (result.alreadyCheckedIn) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          queue_number: result.queueNumber,
+          already_checked_in: true,
+        },
+        message: `Pasien sudah check-in sebelumnya. Nomor antrian: ${result.queueNumber}`,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        queue_number: result.queueNumber,
+        booking_id: result.bookingId,
+        patient_id: result.patientId,
+        doctor_id: result.doctorId,
+      },
+      message: `Check-in berhasil. Nomor antrian: ${result.queueNumber}`,
+    });
+  } catch (error: any) {
+    // 🔥 LOG DETAIL ERROR UNTUK DEBUGGING
+    console.error('❌ [ERROR DETAIL]', {
+      message: error.message,
+      stack: error.stack,
+      detail: error.detail,
+      code: error.code,
+      table: error.table,
+      constraint: error.constraint,
+    });
+    logger.error({ 
+      error: error.message, 
+      detail: error.detail, 
+      code: error.code,
+      constraint: error.constraint 
+    }, 'Admin check-in error');
+
+    let status = 400;
+    let message = 'Check-in gagal';
+
+    switch (error.message) {
+      case 'KODE_TIDAK_VALID':
+        message = 'Kode booking tidak ditemukan';
+        break;
+      case 'BRANCH_TIDAK_SESUAI':
+        message = 'Cabang tidak sesuai dengan booking';
+        break;
+      case 'STATUS_TIDAK_VALID':
+        message = 'Booking tidak dalam status yang valid untuk check-in';
+        break;
+      case 'PAYMENT_BELUM_KONFIRMASI':
+        message = 'Pembayaran belum dikonfirmasi';
+        break;
+      case 'SUDAH_CHECK_IN':
+        message = 'Booking sudah check-in';
+        break;
+      case 'SESI_BELUM_DIMULAI':
+        message = 'Sesi belum dimulai';
+        break;
+      case 'SESI_SUDAH_BERAKHIR':
+        message = 'Sesi sudah berakhir';
+        break;
+      default:
+        status = 500;
+        message = 'Terjadi kesalahan server';
+    }
+
+    return res.status(status).json({
+      success: false,
+      message,
+      error: error.message,
+    });
+  }
+};

@@ -1,0 +1,289 @@
+import request from 'supertest';
+import { app } from '../../src/index';
+import { Pool } from 'pg';
+import { config } from '../../src/config';
+
+const pool = new Pool({ connectionString: config.database.url });
+
+describe('E2E Booking Flow (Full Automation - No Skip)', () => {
+  let patientToken: string;
+  let adminToken: string;
+  let doctorToken: string;
+  let bookingId: string;
+  let bookingCode: string;
+  let encounterId: string;
+  let invoiceId: string;
+
+  const branchId = '494a607c-d109-4330-a3a9-68f54326f0c7';
+  const doctorUserId = '965dedad-11ba-46a3-a402-f88c2029c676';
+  const today = new Date();
+  const bookingDate = today.toISOString().split('T')[0];
+  const dayOfWeek = today.getDay();
+
+  let sessionSlotId: string;
+
+  beforeAll(async () => {
+    console.log(`🕒 Using REAL time: ${today.toISOString()}`);
+    console.log(`📅 Booking date: ${bookingDate}`);
+    console.log(`📆 Day of week: ${dayOfWeek}`);
+
+    await pool.query("TRUNCATE bookings RESTART IDENTITY CASCADE;");
+    console.log('🔐 Setting up test data...');
+
+    // Pastikan branch exist
+    await pool.query(`
+      INSERT INTO branches (id, name, address)
+      SELECT '494a607c-d109-4330-a3a9-68f54326f0c7', 'Cabang A', 'Jakarta'
+      WHERE NOT EXISTS (SELECT 1 FROM branches WHERE id = '494a607c-d109-4330-a3a9-68f54326f0c7')
+    `);
+
+    // 🔥 Cari atau buat schedule dengan trim
+    const scheduleResult = await pool.query(
+      `SELECT id FROM doctor_schedules 
+       WHERE branch_id = $1 AND dokter_id = $2 AND day_of_week = $3 AND is_active = true
+       LIMIT 1`,
+      [branchId, doctorUserId, dayOfWeek]
+    );
+
+    if (scheduleResult.rows.length === 0) {
+      console.log('⚠️ Schedule not found, creating new one...');
+      const sessionStart = new Date(today);
+      sessionStart.setHours(8, 0, 0, 0);
+      const sessionEnd = new Date(today);
+      sessionEnd.setHours(17, 0, 0, 0);
+
+      const insertResult = await pool.query(
+        `INSERT INTO doctor_schedules 
+         (branch_id, dokter_id, day_of_week, session_start, session_end, max_patients_per_session, is_active)
+         VALUES ($1, $2, $3, $4, $5, 4, true)
+         RETURNING id`,
+        [branchId, doctorUserId, dayOfWeek, sessionStart.toTimeString().slice(0, 8), sessionEnd.toTimeString().slice(0, 8)]
+      );
+      sessionSlotId = insertResult.rows[0].id;
+    } else {
+      sessionSlotId = scheduleResult.rows[0].id;
+    }
+
+    // 🔥 Trim whitespace (termasuk \r) dari ID
+    sessionSlotId = sessionSlotId.trim();
+    console.log(`✅ Schedule ID: ${sessionSlotId}`);
+
+    console.log('🔐 Logging in all roles...');
+
+    const patientRes = await request(app)
+      .post('/auth/patient/login')
+      .send({ username: 'budi_santoso', password: 'Patient123!' });
+    expect(patientRes.status).toBe(200);
+    patientToken = patientRes.body.data.token;
+
+    const adminRes = await request(app)
+      .post('/auth/admin/login')
+      .send({ username: 'admin_a', password: 'Admin123!' });
+    expect(adminRes.status).toBe(200);
+    adminToken = adminRes.body.data.token;
+
+    const doctorRes = await request(app)
+      .post('/auth/doctor/login')
+      .send({ username: 'dr_bm_a', password: 'Doctor123!' });
+    expect(doctorRes.status).toBe(200);
+    doctorToken = doctorRes.body.data.token;
+
+    console.log('✅ All tokens obtained');
+  }, 60000);
+
+  afterAll(async () => {
+    console.log('🧹 Cleaning up...');
+    if (bookingId) await pool.query(`DELETE FROM bookings WHERE id = $1`, [bookingId]);
+    await pool.end();
+  });
+
+  describe('Patient Booking Flow', () => {
+    test('1. Get doctor availability', async () => {
+      const res = await request(app)
+        .get(`/api/doctors/${doctorUserId}/availability`)
+        .set('Authorization', `Bearer ${patientToken}`)
+        .query({ branch_id: branchId, date: bookingDate });
+      expect(res.status).toBe(200);
+      expect(res.body.data.slots.length).toBeGreaterThan(0);
+    });
+
+    test('2. Create booking', async () => {
+      const res = await request(app)
+        .post('/api/patient/bookings')
+        .set('Authorization', `Bearer ${patientToken}`)
+        .send({
+          branchId,
+          doctorId: doctorUserId,
+          bookingDate,
+          sessionSlotId,
+          notes: `Integration test booking ${Date.now()}`
+        });
+
+      // Log response untuk debugging jika gagal
+      if (res.status !== 201) {
+        console.log('🔍 [Test 2] Response body:', JSON.stringify(res.body, null, 2));
+      }
+      expect(res.status).toBe(201);
+      bookingId = res.body.data.id;
+      bookingCode = res.body.data.booking_code;
+      expect(bookingCode).toBeDefined();
+    });
+
+    test('3. List patient bookings', async () => {
+      const res = await request(app)
+        .get('/api/patient/bookings')
+        .set('Authorization', `Bearer ${patientToken}`)
+        .query({ status: 'PENDING_PAYMENT' });
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.data.bookings)).toBe(true);
+    });
+  });
+
+  describe('Admin Check-in', () => {
+    test('4. Admin checks-in patient', async () => {
+      expect(bookingCode).toBeDefined();
+      await pool.query(`UPDATE bookings SET status = 'PAYMENT_CONFIRMED' WHERE id = $1`, [bookingId]);
+
+      const res = await request(app)
+        .post('/api/admin/check-in')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ check_in_code: bookingCode, branch_id: branchId });
+
+      if (res.status !== 200) {
+        console.log('🔍 [Test 4] Response body:', JSON.stringify(res.body, null, 2));
+      }
+      expect(res.status).toBe(200);
+      expect(res.body.data.queue_number).toBeDefined();
+      console.log(`✅ Check-in OK, queue: ${res.body.data.queue_number}`);
+    });
+  });
+
+  describe('Queue Status', () => {
+    test('5. Get queue status', async () => {
+      const res = await request(app)
+        .get('/api/queue/status')
+        .set('Authorization', `Bearer ${patientToken}`)
+        .query({ branch_id: branchId, doctor_id: doctorUserId });
+
+      if (res.status !== 200) {
+        console.log('🔍 [Test 5] Response body:', JSON.stringify(res.body, null, 2));
+      }
+      expect(res.status).toBe(200);
+      expect(res.body.data.branch_id).toBe(branchId);
+      expect(res.body.data.doctors).toBeDefined();
+      console.log(`✅ Queue status OK`);
+    });
+  });
+
+  describe('Doctor Encounter Flow', () => {
+    test('6. Doctor starts encounter', async () => {
+      expect(bookingId).toBeDefined();
+      const res = await request(app)
+        .post('/api/encounters')
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({ booking_id: bookingId, complaint: 'Sakit gigi', branch_id: branchId });
+
+      if (res.status !== 201) {
+        console.log('🔍 [Test 6] Response body:', JSON.stringify(res.body, null, 2));
+      }
+      expect(res.status).toBe(201);
+      encounterId = res.body.data.id;
+      expect(encounterId).toBeDefined();
+    });
+
+    test('7. Doctor records diagnosis', async () => {
+      expect(encounterId).toBeDefined();
+      const res = await request(app)
+        .put(`/api/encounters/${encounterId}`)
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({ diagnosis: 'Karies', icd10_code: 'K02.9', treatment: 'Filling', notes: 'Composite' });
+      expect(res.status).toBe(200);
+    });
+
+    test('8. Doctor completes encounter → invoice auto-generated', async () => {
+      expect(encounterId).toBeDefined();
+      const res = await request(app)
+        .post(`/api/encounters/${encounterId}/complete`)
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({});
+      expect(res.status).toBe(200);
+      invoiceId = res.body.data.invoice_id;
+      expect(invoiceId).toBeDefined();
+    });
+  });
+
+  describe('Admin Invoice Payment', () => {
+    test('9. Admin marks invoice as paid', async () => {
+      expect(invoiceId).toBeDefined();
+      const res = await request(app)
+        .post(`/api/admin/invoices/${invoiceId}/mark-paid`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ payment_method: 'CASH', paid_amount: 200000 });
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('PAID');
+    });
+
+    test('10. Get invoice detail', async () => {
+      expect(invoiceId).toBeDefined();
+      const res = await request(app)
+        .get(`/api/admin/invoices/${invoiceId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('PAID');
+    });
+  });
+
+  describe('Walk-in Flow', () => {
+    test('11. Admin creates walk-in patient', async () => {
+      const res = await request(app)
+        .post('/api/admin/check-in/walk-in')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name: 'Walk-in Test', phone: '08123456789', doctor_id: doctorUserId, branch_id: branchId });
+      expect(res.status).toBe(201);
+      expect(res.body.data.queue_number).toBeDefined();
+    });
+  });
+
+  describe('Multi-tenant Isolation', () => {
+    test('12. Admin from Branch A cannot access Branch B booking', async () => {
+      const patientIdRes = await pool.query(
+        `SELECT id FROM patients WHERE user_id = 'd83659a9-6657-4c3e-a488-923e3d3d52c0' LIMIT 1`
+      );
+      const patientId = patientIdRes.rows[0]?.id;
+      expect(patientId).toBeDefined();
+
+      const doctorIdRes = await pool.query(
+        `SELECT id FROM doctors WHERE user_id = $1 LIMIT 1`,
+        [doctorUserId]
+      );
+      const realDoctorId = doctorIdRes.rows[0]?.id;
+      expect(realDoctorId).toBeDefined();
+
+      const branchB = await pool.query(
+        `SELECT id FROM branches WHERE name = 'Cabang B' LIMIT 1`
+      );
+      const branchBId = branchB.rows[0]?.id;
+      expect(branchBId).toBeDefined();
+
+      const today = new Date();
+      const bDate = today.toISOString().split('T')[0];
+      const sStart = `${bDate} 14:00:00`;
+      const sEnd = `${bDate} 17:00:00`;
+      const bTime = '14:00:00';
+      const codeB = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+      const bookingB = await pool.query(
+        `INSERT INTO bookings 
+         (branch_id, patient_id, doctor_id, status, booking_date, booking_time, session_start, session_end, booking_code) 
+         VALUES ($1, $2, $3, 'PAYMENT_CONFIRMED', $4, $5, $6, $7, $8) 
+         RETURNING id`,
+        [branchBId, patientId, realDoctorId, bDate, bTime, sStart, sEnd, codeB]
+      );
+
+      const res = await request(app)
+        .get(`/api/patient/bookings/${bookingB.rows[0].id}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(403);
+    });
+  });
+});

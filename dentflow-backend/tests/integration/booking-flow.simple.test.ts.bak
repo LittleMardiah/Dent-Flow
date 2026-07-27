@@ -1,0 +1,117 @@
+import request from 'supertest';
+import { Pool } from 'pg';
+import { config } from '../../src/config';
+
+const BASE_URL = 'http://localhost:3000';
+const testBranchId = '7196c0cc-62fa-45da-b534-c65dd2a0dec2';
+const testDoctorUserId = '1277a1be-9509-448e-a17c-4bee98b2c43b';
+
+function getNextMonday(): Date {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = (day === 0 ? 1 : 8 - day);
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diff);
+  monday.setHours(9, 0, 0, 0);
+  return monday;
+}
+
+describe('Simple Booking Flow', () => {
+  let pool: Pool;
+  let patientToken: string;
+  let adminToken: string;
+  let bookingId: string;
+  let bookingCode: string;
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: config.database.url });
+    
+    // Cleanup existing bookings for test date
+    const testDate = getNextMonday();
+    const dateStr = testDate.toISOString().split('T')[0];
+    await pool.query(
+      `DELETE FROM bookings WHERE booking_date = $1 AND branch_id = $2 AND status NOT IN ('COMPLETED', 'NO_SHOW')`,
+      [dateStr, testBranchId]
+    );
+    console.log(`🧹 Cleaned bookings for ${dateStr}`);
+
+    const adminRes = await request(BASE_URL)
+      .post('/auth/admin/login')
+      .send({ username: 'admin_a', password: 'Admin123!' });
+    adminToken = adminRes.body.data?.access_token || adminRes.body.data?.token || adminRes.body.token;
+    console.log('Admin token:', adminToken ? '✅' : '❌');
+  });
+
+  afterAll(async () => {
+    await pool.end();
+  });
+
+  test('1. Patient registers and logs in', async () => {
+    const timestamp = Date.now();
+    const email = `patient-${timestamp}@test.com`;
+    const password = 'Patient123!';
+
+    const registerRes = await request(BASE_URL)
+      .post('/auth/patient/register')
+      .send({ email, password, fullName: 'Test Patient', phone: '08123456789' });
+    
+    console.log('Register status:', registerRes.status);
+    if (registerRes.status !== 201) {
+      console.log('Register error:', registerRes.body);
+    }
+    expect(registerRes.status).toBe(201);
+
+    const loginRes = await request(BASE_URL)
+      .post('/auth/patient/login')
+      .send({ username: email, password });
+    expect(loginRes.status).toBe(200);
+    patientToken = loginRes.body.data?.access_token || loginRes.body.data?.token || loginRes.body.token;
+    expect(patientToken).toBeDefined();
+    console.log('Patient token:', patientToken ? '✅' : '❌');
+  });
+
+  test('2. Patient books appointment (next Monday)', async () => {
+    expect(patientToken).toBeDefined();
+    const bookingDate = getNextMonday();
+    console.log('Booking date:', bookingDate.toISOString());
+
+    const bookingRes = await request(BASE_URL)
+      .post('/api/patient/bookings')
+      .set('Authorization', `Bearer ${patientToken}`)
+      .send({
+        branchId: testBranchId,
+        doctorId: testDoctorUserId,
+        bookingDate: bookingDate.toISOString(),
+        sessionSlotId: 'slot-1',
+        notes: 'Test booking',
+      });
+
+    console.log('Booking status:', bookingRes.status);
+    if (bookingRes.status !== 201) {
+      console.log('Booking error:', bookingRes.body);
+    }
+    expect(bookingRes.status).toBe(201);
+    bookingId = bookingRes.body.data.id;
+    bookingCode = bookingRes.body.data.booking_code || bookingRes.body.data.booking_code;
+    expect(bookingCode).toBeDefined();
+    console.log('Booking code:', bookingCode);
+  });
+
+  test('3. Admin checks-in patient via booking code', async () => {
+    expect(adminToken).toBeDefined();
+    expect(bookingCode).toBeDefined();
+    const checkInRes = await request(BASE_URL)
+      .post('/api/admin/check-in')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ booking_code: bookingCode, branch_id: testBranchId });
+
+    console.log('Check-in status:', checkInRes.status);
+    if (checkInRes.status !== 200) {
+      console.log('Check-in error:', checkInRes.body);
+    }
+    expect(checkInRes.status).toBe(200);
+    const queueId = checkInRes.body.data.queue_id || checkInRes.body.data.id;
+    expect(queueId).toBeDefined();
+    console.log('Queue ID:', queueId);
+  });
+});

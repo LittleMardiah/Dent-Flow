@@ -1,0 +1,25 @@
+import { Router, Request, Response, NextFunction } from 'express';
+import { authMiddleware } from '../middleware/authMiddleware';
+import { startEncounter, updateEncounter, completeEncounter, getEncounter } from '../handlers/encounter.handler';
+
+const router = Router();
+
+const allowDoctorOrAdmin = (req: Request, res: Response, next: NextFunction) => {
+  const role = req.user?.role;
+  if (role === 'DOCTOR' || role === 'ADMIN_BRANCH') return next();
+  return res.status(403).json({ success: false, message: 'Only DOCTOR or ADMIN' });
+};
+
+const allowAllRoles = (req: Request, res: Response, next: NextFunction) => {
+  const role = req.user?.role;
+  if (role === 'PATIENT' || role === 'DOCTOR' || role === 'ADMIN_BRANCH') return next();
+  return res.status(403).json({ success: false });
+};
+
+router.use(authMiddleware);
+router.post('/', allowDoctorOrAdmin, startEncounter);
+router.put('/:id', allowDoctorOrAdmin, updateEncounter);
+router.post('/:id/complete', allowDoctorOrAdmin, completeEncounter);
+router.get('/:id', allowAllRoles, getEncounter);
+
+export default router;

@@ -1,0 +1,48 @@
+============================================================
+TESTING GUIDE - DENTFLOW v1.0
+============================================================
+
+📋 Overview
+Dokumen ini menjelaskan strategi testing untuk DentFlow backend.
+
+🛠️ Running Tests
+
+Unit & Integration Tests:
+  npm run test
+
+Test Coverage Report:
+  npm run test:coverage
+  Output: coverage/index.html (HTML report) and coverage/coverage-summary.json.
+
+Contract Tests (Postman):
+  npm run test:postman
+
+📊 Coverage Thresholds
+  - Statements: ≥70%
+  - Branches: ≥65%
+  - Functions: ≥70%
+  - Lines: ≥70%
+
+📂 Test Structure
+  tests/
+  ├── unit/          # Service & Util unit tests
+  ├── integration/   # Database & API integration tests
+  └── fixtures/      # Test data & seed files
+
+📈 Current Coverage (as of 2026-07-25)
+  Statements : 47.38%  (Target: ≥70%)
+  Branches   : 25%  (Target: ≥65%)
+  Functions  : 46.62%  (Target: ≥70%)
+  Lines      : 46.62%  (Target: ≥70%)
+
+🔧 Adding New Tests
+  1. Place unit tests in tests/unit/ matching *.service.test.ts.
+  2. Place integration tests in tests/integration/.
+  3. Run npm run test to verify.
+  4. Run npm run test:coverage to check coverage impact.
+
+📝 References
+  - STP Section 6 (docs/STP.md)
+  - TDD Section 10 (docs/TDD.md)
+
+============================================================

@@ -1,0 +1,135 @@
+import { Pool } from 'pg';
+import { config } from '../config';
+import { logger } from '../utils/logger';
+
+export interface AuditLogPayload {
+  branchId: string;
+  userId?: string;
+  eventType: string;
+  entityType?: string;
+  entityId?: string;
+  action?: string;
+  oldValues?: any;
+  newValues?: any;
+  description?: string;
+  ipAddress?: string;
+}
+
+// Mapping event type ke Bahasa Indonesia (untuk display)
+export const EventTypeLabels: Record<string, string> = {
+  USER_REGISTERED: 'Pengguna Terdaftar',
+  USER_LOGIN: 'Login Pengguna',
+  USER_LOGOUT: 'Logout Pengguna',
+  PASSWORD_RESET: 'Reset Password',
+  BOOKING_CREATED: 'Pemesanan Dibuat',
+  BOOKING_CANCELLED: 'Pemesanan Dibatalkan',
+  BOOKING_CHECKED_IN: 'Pasien Sudah Check-in',
+  BOOKING_NO_SHOW_MARKED: 'Pemesanan Tidak Datang',
+  QUEUE_GENERATED: 'Nomor Antrian Dibuat',
+  CHECK_IN_SUCCESS: 'Check-in Berhasil',
+  CHECK_IN_FAILED: 'Check-in Gagal',
+  ENCOUNTER_STARTED: 'Pemeriksaan Dimulai',
+  ENCOUNTER_COMPLETED: 'Pemeriksaan Selesai',
+  EMR_UPDATED: 'EMR Diperbarui',
+  PAYMENT_INITIATED: 'Pembayaran Dimulai',
+  PAYMENT_CONFIRMED: 'Pembayaran Dikonfirmasi',
+  PAYMENT_FAILED: 'Pembayaran Gagal',
+  INVOICE_GENERATED: 'Invoice Dibuat',
+  INVOICE_MARKED_PAID: 'Invoice Dibayar',
+  INVOICE_UNDO_PAYMENT: 'Pembayaran Dibatalkan (Admin)',
+  WALK_IN_ADDED: 'Pasien Walk-in Ditambahkan',
+};
+
+export class AuditService {
+  private pool: Pool;
+
+  constructor() {
+    this.pool = new Pool({ connectionString: config.database.url });
+  }
+
+  async logEvent(payload: AuditLogPayload): Promise<void> {
+    try {
+      // Ensure we have entity_type and entity_id for booking events
+      // We'll use the provided or default to 'SYSTEM'
+      const entityType = payload.entityType || 'SYSTEM';
+      const entityId = payload.entityId || null;
+
+      await this.pool.query(
+        `INSERT INTO audit_logs 
+         (branch_id, user_id, event_type, entity_type, entity_id, action, 
+          old_values, new_values, description, ip_address, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)`,
+        [
+          payload.branchId,
+          payload.userId || null,
+          payload.eventType,
+          entityType,
+          entityId,
+          payload.action || null,
+          payload.oldValues ? JSON.stringify(payload.oldValues) : null,
+          payload.newValues ? JSON.stringify(payload.newValues) : null,
+          payload.description || null,
+          payload.ipAddress || null,
+        ]
+      );
+      const label = EventTypeLabels[payload.eventType] || payload.eventType;
+      logger.info(`📋 Audit: ${label} - ${payload.description || ''}`);
+    } catch (error: any) {
+      console.error('❌ AUDIT LOG ERROR:', error.message);
+      console.error('   Stack:', error.stack);
+      console.error('   Payload:', JSON.stringify(payload, null, 2));
+      logger.error({ error: error.message, stack: error.stack });
+      // Don't throw - audit failure shouldn't break main operation
+    }
+  }
+
+  async getEventsByEntity(
+    entityType: string,
+    entityId: string,
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<any[]> {
+    try {
+      const result = await this.pool.query(
+        `SELECT * FROM audit_logs 
+         WHERE entity_type = $1 AND entity_id = $2 
+         ORDER BY created_at DESC 
+         LIMIT $3 OFFSET $4`,
+        [entityType, entityId, limit, offset]
+      );
+      // Add Bahasa Indonesia label to each event
+      return result.rows.map(row => ({
+        ...row,
+        event_label: EventTypeLabels[row.event_type] || row.event_type,
+      }));
+    } catch (error: any) {
+      logger.error({ error: error.message, stack: error.stack }, 'Error fetching audit logs');
+      return [];
+    }
+  }
+
+  async getEventsByBranch(
+    branchId: string,
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<any[]> {
+    try {
+      const result = await this.pool.query(
+        `SELECT * FROM audit_logs 
+         WHERE branch_id = $1 
+         ORDER BY created_at DESC 
+         LIMIT $2 OFFSET $3`,
+        [branchId, limit, offset]
+      );
+      return result.rows.map(row => ({
+        ...row,
+        event_label: EventTypeLabels[row.event_type] || row.event_type,
+      }));
+    } catch (error: any) {
+      logger.error({ error: error.message, stack: error.stack }, 'Error fetching audit logs');
+      return [];
+    }
+  }
+}
+
+export const auditService = new AuditService();

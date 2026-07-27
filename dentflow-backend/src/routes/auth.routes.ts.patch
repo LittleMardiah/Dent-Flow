@@ -1,0 +1,71 @@
+/**
+ * @swagger
+ * /auth/patient/login:
+ *   post:
+ *     summary: Login as patient
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                     token:
+ *                       type: string
+ *                     refreshToken:
+ *                       type: string
+ *       401:
+ *         description: Invalid credentials
+ */
+router.post('/patient/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email dan password wajib diisi',
+      });
+    }
+
+    const result = await authService.loginPatient(email, password);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        user: result.user,
+        token: result.token,
+        refreshToken: result.refreshToken,
+      },
+    });
+  } catch (error: any) {
+    res.status(401).json({
+      success: false,
+      message: error.message || 'Login gagal',
+    });
+  }
+});

@@ -1,0 +1,60 @@
+﻿services:
+  postgres:
+    image: postgres:15.2
+    container_name: dentflow-db
+    environment:
+      POSTGRES_DB: dentflow
+      POSTGRES_USER: dentflow_user
+      POSTGRES_PASSWORD: dentflow_password
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # - ./postgres-config/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dentflow_user -d dentflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dentflow-network
+
+  redis:
+    image: redis:7.0-alpine
+    container_name: dentflow-cache
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dentflow-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: dentflow-storage
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    volumes:
+      - minio_data:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    networks:
+      - dentflow-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  dentflow-network:
+    driver: bridge

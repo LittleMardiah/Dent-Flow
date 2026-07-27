@@ -1,0 +1,79 @@
+name: CI - Test & Build (test.yml)
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+    env:
+      DATABASE_URL: postgresql://dentflow_user:dentflow_password@localhost:5432/dentflow
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: dentflow_user
+          POSTGRES_PASSWORD: dentflow_password
+          POSTGRES_DB: dentflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+      # ============================================
+      # RUN ALL MIGRATIONS (SEKALI JALAN)
+      # ============================================
+      - name: Run all migrations
+        run: npm run migrate
+      - run: npm run seed
+        env:
+          DATABASE_URL: postgresql://dentflow_user:dentflow_password@localhost:5432/dentflow
+
+      # ============================================
+      # SEED TEST USERS (jika file ada)
+      # ============================================
+      - name: Seed test users
+        run: |
+          if [ -f seeds/001_test_users.sql ]; then
+            PGPASSWORD=dentflow_password psql -h localhost -U dentflow_user -d dentflow -f seeds/001_test_users.sql
+          else
+            echo "⚠️ Seed file not found, skipping"
+          fi
+        env:
+          PGPASSWORD: dentflow_password
+
+      - name: Run tests
+        run: npm test
+        env:
+          DATABASE_URL: postgresql://dentflow_user:dentflow_password@localhost:5432/dentflow
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test_jwt_secret_32_chars_minimum
+          NODE_ENV: test
+          LOG_LEVEL: error

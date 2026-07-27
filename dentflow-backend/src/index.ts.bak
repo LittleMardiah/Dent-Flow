@@ -1,0 +1,64 @@
+import 'dotenv/config';
+import express, { Express } from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import { config } from './config';
+import { logger } from './utils/logger';
+import { errorHandler } from './middleware/errorHandler';
+import { rateLimiter } from './middleware/rateLimiter';
+import { requestLoggerMiddleware } from './middleware/requestLogger';
+
+// Import routes
+import authRoutes from './routes/auth.routes';
+import healthRoutes from './routes/health.routes';
+import webhookRoutes from './routes/webhook.routes';
+import bookingRoutes from './routes/booking.routes';
+import doctorQueueRoutes from './routes/doctorQueue.routes';
+import patientHistoryRoutes from './routes/patientHistory.routes';
+import walkInRoutes from './routes/walkIn.routes';
+import noShowRoutes from './routes/noShow.routes';
+import attendanceRoutes from './routes/attendance.routes';
+import doctorSlotRoutes from './routes/doctorSlot.routes';
+import adminRoutes from './routes/admin.routes';  // <-- INI DITAMBAHKAN
+
+// Import job scheduler
+import { jobScheduler } from './jobs/jobScheduler';
+
+const app: Express = express();
+const PORT = config.server.port;
+
+// Middleware global
+app.use(helmet());
+app.use(cors());
+app.use(express.json({ limit: '1mb' }));
+app.use(rateLimiter);
+app.use(requestLoggerMiddleware);
+
+// Routes
+app.use('/health', healthRoutes);
+app.use('/auth', authRoutes);
+app.use('/webhooks', webhookRoutes);
+app.use('/api', bookingRoutes);
+app.use('/api', doctorQueueRoutes);
+app.use('/api', patientHistoryRoutes);
+app.use('/api', walkInRoutes);
+app.use('/api', noShowRoutes);
+app.use('/api', attendanceRoutes);
+app.use('/api/doctors', doctorSlotRoutes);
+app.use('/api/admin', adminRoutes);  // <-- INI DITAMBAHKAN
+
+// Global error handler
+app.use(errorHandler);
+
+// Start server
+app.listen(PORT, () => {
+  logger.info(`✅ DentFlow API starting on port ${PORT}`);
+  logger.info(`   Environment: ${config.server.nodeEnv}`);
+  logger.info(`   Database: ${config.database.url}`);
+  logger.info(`   Redis: ${config.redis.url}`);
+  logger.info(`   MinIO: ${config.minio.endpoint}`);
+  
+  // Initialize job scheduler after server is running
+  jobScheduler.initialize();
+});
+export { app };

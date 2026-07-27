@@ -1,0 +1,185 @@
+import { Pool } from 'pg';
+import { config } from '../config';
+import { logger } from '../utils/logger';
+import { auditService } from './audit.service';
+import { AuditEventType } from '../models/audit.model';
+
+export class BookingService {
+  private pool: Pool;
+
+  constructor(pool?: Pool) {
+    this.pool = pool || new Pool({ connectionString: config.database.url });
+  }
+
+  async createScheduledBooking(
+    patientId: string,
+    doctorUserId: string,
+    branchId: string,
+    bookingDate: Date,
+    sessionSlotId: string,
+    _notes?: string
+  ) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // 0. Dapatkan patient record ID
+      let patientRecordId: string;
+      const patientResult = await client.query(
+        `SELECT id FROM patients WHERE user_id = $1`,
+        [patientId]
+      );
+      if (patientResult.rows.length === 0) {
+        const insertPatient = await client.query(
+          `INSERT INTO patients (user_id, full_name, branch_id) VALUES ($1, (SELECT username FROM users WHERE id = $1), $2) RETURNING id`,
+          [patientId, branchId]
+        );
+        patientRecordId = insertPatient.rows[0].id;
+      } else {
+        patientRecordId = patientResult.rows[0].id;
+      }
+
+      // 1. Get doctor record ID
+      const doctorResult = await client.query(
+        `SELECT id FROM doctors WHERE user_id = $1 AND branch_id = $2 AND is_available = true`,
+        [doctorUserId, branchId]
+      );
+      if (doctorResult.rows.length === 0) {
+        throw new Error('DOCTOR_NOT_FOUND');
+      }
+      const doctorRecordId = doctorResult.rows[0].id;
+
+      // 2. Check schedule - timeStr sudah HH:MM
+      const dayOfWeek = new Date(bookingDate.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' })).getDay();
+        const timeStr = sessionSlotId; // Use sessionSlotId directly from payload
+
+      console.log("🔍 [BookingService] doctorUserId:", doctorUserId);
+      console.log("🔍 [BookingService] dayOfWeek:", dayOfWeek);
+      console.log("🔍 [BookingService] timeStr:", timeStr);
+
+      const scheduleResult = await client.query(
+        `SELECT id, session_start, session_end, max_patients_per_session 
+         FROM doctor_schedules 
+         WHERE dokter_id = $1 
+           AND day_of_week = $2 
+           AND session_start <= $3::time 
+           AND session_end >= $3::time 
+           AND is_active = true`,
+        [doctorUserId, dayOfWeek, timeStr]
+      );
+      if (scheduleResult.rows.length === 0) {
+        throw new Error('DOCTOR_NOT_SCHEDULED');
+      }
+      const schedule = scheduleResult.rows[0];
+
+      // 3. Check slot availability
+      const bookingCountResult = await client.query(
+        `SELECT COUNT(*) as booked 
+         FROM bookings 
+         WHERE doctor_id = $1 
+           AND session_start = $2 
+           AND status NOT IN ('CANCELLED', 'NO_SHOW')`,
+        [doctorRecordId, bookingDate]
+      );
+      const booked = parseInt(bookingCountResult.rows[0].booked);
+      const maxPatients = schedule.max_patients_per_session || 4;
+      if (booked >= maxPatients) {
+        throw new Error('SLOT_NOT_AVAILABLE');
+      }
+
+      // 4. Generate booking code
+      let bookingCode = '';
+      let codeExists = true;
+      let attempts = 0;
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      while (codeExists && attempts < 10) {
+        bookingCode = '';
+        for (let i = 0; i < 6; i++) {
+          bookingCode += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        const checkResult = await client.query(
+          `SELECT id FROM bookings WHERE booking_code = $1`,
+          [bookingCode]
+        );
+        codeExists = checkResult.rows.length > 0;
+        attempts++;
+      }
+      if (codeExists) {
+        throw new Error('FAILED_TO_GENERATE_BOOKING_CODE');
+      }
+
+      // 5. Insert booking - PERBAIKAN: booking_time pakai timeStr
+      const sessionStart = bookingDate;
+      const sessionEnd = new Date(bookingDate);
+      sessionEnd.setHours(sessionEnd.getHours() + 3);
+
+      const insertResult = await client.query(
+        `INSERT INTO bookings (
+          branch_id,
+          patient_id,
+          doctor_id,
+          booking_date,
+          booking_time,
+          status,
+          booking_code,
+          is_walk_in,
+          session_start,
+          session_end,
+          created_at,
+          updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+        RETURNING id, booking_code, status`,
+        [
+          branchId,
+          patientRecordId,
+          doctorRecordId,
+          bookingDate,    // $4: booking_date (date)
+          timeStr,        // $5: booking_time (time)  <-- PASTIKAN timeStr
+          'PENDING_PAYMENT',
+          bookingCode,
+          false,
+          sessionStart,
+          sessionEnd
+        ]
+      );
+      const booking = insertResult.rows[0];
+
+      // 6. Audit log
+      try {
+        await auditService.logEvent({
+          branchId,
+          userId: patientId,
+          eventType: AuditEventType.BOOKING_CREATED,
+          entityType: 'BOOKING',
+          entityId: booking.id,
+          description: 'Pemesanan dibuat',
+          newValues: {
+            bookingId: booking.id,
+            booking_code: booking.booking_code,
+            status: booking.status,
+            doctor_id: doctorUserId,
+            booking_date: bookingDate
+          }
+        });
+      } catch (auditError) {
+        console.error('Audit log failed:', auditError);
+      }
+
+      await client.query('COMMIT');
+
+      return {
+        id: booking.id,
+        booking_code: booking.booking_code,
+        status: booking.status,
+        message: 'Booking created successfully'
+      };
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      console.error('Error in BookingService:', error);
+      logger.error({ error: error.message, stack: error.stack }, 'Error creating booking');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}

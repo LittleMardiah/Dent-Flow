@@ -1,0 +1,54 @@
+import { Request, Response, NextFunction } from 'express';
+import { BookingService } from '../services/booking.service';
+import { logger } from '../utils/logger';
+
+const bookingService = new BookingService();
+
+export const createScheduledBooking = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const patientId = req.user?.userId;
+    const branchId = req.user?.branchId;
+    if (!patientId || !branchId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const { doctorId, bookingDate, sessionSlotId, notes } = req.body;
+    if (!doctorId || !bookingDate || !sessionSlotId) {
+      return res.status(400).json({ success: false, message: 'Missing required fields: doctorId, bookingDate, sessionSlotId' });
+    }
+
+    const result = await bookingService.createScheduledBooking(
+      patientId,
+      doctorId,
+      branchId,
+      new Date(bookingDate),
+      sessionSlotId,
+      notes
+    );
+
+    res.status(201).json({ success: true, data: result });
+  } catch (error: any) {
+    // Handle known error types
+    if (error.message === 'DOCTOR_NOT_FOUND') {
+      return res.status(404).json({ success: false, message: 'Dokter tidak ditemukan' });
+    }
+    if (error.message === 'DOCTOR_NOT_SCHEDULED') {
+      return res.status(400).json({ success: false, message: 'Dokter tidak memiliki jadwal pada waktu tersebut' });
+    }
+    if (error.message === 'SLOT_NOT_AVAILABLE') {
+      return res.status(409).json({ success: false, message: 'Slot sudah penuh (maksimal 4 pasien per sesi)' });
+    }
+    if (error.message === 'FAILED_TO_GENERATE_BOOKING_CODE') {
+      return res.status(500).json({ success: false, message: 'Gagal generate kode booking, silakan coba lagi' });
+    }
+
+    logger.error({ error: error.message, stack: error.stack }, 'Create booking error');
+    res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Internal server error',
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+};
+// Tambahkan di awal fungsi createScheduledBooking:
+console.log('🔥🔥🔥 CREATE BOOKING HANDLER CALLED!');

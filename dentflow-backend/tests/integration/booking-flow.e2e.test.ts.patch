@@ -1,0 +1,18 @@
+--- a/tests/integration/booking-flow.e2e.test.ts
++++ b/tests/integration/booking-flow.e2e.test.ts
+@@ -101,6 +101,14 @@ describe('E2E Booking Flow (Full Automation - No Skip)', () => {
+   describe('Admin Check-in', () => {
+     test('4. Admin checks-in patient', async () => {
+       expect(bookingCode).toBeDefined();
++      
++      // Update session ke waktu aktif sekarang
++      const now = new Date();
++      const sessionStart = new Date(now.getTime() - 60 * 60000).toISOString().replace('T', ' ').slice(0, 19);
++      const sessionEnd = new Date(now.getTime() + 120 * 60000).toISOString().replace('T', ' ').slice(0, 19);
++      await pool.query(`UPDATE bookings SET status = 'PAYMENT_CONFIRMED', session_start = $1, session_end = $2 WHERE id = $3`, [sessionStart, sessionEnd, bookingId]);
++      console.log(`🕐 Session updated: ${sessionStart} - ${sessionEnd}`);
++      
+-      await pool.query(`UPDATE bookings SET status = 'PAYMENT_CONFIRMED' WHERE id = $1`, [bookingId]);
+
+       const res = await request(app)
+         .post('/api/admin/check-in')
