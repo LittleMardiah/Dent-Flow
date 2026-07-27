@@ -5,6 +5,8 @@ interface AdminLayoutProps {
   children: ReactNode;
 }
 
+//
+
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   return (
     <div className="flex h-screen bg-neutral/50">
