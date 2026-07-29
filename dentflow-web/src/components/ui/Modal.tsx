@@ -10,7 +10,7 @@ interface ModalProps {
   children: React.ReactNode;
   confirmText?: string;
   cancelText?: string;
-  onConfirm?: () => void;
+  onConfirm?: (e?: React.MouseEvent<HTMLButtonElement>) => void | Promise<void>;  // <--- FIX: bisa nerima event
   variant?: 'primary' | 'danger';
 }
 
@@ -61,7 +61,7 @@ export const Modal: React.FC<ModalProps> = ({
             {cancelText}
           </Button>
           {onConfirm && (
-            <Button variant={variant} onClick={onConfirm}>
+            <Button variant={variant} onClick={() => onConfirm()}>
               {confirmText}
             </Button>
           )}
