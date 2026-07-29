@@ -8,7 +8,7 @@ interface AdminLayoutProps {
   children: React.ReactNode;
   title?: string;
 }
-//
+
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title = 'Dashboard' }) => {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
