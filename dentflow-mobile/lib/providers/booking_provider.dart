@@ -16,6 +16,7 @@ class BookingProvider extends ChangeNotifier {
   Slot? _selectedSlot;
   String? _bookingId;
   String? _paymentUrl;
+  String? _bookingCode;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -30,6 +31,7 @@ class BookingProvider extends ChangeNotifier {
   Slot? get selectedSlot => _selectedSlot;
   String? get bookingId => _bookingId;
   String? get paymentUrl => _paymentUrl;
+  String? get bookingCode => _bookingCode;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   List<Branch> get branches => _branches;
@@ -90,6 +92,7 @@ class BookingProvider extends ChangeNotifier {
         date: _selectedDate!.toIso8601String().split('T').first,
       );
       _bookingId = result['id'] ?? result['bookingId'];
+      _bookingCode = result['bookingCode'] ?? result['booking_code'] ?? result['checkInCode'] ?? '';
       _paymentUrl = result['paymentUrl'] ?? result['payment_url'];
       if (_bookingId == null || _paymentUrl == null) throw Exception('Invalid booking response');
       _isLoading = false; notifyListeners();

@@ -20,10 +20,7 @@ class NextAppointmentCard extends StatelessWidget {
               const SizedBox(height: 8),
               const Text(
                 'Belum ada janji temu',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
-                ),
+                style: TextStyle(fontSize: 16, color: Colors.grey),
               ),
               const SizedBox(height: 8),
               ElevatedButton(
@@ -52,27 +49,43 @@ class NextAppointmentCard extends StatelessWidget {
                 SizedBox(width: 8),
                 Text(
                   'Janji Temu Berikutnya',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 12),
+            // Kode Booking (ditampilkan di Home)
+            Row(
+              children: [
+                const Text(
+                  'Kode: ',
+                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    booking!.bookingCode,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             Text(
               booking!.doctorName,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             Text(
               booking!.doctorSpecialization,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
             const SizedBox(height: 8),
             Row(
@@ -110,7 +123,7 @@ class NextAppointmentCard extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () {
-                      // Reschedule logic
+                      // Reschedule
                     },
                     child: const Text('Reschedule'),
                   ),
@@ -119,7 +132,7 @@ class NextAppointmentCard extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () {
-                      // Cancel logic
+                      // Cancel
                     },
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.red,

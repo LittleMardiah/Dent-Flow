@@ -124,7 +124,7 @@ class WalkInConfirmationScreen extends StatelessWidget {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'SMS konfirmasi telah dikirim ke nomor Anda',
+                      'Kode check-in ini bisa digunakan untuk check-in di klinik',
                       style: TextStyle(fontSize: 12),
                     ),
                   ),

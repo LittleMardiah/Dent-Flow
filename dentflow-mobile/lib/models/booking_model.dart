@@ -1,5 +1,6 @@
 class Booking {
   final String id;
+  final String bookingCode;
   final String doctorName;
   final String doctorSpecialization;
   final String branchName;
@@ -11,6 +12,7 @@ class Booking {
 
   Booking({
     required this.id,
+    required this.bookingCode,
     required this.doctorName,
     required this.doctorSpecialization,
     required this.branchName,
@@ -24,6 +26,7 @@ class Booking {
   factory Booking.fromJson(Map<String, dynamic> json) {
     return Booking(
       id: json['id'] ?? '',
+      bookingCode: json['bookingCode'] ?? json['booking_code'] ?? json['checkInCode'] ?? json['check_in_code'] ?? '',
       doctorName: json['doctorName'] ?? json['doctor_name'] ?? '',
       doctorSpecialization: json['doctorSpecialization'] ?? json['specialization'] ?? '',
       branchName: json['branchName'] ?? json['branch_name'] ?? '',
@@ -38,6 +41,7 @@ class Booking {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'bookingCode': bookingCode,
       'doctorName': doctorName,
       'doctorSpecialization': doctorSpecialization,
       'branchName': branchName,
@@ -51,22 +55,14 @@ class Booking {
 
   String get statusLabel {
     switch (status) {
-      case 'PENDING':
-        return 'Menunggu Pembayaran';
-      case 'PAYMENT_CONFIRMED':
-        return 'Dikonfirmasi';
-      case 'CHECKED_IN':
-        return 'Sudah Check-in';
-      case 'COMPLETED':
-        return 'Selesai';
-      case 'CANCELLED':
-        return 'Dibatalkan';
-      default:
-        return status;
+      case 'PENDING': return 'Menunggu Pembayaran';
+      case 'PAYMENT_CONFIRMED': return 'Dikonfirmasi';
+      case 'CHECKED_IN': return 'Sudah Check-in';
+      case 'COMPLETED': return 'Selesai';
+      case 'CANCELLED': return 'Dibatalkan';
+      default: return status;
     }
   }
 
-  bool get isUpcoming {
-    return status == 'PAYMENT_CONFIRMED' || status == 'CHECKED_IN';
-  }
+  bool get isUpcoming => status == 'PAYMENT_CONFIRMED' || status == 'CHECKED_IN';
 }
