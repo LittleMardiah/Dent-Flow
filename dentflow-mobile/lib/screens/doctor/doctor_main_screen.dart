@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/doctor_auth_provider.dart';
 import '../../providers/doctor_provider.dart';
+import '../../providers/websocket_provider.dart';
 import 'patient_quick_view_screen.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class DoctorMainScreen extends StatefulWidget {
   const DoctorMainScreen({super.key});
@@ -12,32 +14,99 @@ class DoctorMainScreen extends StatefulWidget {
 }
 
 class _DoctorMainScreenState extends State<DoctorMainScreen> {
+  final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
+
   @override
   void initState() {
     super.initState();
+    _initNotifications();
+    _initData();
+  }
+
+  void _initNotifications() async {
+    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const DarwinInitializationSettings iosSettings = DarwinInitializationSettings();
+    const InitializationSettings settings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
+    await _notifications.initialize(settings);
+  }
+
+  void _initData() {
     final authProvider = Provider.of<DoctorAuthProvider>(context, listen: false);
-    final provider = Provider.of<DoctorProvider>(context, listen: false);
-    if (authProvider.doctor != null) {
-      provider.loadQueue(authProvider.doctor!.id);
-      provider.startPolling(authProvider.doctor!.id);
+    final wsProvider = Provider.of<WebSocketProvider>(context, listen: false);
+    final doctorProvider = Provider.of<DoctorProvider>(context, listen: false);
+
+    final doctorId = authProvider.doctor?.id;
+    if (doctorId != null) {
+      // Connect WebSocket
+      final token = wsProvider.isConnected ? null : '';
+      wsProvider.connect('', doctorId, 'DOCTOR');
+      // Initialize provider with WebSocket listener
+      doctorProvider.init(doctorId: doctorId, context: context);
     }
   }
 
   @override
   void dispose() {
     Provider.of<DoctorProvider>(context, listen: false).stopPolling();
+    Provider.of<WebSocketProvider>(context, listen: false).disconnect();
     super.dispose();
   }
+
+  // _showNewPatientNotification temporarily disabled
 
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<DoctorAuthProvider>(context);
     final provider = Provider.of<DoctorProvider>(context);
+    final wsProvider = Provider.of<WebSocketProvider>(context);
 
     return Scaffold(
       appBar: AppBar(
         title: Text('${authProvider.doctor?.fullName ?? 'Dokter'}'),
         actions: [
+          // Queue badge
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.people),
+                onPressed: () {
+                  wsProvider.resetNewArrivals();
+                  provider.loadQueue(authProvider.doctor!.id);
+                },
+              ),
+              if (wsProvider.newArrivals > 0)
+                Positioned(
+                  right: 4,
+                  top: 4,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    child: Text(
+                      wsProvider.newArrivals > 9 ? '9+' : '${wsProvider.newArrivals}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          // Connection status
+          Icon(
+            wsProvider.isConnected ? Icons.wifi : Icons.wifi_off,
+            color: wsProvider.isConnected ? Colors.green : Colors.red,
+          ),
+          const SizedBox(width: 8),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
@@ -100,10 +169,7 @@ class _DoctorMainScreenState extends State<DoctorMainScreen> {
             SizedBox(height: 16),
             Text(
               'Belum ada pasien dalam antrian',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
+              style: TextStyle(fontSize: 16, color: Colors.grey),
             ),
           ],
         ),
@@ -112,16 +178,11 @@ class _DoctorMainScreenState extends State<DoctorMainScreen> {
 
     return Column(
       children: [
-        // Current patient card
         _buildCurrentPatient(provider),
         const SizedBox(height: 16),
-
-        // Next patients
         Expanded(
           child: _buildNextPatients(provider),
         ),
-
-        // Ready next button
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: SizedBox(

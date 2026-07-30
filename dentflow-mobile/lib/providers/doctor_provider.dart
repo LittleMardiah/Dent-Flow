@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:provider/provider.dart';
 import '../models/queue_patient.dart';
 import '../services/doctor_api_service.dart';
+import 'websocket_provider.dart';
 
 class DoctorProvider extends ChangeNotifier {
   final DoctorApiService _apiService = DoctorApiService();
+  WebSocketProvider? _wsProvider;
 
   List<QueuePatient> _queue = [];
   QueuePatient? _currentPatient;
   bool _isLoading = false;
   String? _errorMessage;
   Timer? _pollingTimer;
+  String? _doctorId;
 
   List<QueuePatient> get queue => _queue;
   QueuePatient? get currentPatient => _currentPatient;
@@ -23,6 +27,25 @@ class DoctorProvider extends ChangeNotifier {
 
   List<QueuePatient> get nextPatients {
     return waitingPatients.take(3).toList();
+  }
+
+  void init({required String doctorId, required BuildContext context}) {
+    _doctorId = doctorId;
+    _wsProvider = Provider.of<WebSocketProvider>(context, listen: false);
+
+    // Listen to WebSocket updates
+    _wsProvider?.onQueueUpdate.listen((data) {
+      if (_doctorId != null) {
+        loadQueue(_doctorId!);
+        _wsProvider?.resetNewArrivals();
+      }
+    });
+
+    // Initial load
+    loadQueue(doctorId);
+
+    // Start polling fallback (10s, but only if WebSocket is not connected)
+    _startPolling(doctorId);
   }
 
   Future<void> loadQueue(String doctorId) async {
@@ -85,10 +108,12 @@ class DoctorProvider extends ChangeNotifier {
     }
   }
 
-  void startPolling(String doctorId) {
+  void _startPolling(String doctorId) {
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
-      await loadQueue(doctorId);
+    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      if (_wsProvider == null || !_wsProvider!.isConnected) {
+        await loadQueue(doctorId);
+      }
     });
   }
 
