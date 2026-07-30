@@ -20,9 +20,17 @@ class HealthScreen extends StatelessWidget {
             ),
             SizedBox(height: 16),
             Text(
-              'Riwayat kesehatan akan muncul di sini',
+              'Riwayat kesehatan',
               style: TextStyle(
                 fontSize: 16,
+                color: Colors.grey,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Akan datang di update berikutnya',
+              style: TextStyle(
+                fontSize: 14,
                 color: Colors.grey,
               ),
             ),

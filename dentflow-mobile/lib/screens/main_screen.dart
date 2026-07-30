@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
 import 'bookings_screen.dart';
-import 'health_screen.dart';
 import 'profile_screen.dart';
+import 'invoice/invoice_list_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -17,7 +17,7 @@ class _MainScreenState extends State<MainScreen> {
   static const List<Widget> _screens = [
     HomeScreen(),
     BookingsScreen(),
-    HealthScreen(),
+    InvoiceListScreen(), // Changed from Health to Invoice
     ProfileScreen(),
   ];
 
@@ -31,8 +31,8 @@ class _MainScreenState extends State<MainScreen> {
       label: 'Bookings',
     ),
     BottomNavigationBarItem(
-      icon: Icon(Icons.health_and_safety),
-      label: 'Health',
+      icon: Icon(Icons.receipt_long),
+      label: 'Invoice',
     ),
     BottomNavigationBarItem(
       icon: Icon(Icons.person),
