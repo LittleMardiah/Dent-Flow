@@ -1,3 +1,4 @@
+import 'screens/doctor/doctor_login_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:provider/provider.dart';
@@ -28,6 +29,7 @@ class MyApp extends StatelessWidget {
         routes: {
           '/': (context) => const SplashScreen(),
           '/login': (context) => const LoginScreen(),
+  '/doctor-login': (context) => const DoctorLoginScreen(),
         },
         debugShowCheckedModeBanner: false,
       ),
