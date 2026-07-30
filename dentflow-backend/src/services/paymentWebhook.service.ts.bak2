@@ -1,0 +1,136 @@
+import crypto from 'crypto';
+import { PaymentWebhookRepository } from '../repositories/paymentWebhook.repository';
+import { InvoiceService } from './invoice.service';
+import { logger } from '../utils/logger';
+
+export class PaymentWebhookService {
+  private repo: PaymentWebhookRepository;
+  private invoiceService: InvoiceService;
+
+  constructor() {
+    this.repo = new PaymentWebhookRepository();
+    this.invoiceService = new InvoiceService();
+  }
+
+  validateMidtransSignature(
+    payload: string,
+    signature: string,
+    serverKey: string
+  ): boolean {
+    const expected = crypto
+      .createHmac('sha256', serverKey)
+      .update(payload)
+      .digest('hex');
+    return expected === signature;
+  }
+
+  async processPaymentWebhook(
+    webhookId: string,
+    orderId: string,
+    signature: string,
+    payload: any,
+    serverKey: string
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      const payloadStr = JSON.stringify(payload);
+      if (!this.validateMidtransSignature(orderId, statusCode, grossAmount, signature, serverKey)) {
+        logger.warn(`❌ Invalid signature for webhook ${webhookId}`);
+        return { success: false, message: 'Invalid signature' };
+      }
+
+      const processed = await this.repo.isWebhookProcessed(webhookId);
+      if (processed) {
+        logger.info(`ℹ️ Webhook ${webhookId} already processed (idempotent)`);
+        return { success: true, message: 'Already processed (idempotent)' };
+      }
+
+      await this.repo.recordWebhook(webhookId, orderId, signature, payload);
+
+      const statusCode = payload.status_code || payload.statusCode || "";
+    const grossAmount = payload.gross_amount || payload.grossAmount || "0";
+    let invoice;
+      if (orderId.startsWith('INV-')) {
+        const invoiceResult = await this.repo['pool'].query(
+          'SELECT * FROM invoices WHERE invoice_number = $1',
+          [orderId]
+        );
+        invoice = invoiceResult.rows[0];
+      } else {
+        const bookingResult = await this.repo['pool'].query(
+          'SELECT * FROM bookings WHERE id = $1',
+          [orderId]
+        );
+        if (bookingResult.rows.length > 0) {
+          const booking = bookingResult.rows[0];
+          const invoiceResult = await this.repo['pool'].query(
+            'SELECT * FROM invoices WHERE booking_id = $1',
+            [booking.id]
+          );
+          invoice = invoiceResult.rows[0];
+        }
+      }
+
+      if (!invoice) {
+        logger.error(`Invoice not found for order_id: ${orderId}`);
+        await this.repo.updateStatus(webhookId, 'FAILED');
+        await this.repo.createErrorRecord(
+          webhookId,
+          `Invoice not found for order_id: ${orderId}`,
+          new Date(Date.now() + 30 * 1000)
+        );
+        return { success: false, message: 'Invoice not found' };
+      }
+
+      const paidAmount = parseFloat(payload.gross_amount) || invoice.amount_due;
+      await this.invoiceService.markPaid(
+        invoice.id,
+        'system',
+        'GATEWAY',
+        paidAmount,
+        `Payment via Midtrans: ${payload.transaction_id}`
+      );
+
+      await this.repo.updateStatus(webhookId, 'PROCESSED');
+
+      logger.info(`✅ Webhook ${webhookId} processed successfully`);
+      return { success: true, message: 'Webhook processed successfully' };
+    } catch (error: any) {
+      logger.error({ error: error.message, stack: error.stack }, 'Webhook error');
+      await this.repo.updateStatus(webhookId, 'FAILED');
+      await this.repo.createErrorRecord(
+        webhookId,
+        error.message || 'Unknown error',
+        new Date(Date.now() + 30 * 1000)
+      );
+      return { success: false, message: error.message || 'Webhook processing failed' };
+    }
+  }
+
+  async retryFailedWebhooks(): Promise<void> {
+    const pending = await this.repo.getPendingRetries();
+    for (const item of pending) {
+      const payload = item.payload;
+      const orderId = item.order_id;
+      const webhookId = item.webhook_id;
+      const _signature = ''; // signature not needed for retry
+
+      const result = await this.processPaymentWebhook(
+        webhookId,
+        orderId,
+        _signature,
+        payload,
+        process.env.MIDTRANS_SERVER_KEY || ''
+      );
+      if (!result.success) {
+        const errorRecord = await this.repo['pool'].query(
+          'SELECT retry_count FROM payment_webhook_errors WHERE webhook_id = $1',
+          [webhookId]
+        );
+        if (errorRecord.rows.length > 0 && errorRecord.rows[0].retry_count >= 3) {
+          await this.repo.updateStatus(webhookId, 'PERMANENTLY_FAILED');
+          logger.error(`Webhook ${webhookId} permanently failed after 3 retries`);
+        }
+      }
+    }
+  }
+}

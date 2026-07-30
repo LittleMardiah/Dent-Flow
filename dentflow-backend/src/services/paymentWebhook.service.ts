@@ -12,15 +12,19 @@ export class PaymentWebhookService {
     this.invoiceService = new InvoiceService();
   }
 
+  // ============================================================
+  // VALIDATE MIDTRANS SIGNATURE - STANDAR MIDTRANS
+  // Formula: SHA256(order_id + status_code + gross_amount + server_key)
+  // ============================================================
   validateMidtransSignature(
-    payload: string,
+    orderId: string,
+    statusCode: string,
+    grossAmount: string,
     signature: string,
     serverKey: string
   ): boolean {
-    const expected = crypto
-      .createHmac('sha256', serverKey)
-      .update(payload)
-      .digest('hex');
+    const raw = orderId + statusCode + grossAmount + serverKey;
+    const expected = crypto.createHash('sha256').update(raw).digest('hex');
     return expected === signature;
   }
 
@@ -32,8 +36,10 @@ export class PaymentWebhookService {
     serverKey: string
   ): Promise<{ success: boolean; message: string }> {
     try {
-      const payloadStr = JSON.stringify(payload);
-      if (!this.validateMidtransSignature(payloadStr, signature, serverKey)) {
+      const statusCode = payload.status_code || payload.statusCode || '';
+      const grossAmount = payload.gross_amount || payload.grossAmount || '0';
+
+      if (!this.validateMidtransSignature(orderId, statusCode, grossAmount, signature, serverKey)) {
         logger.warn(`❌ Invalid signature for webhook ${webhookId}`);
         return { success: false, message: 'Invalid signature' };
       }
@@ -46,6 +52,7 @@ export class PaymentWebhookService {
 
       await this.repo.recordWebhook(webhookId, orderId, signature, payload);
 
+      // Lookup invoice by order_id
       let invoice;
       if (orderId.startsWith('INV-')) {
         const invoiceResult = await this.repo['pool'].query(
@@ -55,79 +62,53 @@ export class PaymentWebhookService {
         invoice = invoiceResult.rows[0];
       } else {
         const bookingResult = await this.repo['pool'].query(
-          'SELECT * FROM bookings WHERE id = $1',
+          'SELECT * FROM invoices WHERE booking_id = $1',
           [orderId]
         );
-        if (bookingResult.rows.length > 0) {
-          const booking = bookingResult.rows[0];
-          const invoiceResult = await this.repo['pool'].query(
-            'SELECT * FROM invoices WHERE booking_id = $1',
-            [booking.id]
-          );
-          invoice = invoiceResult.rows[0];
-        }
+        invoice = bookingResult.rows[0];
       }
 
       if (!invoice) {
-        logger.error(`Invoice not found for order_id: ${orderId}`);
+        logger.warn(`⚠️ Invoice not found for order ${orderId}`);
         await this.repo.updateStatus(webhookId, 'FAILED');
-        await this.repo.createErrorRecord(
-          webhookId,
-          `Invoice not found for order_id: ${orderId}`,
-          new Date(Date.now() + 30 * 1000)
-        );
+        await this.repo.createErrorRecord(webhookId, "Invoice not found", new Date(Date.now() + 5 * 60 * 1000));
         return { success: false, message: 'Invoice not found' };
       }
 
-      const paidAmount = parseFloat(payload.gross_amount) || invoice.amount_due;
-      await this.invoiceService.markPaid(
-        invoice.id,
-        'system',
-        'GATEWAY',
-        paidAmount,
-        `Payment via Midtrans: ${payload.transaction_id}`
-      );
+      // Mark invoice as paid
+      await this.invoiceService.markPaid(invoice.id, "system", "GATEWAY", Number(grossAmount), "Webhook payment");
 
       await this.repo.updateStatus(webhookId, 'PROCESSED');
-
       logger.info(`✅ Webhook ${webhookId} processed successfully`);
-      return { success: true, message: 'Webhook processed successfully' };
+
+      return { success: true, message: 'Payment confirmed' };
     } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, 'Webhook error');
+      logger.error(`❌ Webhook processing error: ${error.message}`);
       await this.repo.updateStatus(webhookId, 'FAILED');
-      await this.repo.createErrorRecord(
-        webhookId,
-        error.message || 'Unknown error',
-        new Date(Date.now() + 30 * 1000)
-      );
-      return { success: false, message: error.message || 'Webhook processing failed' };
+      await this.repo.createErrorRecord(webhookId, error.message, new Date(Date.now() + 5 * 60 * 1000));
+      return { success: false, message: error.message };
     }
   }
 
+  // Retry failed webhooks (cron job)
   async retryFailedWebhooks(): Promise<void> {
     const pending = await this.repo.getPendingRetries();
     for (const item of pending) {
-      const payload = item.payload;
-      const orderId = item.order_id;
-      const webhookId = item.webhook_id;
-      const _signature = ''; // signature not needed for retry
-
-      const result = await this.processPaymentWebhook(
-        webhookId,
-        orderId,
-        _signature,
-        payload,
-        process.env.MIDTRANS_SERVER_KEY || ''
-      );
-      if (!result.success) {
-        const errorRecord = await this.repo['pool'].query(
-          'SELECT retry_count FROM payment_webhook_errors WHERE webhook_id = $1',
-          [webhookId]
+      const { webhookId, orderId, signature, payload, serverKey } = item;
+      try {
+        const result = await this.processPaymentWebhook(
+          webhookId,
+          orderId,
+          signature,
+          payload,
+          serverKey
         );
-        if (errorRecord.rows.length > 0 && errorRecord.rows[0].retry_count >= 3) {
-          await this.repo.updateStatus(webhookId, 'PERMANENTLY_FAILED');
-          logger.error(`Webhook ${webhookId} permanently failed after 3 retries`);
+        if (result.success) {
+          await this.repo.deleteErrorRecord(webhookId);
         }
+      } catch (error: any) {
+        // Increment retry count and schedule next retry
+        await this.repo.incrementRetryCount(webhookId, error.message);
       }
     }
   }

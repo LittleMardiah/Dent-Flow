@@ -14,9 +14,25 @@ describe('PaymentWebhookService', () => {
   const serverKey = 'test-key';
   const orderId = 'INV-001';
   const transactionId = 'txn-123';
-  const payload = { order_id: orderId, transaction_id: transactionId, gross_amount: '100000' };
+  const statusCode = '200';
+  const grossAmount = '100000';
+
+  // ============================================================
+  // SIGNATURE GENERATION - STANDAR MIDTRANS (SHA256)
+  // Formula: SHA256(order_id + status_code + gross_amount + server_key)
+  // ============================================================
+  const validSignature = crypto
+    .createHash('sha256')
+    .update(orderId + statusCode + grossAmount + serverKey)
+    .digest('hex');
+
+  const payload = {
+    order_id: orderId,
+    transaction_id: transactionId,
+    status_code: statusCode,
+    gross_amount: grossAmount,
+  };
   const payloadStr = JSON.stringify(payload);
-  const validSignature = crypto.createHmac('sha256', serverKey).update(payloadStr).digest('hex');
 
   beforeEach(() => {
     mockRepo = new PaymentWebhookRepository() as jest.Mocked<PaymentWebhookRepository>;
@@ -27,17 +43,28 @@ describe('PaymentWebhookService', () => {
   });
 
   it('should validate Midtrans signature correctly', () => {
-    const result = service.validateMidtransSignature(payloadStr, validSignature, serverKey);
+    const result = service.validateMidtransSignature(
+      orderId,
+      statusCode,
+      grossAmount,
+      validSignature,
+      serverKey
+    );
     expect(result).toBe(true);
   });
 
   it('should reject invalid signature', () => {
-    const result = service.validateMidtransSignature(payloadStr, 'invalid', serverKey);
+    const result = service.validateMidtransSignature(
+      orderId,
+      statusCode,
+      grossAmount,
+      'invalid',
+      serverKey
+    );
     expect(result).toBe(false);
   });
 
   it('should return already processed if webhook is idempotent', async () => {
-    // Signature validation must pass, so we use valid signature
     mockRepo.isWebhookProcessed.mockResolvedValue(true);
 
     const result = await service.processPaymentWebhook(
@@ -56,7 +83,7 @@ describe('PaymentWebhookService', () => {
     mockRepo.recordWebhook.mockResolvedValue();
     mockRepo.updateStatus.mockResolvedValue();
 
-    // Mock invoice lookup (via pool.query)
+    // Mock invoice lookup
     const mockInvoiceResult = { rows: [{ id: 'inv-1', amount_due: 100000 }] };
     (mockRepo as any).pool = { query: jest.fn().mockResolvedValue(mockInvoiceResult) };
     mockInvoice.markPaid.mockResolvedValue({ id: 'inv-1' });
