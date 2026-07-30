@@ -3,13 +3,12 @@ import { logger } from '../utils/logger';
 import { noShowDetectionJob } from './noShowDetection.job';
 import { resetQueueJob } from './resetQueue.job';
 import { webhookRetryJob } from './webhookRetry.job';
-
+//
 export interface ScheduledJob {
   name: string;
   schedule: string;
   execute: () => Promise<void>;
 }
-// 
 export class JobScheduler {
   private jobs: Map<string, cron.ScheduledTask> = new Map();
   private isInitialized: boolean = false;
