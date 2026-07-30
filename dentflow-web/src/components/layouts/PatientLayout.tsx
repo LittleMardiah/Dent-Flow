@@ -4,6 +4,7 @@ import React, { ReactNode, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { AIChatWidget } from '@/components/patient/AIChatWidget';
 import { Menu, X, Home, Calendar, FileText, User, LogOut } from 'lucide-react';
 
 interface PatientLayoutProps {
@@ -108,6 +109,9 @@ export const PatientLayout: React.FC<PatientLayoutProps> = ({ children }) => {
       <main className="flex-1 container mx-auto px-4 py-6">
         {children}
       </main>
+
+      {/* AI Chat Widget */}
+      <AIChatWidget />
 
       {/* Footer */}
       <footer className="bg-white border-t border-neutral py-4 text-center text-sm text-gray-500">
