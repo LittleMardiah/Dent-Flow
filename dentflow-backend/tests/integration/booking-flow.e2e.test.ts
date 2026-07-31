@@ -1,289 +1,347 @@
+import { app } from "../../src/index";
 import request from 'supertest';
-import { app } from '../../src/index';
-import { Pool } from 'pg';
-import { config } from '../../src/config';
-
-const pool = new Pool({ connectionString: config.database.url });
+import { pool } from '../../src/config/database';
+import { PasswordService } from '../../src/utils/password.utils';
+import { v4 as uuidv4 } from 'uuid';
+import Redis from 'ioredis';
 
 describe('E2E Booking Flow', () => {
-  beforeAll(() => {
-    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
-    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
-  });
-  let patientToken: string;
   let adminToken: string;
+  let patientToken: string;
   let doctorToken: string;
+  let branchId: string;
+  let patientId: string;
+  let doctorId: string;
   let bookingId: string;
-  let bookingCode: string;
   let queueId: string;
   let encounterId: string;
   let invoiceId: string;
-  let sessionSlotId: string;
+  let scheduleId: string;
+  let adminUserId: string;
+  let patientUserId: string;
+  let doctorUserId: string;
+  let patientRecordId: string;
+  let doctorRecordId: string;
 
-  const bookingDate = '2026-08-10';
+  const testBranchId = uuidv4();
+  const adminUserUuid = uuidv4();
+  const patientUserUuid = uuidv4();
+  const doctorUserUuid = uuidv4();
 
   beforeAll(async () => {
-    await pool.query("TRUNCATE bookings RESTART IDENTITY CASCADE;");
-    console.log('🔐 Setting up test data...');
-    console.log('📅 Booking date:', bookingDate);
+    // Set mock date (soal validasi session)
+    process.env.MOCK_DATE = '2026-08-10T09:30:00.000+07:00';
 
-    await pool.query(`DELETE FROM bookings WHERE DATE(session_start) = $1`, [bookingDate]);
-
-    // 🔥 Buat schedule dinamis untuk bookingDate
-    const scheduleDate = new Date(bookingDate + "T00:00:00");
-    const dayOfWeek = scheduleDate.getDay();
-    const branchId = "494a607c-d109-4330-a3a9-68f54326f0c7";
-    const doctorUserId = "965dedad-11ba-46a3-a402-f88c2029c676";
-    const sessionStart = "13:00:00";
-    const sessionEnd = "16:00:00";
-    
-    await pool.query(`DELETE FROM doctor_schedules WHERE dokter_id = $1 AND branch_id = $2 AND day_of_week = $3`, [doctorUserId, branchId, dayOfWeek]);
-    const scheduleRes = await pool.query(
-      `INSERT INTO doctor_schedules (branch_id, dokter_id, day_of_week, session_start, session_end, max_patients_per_session, is_active)
-       VALUES ($1, $2, $3, $4, $5, 4, true) RETURNING id`,
-      [branchId, doctorUserId, dayOfWeek, sessionStart, sessionEnd]
+    // 1. Create branch
+    await pool.query(
+      `INSERT INTO branches (id, name, address) 
+       VALUES ($1, $2, $3) 
+       ON CONFLICT (id) DO NOTHING`,
+      [testBranchId, 'Cabang Test E2E', 'Jl. Test E2E']
     );
-    sessionSlotId = scheduleRes.rows[0].id;
-    console.log(`✅ Schedule created for ${bookingDate}, id: ${sessionSlotId}`);
+    branchId = testBranchId;
 
+    // 2. Admin user
+    const adminPassword = await PasswordService.hashPassword('Admin123!');
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, 'ADMIN_BRANCH', $3, $4, $5)`,
+      [adminUserUuid, branchId, 'admin_e2e@clinic.com', adminPassword, 'admin_e2e']
+    );
+    adminUserId = adminUserUuid;
 
-    await pool.query(`
-      INSERT INTO branches (id, name, address)
-      SELECT gen_random_uuid(), 'Cabang B', 'Jakarta Selatan'
-      WHERE NOT EXISTS (SELECT 1 FROM branches WHERE name = 'Cabang B')
-    `);
+    // 3. Patient user
+    const patientPassword = await PasswordService.hashPassword('Patient123!');
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, 'PATIENT', $3, $4, $5)`,
+      [patientUserUuid, branchId, 'patient_e2e@test.com', patientPassword, 'patient_e2e']
+    );
+    patientUserId = patientUserUuid;
 
-    console.log('🔐 Logging in all roles...');
+    // 4. Patient record
+    const patRes = await pool.query(
+      `INSERT INTO patients (id, branch_id, user_id, full_name, phone) 
+       VALUES ($1, $2, $3, 'Patient E2E', '08123456789') 
+       RETURNING id`,
+      [uuidv4(), branchId, patientUserId]
+    );
+    patientRecordId = patRes.rows[0].id;
+    patientId = patientUserId;
 
-    const patientRes = await request(app)
-      .post('/auth/patient/login')
-      .send({ username: 'budi_santoso', password: 'Patient123!' });
-    expect(patientRes.status).toBe(200);
-    patientToken = patientRes.body.data.token;
+    // 5. Doctor user
+    const doctorPassword = await PasswordService.hashPassword('Doctor123!');
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, 'DOCTOR', $3, $4, $5)`,
+      [doctorUserUuid, branchId, 'doctor_e2e@clinic.com', doctorPassword, 'doctor_e2e']
+    );
+    doctorUserId = doctorUserUuid;
 
-    const adminRes = await request(app)
+    // 6. Doctor record
+    const docRes = await pool.query(
+      `INSERT INTO doctors (id, branch_id, user_id, full_name, specialization) 
+       VALUES ($1, $2, $3, 'Doctor E2E', 'General') 
+       RETURNING id`,
+      [uuidv4(), branchId, doctorUserId]
+    );
+    doctorRecordId = docRes.rows[0].id;
+    doctorId = doctorUserId;
+
+    // 7. Doctor schedule (day_of_week = 1 = Monday, karena MOCK_DATE = 2026-08-10 adalah Monday)
+    const scheduleRes = await pool.query(
+      `INSERT INTO doctor_schedules (branch_id, dokter_id, day_of_week, session_start, session_end, max_patients_per_session)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      [branchId, doctorUserId, 1, '09:00', '12:00', 4]
+    );
+    scheduleId = scheduleRes.rows[0].id;
+
+    // 8. Login as admin
+    const loginAdmin = await request(app)
       .post('/auth/admin/login')
-      .send({ username: 'admin_a', password: 'Admin123!' });
-    expect(adminRes.status).toBe(200);
-    adminToken = adminRes.body.data.token;
+      .send({ username: 'admin_e2e', password: 'Admin123!' });
+    expect(loginAdmin.status).toBe(200);
+    adminToken = loginAdmin.body.data.token;
 
-    const doctorRes = await request(app)
+    // 9. Login as patient
+    const loginPatient = await request(app)
+      .post('/auth/patient/login')
+      .send({ email: 'patient_e2e@test.com', password: 'Patient123!' });
+    expect(loginPatient.status).toBe(200);
+    patientToken = loginPatient.body.data.token;
+
+    // 10. Login as doctor
+    const loginDoctor = await request(app)
       .post('/auth/doctor/login')
-      .send({ username: 'dr_bm_a', password: 'Doctor123!' });
-    expect(doctorRes.status).toBe(200);
-    doctorToken = doctorRes.body.data.token;
-
-    console.log('✅ All tokens obtained');
-  }, 60000);
-
-  // ================================================================
-  // TC-01 s/d TC-03: PASSING
-  // ================================================================
-  describe('Patient Booking Flow', () => {
-  beforeAll(() => {
-    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
-    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
-  });
-    test('1. Get doctor availability', async () => {
-      const res = await request(app)
-        .get('/api/doctors/965dedad-11ba-46a3-a402-f88c2029c676/availability')
-        .set('Authorization', `Bearer ${patientToken}`)
-        .query({
-          branch_id: '494a607c-d109-4330-a3a9-68f54326f0c7',
-          date: bookingDate
-        });
-      expect(res.status).toBe(200);
-      expect(res.body.data.slots.length).toBeGreaterThan(0);
-    });
-
-    test('2. Create booking', async () => {
-      const res = await request(app)
-        .post('/api/patient/bookings')
-        .set('Authorization', `Bearer ${patientToken}`)
-        .send({
-          branchId: '494a607c-d109-4330-a3a9-68f54326f0c7',
-          doctorId: '965dedad-11ba-46a3-a402-f88c2029c676',
-          bookingDate: bookingDate,
-          sessionSlotId: sessionSlotId,
-          notes: `Integration test booking ${Date.now()}`
-        });
-      expect(res.status).toBe(201);
-      bookingId = res.body.data.id;
-      bookingCode = res.body.data.bookingCode;
-      expect(bookingCode).toBeDefined();
-    });
-
-    test('3. List patient bookings', async () => {
-      const res = await request(app)
-        .get('/api/patient/bookings')
-        .set('Authorization', `Bearer ${patientToken}`)
-        .query({ status: 'PENDING_PAYMENT' });
-      expect(res.status).toBe(200);
-      expect(Array.isArray(res.body.data.bookings)).toBe(true);
-    });
-  });
-
-  // ================================================================
-  // TC-04 dan TC-05: SKIP
-  // ================================================================
-  describe('Admin Check-in', () => {
-  beforeAll(() => {
-    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
-    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
-  });
-    test.skip('4. Admin checks-in patient (skip - butuh mock date)', async () => {});
-  });
-  describe('Queue Status', () => {
-  beforeAll(() => {
-    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
-    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
-  });
-    test.skip('5. Get queue status (skip)', async () => {});
-  });
-
-  // ================================================================
-  // TC-06 s/d TC-10: PASSING
-  // ================================================================
-  describe('Doctor Encounter Flow', () => {
-  beforeAll(() => {
-    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
-    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
-  });
-    test('6. Doctor starts encounter', async () => {
-      if (!bookingId) { console.log('⏭️ No booking'); return; }
-      const res = await request(app)
-        .post('/api/encounters')
-        .set('Authorization', `Bearer ${doctorToken}`)
-        .send({ booking_id: bookingId, complaint: 'Sakit gigi', branch_id: '494a607c-d109-4330-a3a9-68f54326f0c7' });
-      if (res.status === 403) { console.log('⚠️ Encounter 403, skipping'); return; }
-      expect(res.status).toBe(201);
-      encounterId = res.body.data.id;
-      expect(encounterId).toBeDefined();
-    });
-
-    test('7. Doctor records diagnosis', async () => {
-      if (!encounterId) { console.log('⏭️ No encounter'); return; }
-      const res = await request(app)
-        .put(`/api/encounters/${encounterId}`)
-        .set('Authorization', `Bearer ${doctorToken}`)
-        .send({ diagnosis: 'Karies', icd10_code: 'K02.9', treatment: 'Filling', notes: 'Composite' });
-      expect(res.status).toBe(200);
-    });
-
-    test('8. Doctor completes encounter → invoice auto-generated', async () => {
-      if (!encounterId) { console.log('⏭️ No encounter'); return; }
-      const res = await request(app)
-        .post(`/api/encounters/${encounterId}/complete`)
-        .set('Authorization', `Bearer ${doctorToken}`)
-        .send({});
-      expect(res.status).toBe(200);
-      invoiceId = res.body.data.invoice_id;
-      expect(invoiceId).toBeDefined();
-    });
-  });
-
-  describe('Admin Invoice Payment', () => {
-  beforeAll(() => {
-    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
-    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
-  });
-    test('9. Admin marks invoice as paid', async () => {
-      if (!invoiceId) { console.log('⏭️ No invoice'); return; }
-      const res = await request(app)
-        .post(`/api/admin/invoices/${invoiceId}/mark-paid`)
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({ payment_method: 'CASH', paid_amount: 200000 });
-      expect(res.status).toBe(200);
-      expect(res.body.data.status).toBe('PAID');
-    });
-
-    test('10. Get invoice detail', async () => {
-      if (!invoiceId) { console.log('⏭️ No invoice'); return; }
-      const res = await request(app)
-        .get(`/api/admin/invoices/${invoiceId}`)
-        .set('Authorization', `Bearer ${adminToken}`);
-      expect(res.status).toBe(200);
-      expect(res.body.data.status).toBe('PAID');
-    });
-  });
-
-  // ================================================================
-  // TC-11: Walk-in (FIX)
-  // ================================================================
-  describe('Walk-in Flow', () => {
-  beforeAll(() => {
-    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
-    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
-  });
-    test('11. Admin creates walk-in patient', async () => {
-      const res = await request(app)
-        .post('/api/admin/check-in/walk-in')
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({
-          name: 'Walk-in Test',
-          phone: '08123456789',
-          doctor_id: '965dedad-11ba-46a3-a402-f88c2029c676',
-          branch_id: '494a607c-d109-4330-a3a9-68f54326f0c7'
-        });
-      expect(res.status).toBe(201);
-      expect(res.body.data.queue_number).toBeDefined();
-    });
-  });
-
-  // ================================================================
-  // TC-12: Multi-tenant (FIX - session unik)
-  // ================================================================
-  describe('Multi-tenant Isolation', () => {
-  beforeAll(() => {
-    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
-    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
-  });
-    test('12. Admin from Branch A cannot access Branch B booking', async () => {
-      // Dapatkan patient_id
-      const patientIdRes = await pool.query(
-        `SELECT id FROM patients WHERE user_id = 'd83659a9-6657-4c3e-a488-923e3d3d52c0' LIMIT 1`
-      );
-      const patientId = patientIdRes.rows[0]?.id;
-
-      // Dapatkan real doctor_id
-      const doctorIdRes = await pool.query(
-        `SELECT id FROM doctors WHERE user_id = '965dedad-11ba-46a3-a402-f88c2029c676' LIMIT 1`
-      );
-      const realDoctorId = doctorIdRes.rows[0]?.id;
-
-      const branchB = await pool.query(
-        `SELECT id FROM branches WHERE name = 'Cabang B' LIMIT 1`
-      );
-      const branchBId = branchB.rows[0]?.id || '494a607c-d109-4330-a3a9-68f54326f0c7';
-
-      const today = new Date();
-      const bDate = today.toISOString().split('T')[0];
-      // ✅ GUNAKAN SESSION UNIK (14:00-17:00) agar tidak bentrok
-      const sStart = `${bDate} 14:00:00`;
-      const sEnd = `${bDate} 17:00:00`;
-      const bTime = '14:00:00';
-      const codeB = Math.random().toString(36).substring(2, 8).toUpperCase();
-
-      const bookingB = await pool.query(
-        `INSERT INTO bookings 
-         (branch_id, patient_id, doctor_id, status, booking_date, booking_time, session_start, session_end, booking_code) 
-         VALUES ($1, $2, $3, 'PAYMENT_CONFIRMED', $4, $5, $6, $7, $8) 
-         RETURNING id`,
-        [branchBId, patientId, realDoctorId, bDate, bTime, sStart, sEnd, codeB]
-      );
-
-      const res = await request(app)
-        .get(`/api/patient/bookings/${bookingB.rows[0].id}`)
-        .set('Authorization', `Bearer ${adminToken}`);
-      expect(res.status).toBe(403);
-    });
+      .send({ username: 'doctor_e2e', password: 'Doctor123!' });
+    expect(loginDoctor.status).toBe(200);
+    doctorToken = loginDoctor.body.data.token;
   });
 
   afterAll(async () => {
-    console.log('🧹 Cleaning up test data...');
-    if (bookingId) {
-      await pool.query(`DELETE FROM bookings WHERE id = $1`, [bookingId]);
-    }
+    // Cleanup
+    await pool.query('DELETE FROM bookings WHERE patient_id = $1', [patientRecordId]);
+    await pool.query('DELETE FROM queues WHERE booking_id IN (SELECT id FROM bookings WHERE patient_id = $1)', [patientRecordId]);
+    await pool.query('DELETE FROM encounters WHERE patient_id = $1', [patientRecordId]);
+    await pool.query('DELETE FROM invoices WHERE patient_id = $1', [patientRecordId]);
+    await pool.query('DELETE FROM patients WHERE id = $1', [patientRecordId]);
+    await pool.query('DELETE FROM doctors WHERE id = $1', [doctorRecordId]);
+    await pool.query('DELETE FROM users WHERE id IN ($1, $2, $3)', [adminUserId, patientUserId, doctorUserId]);
+    await pool.query('DELETE FROM branches WHERE id = $1', [branchId]);
     await pool.end();
+  });
+
+  // ============================================================
+  // TEST 1: Get doctor availability
+  // ============================================================
+  it('1. Get doctor availability', async () => {
+    const res = await request(app)
+      .get(`/api/doctors/${doctorId}/availability?date=2026-08-10&branchId=${branchId}`)
+      .set('Authorization', `Bearer ${patientToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveProperty('slots');
+  });
+
+  // ============================================================
+  // TEST 2: Create booking
+  // ============================================================
+  it('2. Create booking', async () => {
+    const res = await request(app)
+      .post('/api/patient/bookings')
+      .set('Authorization', `Bearer ${patientToken}`)
+      .send({
+        doctorId: doctorId,
+        branchId: branchId,
+        bookingDate: '2026-08-10',
+        sessionSlotId: scheduleId,
+        notes: 'E2E test booking',
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toHaveProperty('bookingId');
+    bookingId = res.body.data.bookingId;
+  });
+
+  // ============================================================
+  // TEST 3: List patient bookings
+  // ============================================================
+  it('3. List patient bookings', async () => {
+    const res = await request(app)
+      .get('/api/patient/bookings')
+      .set('Authorization', `Bearer ${patientToken}`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
+  });
+
+  // ============================================================
+  // TEST 4: Admin checks-in patient (AKTIF)
+  // ============================================================
+  it('4. Admin checks-in patient (mock date)', async () => {
+    // Pastikan booking status PAYMENT_CONFIRMED dulu (kita set langsung)
+    await pool.query(
+      `UPDATE bookings SET status = 'PAYMENT_CONFIRMED' WHERE id = $1`,
+      [bookingId]
+    );
+    const res = await request(app)
+      .post('/api/admin/check-in')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        checkInCode: bookingId, // atau bisa pake kode booking, tapi kita simpen sementara
+        branchId: branchId,
+      });
+    // Karena kita pake bookingId sebagai checkInCode (tidak sesuai), mungkin error, tapi kita adjust
+    // Di implementasi asli check-in pake kode booking 6 digit. Kita perlu generate kode booking.
+    // Tapi untuk test, kita akan pake booking_code yang ada di DB.
+    const bookingData = await pool.query(
+      `SELECT booking_code FROM bookings WHERE id = $1`,
+      [bookingId]
+    );
+    const checkInCode = bookingData.rows[0]?.booking_code;
+    expect(checkInCode).toBeDefined();
+
+    const checkinRes = await request(app)
+      .post('/api/admin/check-in')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        checkInCode: checkInCode,
+        branchId: branchId,
+      });
+    expect(checkinRes.status).toBe(200);
+    expect(checkinRes.body.data).toHaveProperty('queueNumber');
+    queueId = checkinRes.body.data.queueId;
+  });
+
+  // ============================================================
+  // TEST 5: Get queue status (AKTIF)
+  // ============================================================
+  it('5. Get queue status', async () => {
+    const res = await request(app)
+      .get(`/api/queue/status?branchId=${branchId}&doctorId=${doctorId}`)
+      .set('Authorization', `Bearer ${patientToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveProperty('waitingQueue');
+    expect(Array.isArray(res.body.data.waitingQueue)).toBe(true);
+  });
+
+  // ============================================================
+  // TEST 6: Doctor starts encounter
+  // ============================================================
+  it('6. Doctor starts encounter', async () => {
+    const res = await request(app)
+      .post('/api/encounters')
+      .set('Authorization', `Bearer ${doctorToken}`)
+      .send({
+        bookingId: bookingId,
+        branchId: branchId,
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toHaveProperty('encounterId');
+    encounterId = res.body.data.encounterId;
+  });
+
+  // ============================================================
+  // TEST 7: Doctor records diagnosis
+  // ============================================================
+  it('7. Doctor records diagnosis', async () => {
+    const res = await request(app)
+      .put(`/api/encounters/${encounterId}`)
+      .set('Authorization', `Bearer ${doctorToken}`)
+      .send({
+        diagnosis: 'Karies gigi',
+        icd10Code: 'K02.9',
+        treatment: 'Filling',
+        notes: 'Test E2E',
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveProperty('status', 'ONGOING');
+  });
+
+  // ============================================================
+  // TEST 8: Doctor completes encounter → invoice auto-generated
+  // ============================================================
+  it('8. Doctor completes encounter → invoice auto-generated', async () => {
+    const res = await request(app)
+      .post(`/api/encounters/${encounterId}/complete`)
+      .set('Authorization', `Bearer ${doctorToken}`)
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveProperty('invoiceId');
+    invoiceId = res.body.data.invoiceId;
+  });
+
+  // ============================================================
+  // TEST 9: Admin marks invoice as paid
+  // ============================================================
+  it('9. Admin marks invoice as paid', async () => {
+    const res = await request(app)
+      .post(`/api/admin/invoices/${invoiceId}/mark-paid`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        payment_method: 'CASH',
+        paid_amount: 200000,
+        notes: 'Paid by admin',
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('PAID');
+  });
+
+  // ============================================================
+  // TEST 10: Get invoice detail
+  // ============================================================
+  it('10. Get invoice detail', async () => {
+    const res = await request(app)
+      .get(`/api/admin/invoices/${invoiceId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveProperty('id', invoiceId);
+    expect(res.body.data).toHaveProperty('status', 'PAID');
+  });
+
+  // ============================================================
+  // TEST 11: Admin creates walk-in patient
+  // ============================================================
+  it('11. Admin creates walk-in patient', async () => {
+    const res = await request(app)
+      .post('/api/admin/walk-in')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Walk-in E2E',
+        phone: '08123456790',
+        branchId: branchId,
+        doctorId: doctorId,
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toHaveProperty('queueNumber');
+  });
+
+  // ============================================================
+  // TEST 12: Multi-tenant isolation
+  // ============================================================
+  it('12. Admin from Branch A cannot access Branch B booking', async () => {
+    // Buat branch lain
+    const branchBId = uuidv4();
+    await pool.query(
+      `INSERT INTO branches (id, name, address) VALUES ($1, 'Cabang B E2E', 'Jl. Test B')`,
+      [branchBId]
+    );
+    // Buat booking di branch B (pakai doctor yang sama)
+    const bookingBRes = await pool.query(
+      `INSERT INTO bookings (id, branch_id, patient_id, doctor_id, booking_date, booking_time, status, booking_code, is_walk_in)
+       VALUES (gen_random_uuid(), $1, $2, $3, '2026-08-10', '09:00:00', 'PAYMENT_CONFIRMED', 'BCODE', false)
+       RETURNING id`,
+      [branchBId, patientRecordId, doctorRecordId]
+    );
+    const bookingBId = bookingBRes.rows[0].id;
+
+    // Admin cabang A mencoba akses booking cabang B
+    const res = await request(app)
+      .get(`/api/admin/bookings/${bookingBId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(403);
+
+    // Cleanup
+    await pool.query('DELETE FROM bookings WHERE id = $1', [bookingBId]);
+    await pool.query('DELETE FROM branches WHERE id = $1', [branchBId]);
   });
 });

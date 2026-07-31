@@ -1,3 +1,4 @@
+import { getCurrentTime } from "../utils/time";
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { config } from '../config';
@@ -47,7 +48,7 @@ export const addWalkIn = async (req: Request, res: Response) => {
     const realDoctorId = doctorRes.rows[0].id;
 
     // 4. Buat booking dengan session unik (09:00-12:00)
-    const today = new Date();
+    const today = getCurrentTime();
     const bookingDate = today.toISOString().split('T')[0];
     const sessionStart = `${bookingDate} 09:00:00`;
     const sessionEnd = `${bookingDate} 12:00:00`;

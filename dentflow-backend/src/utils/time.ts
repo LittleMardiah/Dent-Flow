@@ -1,7 +1,6 @@
 /**
  * Get current time for business logic.
- * Allows mocking time in tests without using fake timers
- * (which break database connection pools).
+ * In test environment, can be overridden via MOCK_DATE env var.
  */
 export const getCurrentTime = (): Date => {
   if (process.env.NODE_ENV === 'test' && process.env.MOCK_DATE) {
