@@ -1,3 +1,4 @@
+import { getCurrentTime } from "../utils/time";
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -53,7 +54,7 @@ export class CheckinService {
         throw new Error('SUDAH_CHECK_IN');
       }
 
-      const now = new Date();
+      const now = getCurrentTime();
       const sessionStart = new Date(booking.session_start + 'Z');
       const sessionEnd = new Date(booking.session_end + 'Z');
 

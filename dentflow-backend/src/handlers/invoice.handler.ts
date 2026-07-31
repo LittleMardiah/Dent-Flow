@@ -7,6 +7,7 @@ export class InvoiceHandler {
   constructor(private invoiceService: InvoiceService) {}
 
   markPaid = async (req: Request, res: Response): Promise<void> => {
+    console.log("🔍 [markPaid] req.user:", JSON.stringify(req.user, null, 2));
     try {
       const invoiceId = req.params.id as string;
       const { payment_method, paid_amount, notes } = req.body;

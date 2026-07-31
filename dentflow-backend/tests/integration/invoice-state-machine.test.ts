@@ -1,19 +1,26 @@
 import { app } from "../../src/index";
 import request from 'supertest';
-;
 import { pool } from '../../src/config/database';
-import { InvoiceService } from '../../src/services/invoice.service';
 import { InvoiceStateValidator } from '../../src/services/invoiceStateValidator.service';
-import bcrypt from 'bcryptjs';
-import { randomBytes } from 'crypto';
+import { PasswordService } from '../../src/utils/password.utils';
+import { v4 as uuidv4 } from 'uuid';
 
-describe.skip('Invoice State Machine & Database Constraints', () => {
+describe('Invoice State Machine & Database Constraints', () => {
   let adminToken: string;
   let testInvoiceId: string;
-  const branchId = '494a607c-d109-4330-a3a9-68f54326f0c7';
+  let branchId: string;
+  let patientRecordId: string;
+  let doctorRecordId: string;
+  let bookingId: string;
+  let encounterId: string;
+
+  const testBranchId = uuidv4();
+  const testAdminUserId = uuidv4();
+  const testPatientUserId = uuidv4();
+  const testDoctorUserId = uuidv4();
 
   beforeAll(async () => {
-    // === Ensure constraint exists (self-contained) ===
+    // Ensure valid_paid_state constraint exists
     const constraintCheck = await pool.query(`
       SELECT EXISTS (
         SELECT FROM pg_constraint 
@@ -22,7 +29,6 @@ describe.skip('Invoice State Machine & Database Constraints', () => {
     `);
     if (!constraintCheck.rows[0].exists) {
       console.log('🔄 Adding valid_paid_state constraint...');
-      // Fix existing data first
       await pool.query(
         `UPDATE invoices SET amount_paid = 0, paid_at = NULL WHERE status = 'UNPAID' AND (amount_paid != 0 OR paid_at IS NOT NULL);`
       );
@@ -39,101 +45,133 @@ describe.skip('Invoice State Machine & Database Constraints', () => {
       console.log('✅ valid_paid_state constraint added.');
     }
 
-    // Login admin
-    const adminRes = await request(app)
-      .post('/auth/admin/login')
-      .send({ username: 'admin_a', password: 'Admin123!' });
-    adminToken = adminRes.body.data.token;
-    expect(adminRes.status).toBe(200);
-
     // 1. Branch
     await pool.query(
-      `INSERT INTO branches (id, name, phone, address, is_active)
-       VALUES ($1, 'Cabang Test', '021-1234567', 'Jl. Test', true)
+      `INSERT INTO branches (id, name, address) 
+       VALUES ($1, $2, $3) 
        ON CONFLICT (id) DO NOTHING`,
-      [branchId]
+      [testBranchId, 'Test Branch Invoice', 'Jl. Test Invoice']
     );
+    branchId = testBranchId;
 
-    // 2. Patient
-    const patientUserId = await pool.query(
-      `INSERT INTO users (id, branch_id, role, email, username, password_hash, is_active)
-       VALUES (gen_random_uuid(), $1, 'PATIENT', 'test_patient@clinic.com', 'test_patient', $2, true)
-       ON CONFLICT (username) DO NOTHING
-       RETURNING id`,
-      [branchId, await bcrypt.hash('password', 10)]
-    );
-    let patientId;
-    if (patientUserId.rows.length > 0) {
-      const pid = patientUserId.rows[0].id;
-      const patRes = await pool.query(
-        `INSERT INTO patients (id, branch_id, user_id, full_name, phone)
-         VALUES (gen_random_uuid(), $1, $2, 'Test Patient', '08123456789')
-         ON CONFLICT (user_id) DO NOTHING
-         RETURNING id`,
-        [branchId, pid]
-      );
-      patientId = patRes.rows[0].id;
-    } else {
-      const existing = await pool.query('SELECT id FROM patients LIMIT 1');
-      patientId = existing.rows[0].id;
-    }
-
-    // 3. Doctor
-    const doctorUserId = '965dedad-11ba-46a3-a402-f88c2029c676';
+    // 2. Admin user (dynamic)
+    const adminPasswordHash = await PasswordService.hashPassword('Admin123!');
     await pool.query(
-      `INSERT INTO users (id, branch_id, role, email, username, password_hash, is_active)
-       VALUES ($1, $2, 'DOCTOR', 'dr_test@clinic.com', 'dr_test', $3, true)
-       ON CONFLICT (id) DO NOTHING`,
-      [doctorUserId, branchId, await bcrypt.hash('Doctor123!', 10)]
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, $3, $4, $5, $6) 
+       ON CONFLICT (email) DO NOTHING`,
+      [testAdminUserId, branchId, 'ADMIN_BRANCH', `admin_${Date.now()}@clinic.com`, adminPasswordHash, `admin_${Date.now()}`]
     );
-    const doctorRes = await pool.query(
-      `INSERT INTO doctors (id, branch_id, user_id, full_name, specialization, license_number, is_available)
-       VALUES (gen_random_uuid(), $1, $2, 'drg. Test Sp.BM', 'Sp.BM', 'LIC-001', true)
-       ON CONFLICT (user_id) DO NOTHING
-       RETURNING id`,
-      [branchId, doctorUserId]
-    );
-    let doctorId;
-    if (doctorRes.rows.length > 0) {
-      doctorId = doctorRes.rows[0].id;
-    } else {
-      const existing = await pool.query('SELECT id FROM doctors WHERE user_id = $1', [doctorUserId]);
-      doctorId = existing.rows[0].id;
-    }
 
-    // 4. Booking (with unique booking_code)
-    const uniqueCode = randomBytes(4).toString('hex').toUpperCase();
+    // 3. Login admin
+    const adminUserRes = await pool.query(
+      `SELECT username FROM users WHERE id = $1`,
+      [testAdminUserId]
+    );
+    const adminUsername = adminUserRes.rows[0].username;
+    const loginRes = await request(app)
+      .post('/auth/admin/login')
+      .send({ username: adminUsername, password: 'Admin123!' });
+    expect(loginRes.status).toBe(200);
+    adminToken = loginRes.body.data.token;
+
+    // 4. Patient user
+    const patientPasswordHash = await PasswordService.hashPassword('Patient123!');
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [testPatientUserId, branchId, 'PATIENT', `patient_${Date.now()}@test.com`, patientPasswordHash, `patient_${Date.now()}`]
+    );
+
+    // 5. Patient record
+    const patientRes = await pool.query(
+      `INSERT INTO patients (id, branch_id, user_id, full_name, phone) 
+       VALUES ($1, $2, $3, $4, $5) 
+       RETURNING id`,
+      [uuidv4(), branchId, testPatientUserId, 'Test Patient Invoice', '08123456789']
+    );
+    patientRecordId = patientRes.rows[0].id;
+
+    // 6. Doctor user
+    const doctorPasswordHash = await PasswordService.hashPassword('Doctor123!');
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, $3, $4, $5, $6) 
+       ON CONFLICT (email) DO NOTHING`,
+      [testDoctorUserId, branchId, 'DOCTOR', `doctor_${Date.now()}@clinic.com`, doctorPasswordHash, `doctor_${Date.now()}`]
+    );
+
+    // 7. Doctor record
+    const doctorRes = await pool.query(
+      `INSERT INTO doctors (id, branch_id, user_id, full_name, specialization) 
+       VALUES ($1, $2, $3, $4, $5) 
+       ON CONFLICT (user_id) DO NOTHING 
+       RETURNING id`,
+      [uuidv4(), branchId, testDoctorUserId, 'drg. Test Sp.BM', 'Sp.BM']
+    );
+    doctorRecordId = doctorRes.rows[0].id;
+
+    // 8. Schedule
+    const today = new Date();
+    await pool.query(
+      `INSERT INTO doctor_schedules (branch_id, dokter_id, day_of_week, session_start, session_end, max_patients_per_session)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT DO NOTHING`,
+      [branchId, testDoctorUserId, today.getDay(), '09:00', '12:00', 4]
+    );
+
+    // 9. Booking
+    const uniqueCode = uuidv4().substring(0, 8).toUpperCase();
     const bookingRes = await pool.query(
       `INSERT INTO bookings (id, branch_id, patient_id, doctor_id, booking_date, booking_time, status, booking_code, is_walk_in)
-       VALUES (gen_random_uuid(), $1, $2, $3, CURRENT_DATE, '09:00:00', 'PENDING', $4, false)
+       VALUES (gen_random_uuid(), $1, $2, $3, CURRENT_DATE, '09:00:00', 'PAYMENT_CONFIRMED', $4, false)
        RETURNING id`,
-      [branchId, patientId, doctorId, uniqueCode]
+      [branchId, patientRecordId, doctorRecordId, uniqueCode]
     );
-    const bookingId = bookingRes.rows[0].id;
+    bookingId = bookingRes.rows[0].id;
 
-    // 5. Encounter
+    // 10. Encounter
     const encRes = await pool.query(
       `INSERT INTO encounters (id, branch_id, booking_id, doctor_id, patient_id, status, started_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, 'IN_PROGRESS', NOW())
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, 'COMPLETED', NOW())
        RETURNING id`,
-      [branchId, bookingId, doctorId, patientId]
+      [branchId, bookingId, doctorRecordId, patientRecordId]
     );
-    const encounterId = encRes.rows[0].id;
+    encounterId = encRes.rows[0].id;
 
-    // 6. Invoice
+    // 11. Invoice
     const invoiceRes = await pool.query(
       `INSERT INTO invoices (id, branch_id, encounter_id, patient_id, amount_due, amount_paid, status)
        VALUES (gen_random_uuid(), $1, $2, $3, 200000, 0, 'UNPAID')
        RETURNING id`,
-      [branchId, encounterId, patientId]
+      [branchId, encounterId, patientRecordId]
     );
     testInvoiceId = invoiceRes.rows[0].id;
+
+    // 12. VERIFY TOKEN: call GET invoice detail
+    const verifyRes = await request(app)
+      .get(`/api/admin/invoices/${testInvoiceId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    console.log('🔍 VERIFY TOKEN RESPONSE:', verifyRes.status);
+    expect(verifyRes.status).toBe(200);
   });
 
   afterAll(async () => {
     if (testInvoiceId) {
       await pool.query('DELETE FROM invoices WHERE id = $1', [testInvoiceId]);
     }
+    if (encounterId) {
+      await pool.query('DELETE FROM encounters WHERE id = $1', [encounterId]);
+    }
+    if (bookingId) {
+      await pool.query('DELETE FROM bookings WHERE id = $1', [bookingId]);
+    }
+    await pool.query('DELETE FROM doctor_schedules WHERE dokter_id = $1', [testDoctorUserId]);
+    await pool.query('DELETE FROM doctors WHERE user_id = $1', [testDoctorUserId]);
+    await pool.query('DELETE FROM patients WHERE user_id = $1', [testPatientUserId]);
+    await pool.query('DELETE FROM audit_logs WHERE branch_id = $1', [branchId]);
+    await pool.query('DELETE FROM users WHERE id IN ($1, $2, $3)', [testAdminUserId, testPatientUserId, testDoctorUserId]);
+    await pool.query('DELETE FROM branches WHERE id = $1', [branchId]);
     await pool.end();
   });
 
@@ -146,14 +184,16 @@ describe.skip('Invoice State Machine & Database Constraints', () => {
   });
 
   it('should mark invoice as paid (admin)', async () => {
+    const payload = {
+      payment_method: 'CASH',
+      paid_amount: 200000,
+      notes: 'Payment received',
+    };
     const res = await request(app)
       .post(`/api/admin/invoices/${testInvoiceId}/mark-paid`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        payment_method: 'CASH',
-        paid_amount: 200000,
-        notes: 'Payment received',
-      });
+      .send(payload);
+    console.log('🔍 MARK PAID RESPONSE:', JSON.stringify(res.body, null, 2));
     expect(res.status).toBe(200);
     expect(res.body.data.status).toBe('PAID');
     expect(Number(res.body.data.amount_paid)).toBe(200000);
@@ -197,29 +237,68 @@ describe.skip('Invoice State Machine & Database Constraints', () => {
   });
 
   it('should have database constraint preventing invalid state', async () => {
-    // Create new unique booking/encounter for this test
-    const uniqueCode2 = randomBytes(4).toString('hex').toUpperCase();
-    const bookingRes2 = await pool.query(
+    const tempBranchId = uuidv4();
+    const tempPatientUserId = uuidv4();
+    const tempDoctorUserId = uuidv4();
+
+    await pool.query(
+      `INSERT INTO branches (id, name, address) VALUES ($1, 'Temp Branch', 'Temp Address')`,
+      [tempBranchId]
+    );
+
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, 'PATIENT', 'temp_patient@test.com', 'hashed', 'temp_patient')`,
+      [tempPatientUserId, tempBranchId]
+    );
+    const tempPatientRec = await pool.query(
+      `INSERT INTO patients (id, branch_id, user_id, full_name, phone) 
+       VALUES ($1, $2, $3, 'Temp Patient', '08123456789') 
+       RETURNING id`,
+      [uuidv4(), tempBranchId, tempPatientUserId]
+    );
+    const tempPatientId = tempPatientRec.rows[0].id;
+
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, 'DOCTOR', 'temp_doctor@clinic.com', 'hashed', 'temp_doctor')`,
+      [tempDoctorUserId, tempBranchId]
+    );
+    const tempDoctorRec = await pool.query(
+      `INSERT INTO doctors (id, branch_id, user_id, full_name, specialization) 
+       VALUES ($1, $2, $3, 'Temp Doctor', 'General') 
+       RETURNING id`,
+      [uuidv4(), tempBranchId, tempDoctorUserId]
+    );
+    const tempDoctorId = tempDoctorRec.rows[0].id;
+
+    const tempBooking = await pool.query(
       `INSERT INTO bookings (id, branch_id, patient_id, doctor_id, booking_date, booking_time, status, booking_code, is_walk_in)
-       VALUES (gen_random_uuid(), $1, (SELECT id FROM patients LIMIT 1), (SELECT id FROM doctors LIMIT 1), CURRENT_DATE, '10:00:00', 'PENDING', $2, false)
+       VALUES (gen_random_uuid(), $1, $2, $3, CURRENT_DATE, '09:00:00', 'PAYMENT_CONFIRMED', 'TEMPCODE', false)
        RETURNING id`,
-      [branchId, uniqueCode2]
+      [tempBranchId, tempPatientId, tempDoctorId]
     );
-    const bookingId2 = bookingRes2.rows[0].id;
-    const encRes2 = await pool.query(
+    const tempEncounter = await pool.query(
       `INSERT INTO encounters (id, branch_id, booking_id, doctor_id, patient_id, status, started_at)
-       VALUES (gen_random_uuid(), $1, $2, (SELECT id FROM doctors LIMIT 1), (SELECT id FROM patients LIMIT 1), 'IN_PROGRESS', NOW())
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, 'COMPLETED', NOW())
        RETURNING id`,
-      [branchId, bookingId2]
+      [tempBranchId, tempBooking.rows[0].id, tempDoctorId, tempPatientId]
     );
-    const encounterId2 = encRes2.rows[0].id;
 
     await expect(
       pool.query(
         `INSERT INTO invoices (id, branch_id, encounter_id, patient_id, amount_due, amount_paid, status, paid_at)
-         VALUES (gen_random_uuid(), $1, $2, (SELECT id FROM patients LIMIT 1), 100000, 0, 'UNPAID', NOW())`,
-        [branchId, encounterId2]
+         VALUES (gen_random_uuid(), $1, $2, $3, 100000, 0, 'UNPAID', NOW())`,
+        [tempBranchId, tempEncounter.rows[0].id, tempPatientId]
       )
     ).rejects.toThrow(/check constraint|invalid paid state/i);
+
+    await pool.query('DELETE FROM invoices WHERE encounter_id = $1', [tempEncounter.rows[0].id]);
+    await pool.query('DELETE FROM encounters WHERE id = $1', [tempEncounter.rows[0].id]);
+    await pool.query('DELETE FROM bookings WHERE id = $1', [tempBooking.rows[0].id]);
+    await pool.query('DELETE FROM doctors WHERE user_id = $1', [tempDoctorUserId]);
+    await pool.query('DELETE FROM patients WHERE user_id = $1', [tempPatientUserId]);
+    await pool.query('DELETE FROM users WHERE id IN ($1, $2)', [tempPatientUserId, tempDoctorUserId]);
+    await pool.query('DELETE FROM branches WHERE id = $1', [tempBranchId]);
   });
 });

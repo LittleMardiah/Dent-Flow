@@ -9,6 +9,6 @@ router.use(authMiddleware);
 router.use(roleMiddleware(['ADMIN_BRANCH']));
 
 // GET /api/admin/audit-logs
-router.get('/admin/audit-logs', getAuditLogs);
+router.get('/audit-logs', getAuditLogs);
 
 export default router;

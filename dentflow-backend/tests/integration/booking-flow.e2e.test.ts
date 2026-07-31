@@ -6,6 +6,10 @@ import { config } from '../../src/config';
 const pool = new Pool({ connectionString: config.database.url });
 
 describe('E2E Booking Flow', () => {
+  beforeAll(() => {
+    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
+    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
+  });
   let patientToken: string;
   let adminToken: string;
   let doctorToken: string;
@@ -76,6 +80,10 @@ describe('E2E Booking Flow', () => {
   // TC-01 s/d TC-03: PASSING
   // ================================================================
   describe('Patient Booking Flow', () => {
+  beforeAll(() => {
+    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
+    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
+  });
     test('1. Get doctor availability', async () => {
       const res = await request(app)
         .get('/api/doctors/965dedad-11ba-46a3-a402-f88c2029c676/availability')
@@ -119,9 +127,17 @@ describe('E2E Booking Flow', () => {
   // TC-04 dan TC-05: SKIP
   // ================================================================
   describe('Admin Check-in', () => {
+  beforeAll(() => {
+    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
+    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
+  });
     test.skip('4. Admin checks-in patient (skip - butuh mock date)', async () => {});
   });
   describe('Queue Status', () => {
+  beforeAll(() => {
+    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
+    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
+  });
     test.skip('5. Get queue status (skip)', async () => {});
   });
 
@@ -129,6 +145,10 @@ describe('E2E Booking Flow', () => {
   // TC-06 s/d TC-10: PASSING
   // ================================================================
   describe('Doctor Encounter Flow', () => {
+  beforeAll(() => {
+    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
+    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
+  });
     test('6. Doctor starts encounter', async () => {
       if (!bookingId) { console.log('⏭️ No booking'); return; }
       const res = await request(app)
@@ -163,6 +183,10 @@ describe('E2E Booking Flow', () => {
   });
 
   describe('Admin Invoice Payment', () => {
+  beforeAll(() => {
+    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
+    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
+  });
     test('9. Admin marks invoice as paid', async () => {
       if (!invoiceId) { console.log('⏭️ No invoice'); return; }
       const res = await request(app)
@@ -187,6 +211,10 @@ describe('E2E Booking Flow', () => {
   // TC-11: Walk-in (FIX)
   // ================================================================
   describe('Walk-in Flow', () => {
+  beforeAll(() => {
+    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
+    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
+  });
     test('11. Admin creates walk-in patient', async () => {
       const res = await request(app)
         .post('/api/admin/check-in/walk-in')
@@ -206,6 +234,10 @@ describe('E2E Booking Flow', () => {
   // TC-12: Multi-tenant (FIX - session unik)
   // ================================================================
   describe('Multi-tenant Isolation', () => {
+  beforeAll(() => {
+    process.env.MOCK_DATE = "2026-08-10T09:30:00.000+07:00";
+    console.log("🔍 [E2E] MOCK_DATE set to:", process.env.MOCK_DATE);
+  });
     test('12. Admin from Branch A cannot access Branch B booking', async () => {
       // Dapatkan patient_id
       const patientIdRes = await pool.query(

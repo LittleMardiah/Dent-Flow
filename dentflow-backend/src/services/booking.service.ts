@@ -1,3 +1,4 @@
+import { getCurrentTime } from "../utils/time";
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';

@@ -49,7 +49,7 @@ app.use('/api/no-shows', noShowRoutes);
 app.use('/api', attendanceRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/invoices', invoiceRoutes);
-app.use('/api/admin/audit', auditRoutes);
+app.use('/api/admin', auditRoutes);
 
 // Global error handler
 app.use(errorHandler);
