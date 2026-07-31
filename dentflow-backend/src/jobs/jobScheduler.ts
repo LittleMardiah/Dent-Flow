@@ -3,7 +3,7 @@ import { logger } from '../utils/logger';
 import { noShowDetectionJob } from './noShowDetection.job';
 import { resetQueueJob } from './resetQueue.job';
 import { webhookRetryJob } from './webhookRetry.job';
-//
+
 export interface ScheduledJob {
   name: string;
   schedule: string;
