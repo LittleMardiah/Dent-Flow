@@ -4,6 +4,7 @@ import { pool } from '../../src/config/database';
 import { PasswordService } from '../../src/utils/password.utils';
 import { v4 as uuidv4 } from 'uuid';
 import Redis from 'ioredis';
+let redis: Redis;
 
 describe('E2E Booking Flow', () => {
   let adminToken: string;
@@ -31,6 +32,7 @@ describe('E2E Booking Flow', () => {
   beforeAll(async () => {
     // Set mock date (soal validasi session)
     process.env.MOCK_DATE = '2026-08-10T09:30:00.000+07:00';
+    redis = new Redis(process.env.REDIS_URL || "redis://localhost:6380");
 
     // 1. Create branch
     await pool.query(
@@ -131,6 +133,7 @@ describe('E2E Booking Flow', () => {
     await pool.query('DELETE FROM users WHERE id IN ($1, $2, $3)', [adminUserId, patientUserId, doctorUserId]);
     await pool.query('DELETE FROM branches WHERE id = $1', [branchId]);
     await pool.end();
+    await redis.quit();
   });
 
   // ============================================================
