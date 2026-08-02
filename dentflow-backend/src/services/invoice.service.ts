@@ -4,7 +4,7 @@ import { logger } from '../utils/logger';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
 import { InvoiceStateValidator } from './invoiceStateValidator.service';
-
+// 
 export class InvoiceService {
   private pool: Pool;
 
