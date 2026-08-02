@@ -152,7 +152,7 @@ export class WalkInService {
       );
       const booking = bookingResult.rows[0];
 
-      // 6. Insert queue
+      // 6. Insert queue.
       await client.query(
         `INSERT INTO queues (
           branch_id, booking_id, dokter_id, patient_id, queue_number, queue_date, status, check_in_time
