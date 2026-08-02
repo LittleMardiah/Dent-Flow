@@ -45,10 +45,11 @@ export class InvoiceService {
          SET status = 'PAID',
              paid_at = NOW(),
              amount_paid = $1,
+             payment_method = $3,
              updated_at = NOW()
          WHERE id = $2
          RETURNING *`,
-        [paidAmount, invoiceId]
+        [paidAmount, invoiceId, paymentMethod]
       );
       const updated = updateResult.rows[0];
 
