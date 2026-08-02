@@ -3,7 +3,7 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
-import { EncounterService } from './encounter.service'; // dari Task 2.5.1
+import { EncounterService } from './encounter.service';
 import { QueueStatus } from '../models/queue.model';
 
 export interface QueuePatient {
@@ -23,7 +23,7 @@ export interface QueueStats {
   totalWaiting: number;
   totalBeingCalled: number;
   totalCompleted: number;
-  averageWaitTimeMinutes: number; // rata-rata dari check-in sampai sekarang untuk yang WAITING
+  averageWaitTimeMinutes: number;
 }
 
 export class DoctorQueueService {
@@ -47,9 +47,9 @@ export class DoctorQueueService {
           q.queue_number,
           q.booking_id,
           b.patient_id,
-          u.full_name as patient_name,
+          u.username as patient_name,
           b.booking_date as booking_time,
-          q.check_in_time,
+          q.created_at as check_in_time,
           q.called_at,
           q.status,
           b.notes
@@ -60,7 +60,6 @@ export class DoctorQueueService {
           AND q.branch_id = $2
           AND q.queue_date = CURRENT_DATE
           AND q.status IN ('WAITING', 'BEING_CALLED')
-          AND q.deleted_at IS NULL
         ORDER BY q.queue_number ASC
       `;
       const result = await this.pool.query(query, [doctorId, branchId]);
@@ -93,12 +92,12 @@ export class DoctorQueueService {
     try {
       await client.query('BEGIN');
 
-      // 1. Get queue record and validate
+      // 1. Get queue record & validate
       const queueResult = await client.query(
         `SELECT q.*, b.branch_id 
          FROM queues q
          JOIN bookings b ON q.booking_id = b.id
-         WHERE q.id = $1 AND q.deleted_at IS NULL`,
+         WHERE q.id = $1`,
         [queueId]
       );
       if (queueResult.rows.length === 0) {
@@ -126,8 +125,7 @@ export class DoctorQueueService {
       );
       const updatedQueue = updateResult.rows[0];
 
-      // 3. Create encounter via EncounterService (gunakan method startEncounter)
-      // Pastikan EncounterService.startEncounter menerima (bookingId, doctorId, branchId)
+      // 3. Create encounter via EncounterService
       const encounter = await this.encounterService.startEncounter(
         queue.booking_id,
         doctorId,
@@ -138,7 +136,7 @@ export class DoctorQueueService {
       await auditService.logEvent({
         branchId: queue.branch_id,
         userId: doctorId,
-        eventType: AuditEventType.QUEUE_CALLED, // pastikan enum ini ada
+        eventType: AuditEventType.QUEUE_CALLED,
         entityType: 'QUEUE',
         entityId: queueId,
         description: `Dokter memulai pelayanan pasien dengan nomor antrian ${queue.queue_number}`,
@@ -169,12 +167,11 @@ export class DoctorQueueService {
           COUNT(*) FILTER (WHERE status = 'WAITING') as total_waiting,
           COUNT(*) FILTER (WHERE status = 'BEING_CALLED') as total_being_called,
           COUNT(*) FILTER (WHERE status = 'COMPLETED') as total_completed,
-          AVG(EXTRACT(EPOCH FROM (NOW() - check_in_time)) / 60) FILTER (WHERE status = 'WAITING') as avg_wait_minutes
+          AVG(EXTRACT(EPOCH FROM (NOW() - created_at)) / 60) FILTER (WHERE status = 'WAITING') as avg_wait_minutes
         FROM queues
         WHERE dokter_id = $1
           AND branch_id = $2
           AND queue_date = CURRENT_DATE
-          AND deleted_at IS NULL
       `;
       const result = await this.pool.query(query, [doctorId, branchId]);
       const row = result.rows[0];

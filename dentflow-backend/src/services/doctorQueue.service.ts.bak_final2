@@ -1,0 +1,186 @@
+import { Pool } from 'pg';
+import { config } from '../config';
+import { logger } from '../utils/logger';
+import { auditService } from './audit.service';
+import { AuditEventType } from '../models/audit.model';
+import { EncounterService } from './encounter.service';
+import { QueueStatus } from '../models/queue.model';
+
+export interface QueuePatient {
+  queueId: string;
+  queueNumber: number;
+  bookingId: string;
+  patientId: string;
+  patientName: string;
+  bookingTime: Date;
+  checkInTime: Date;
+  calledAt?: Date;
+  status: QueueStatus;
+}
+
+export interface QueueStats {
+  totalWaiting: number;
+  totalBeingCalled: number;
+  totalCompleted: number;
+  averageWaitTimeMinutes: number;
+}
+
+export class DoctorQueueService {
+  private pool: Pool;
+  private encounterService: EncounterService;
+
+  constructor() {
+    this.pool = new Pool({ connectionString: config.database.url });
+    this.encounterService = new EncounterService();
+  }
+
+  /**
+   * Get queue for a specific doctor on today's date
+   * Returns patients with status WAITING or BEING_CALLED, sorted by queue_number ascending
+   */
+  async getQueueForDoctor(doctorId: string, branchId: string): Promise<QueuePatient[]> {
+    try {
+      const query = `
+        SELECT 
+          q.id as queue_id,
+          q.queue_number,
+          q.booking_id,
+          b.patient_id,
+          u.username as patient_name,
+          b.booking_date as booking_time,
+          q.created_at as check_in_time,
+          q.called_at,
+          q.status,
+        FROM queues q
+        JOIN bookings b ON q.booking_id = b.id
+        JOIN users u ON b.patient_id = u.id
+        WHERE q.doctor_id = $1
+          AND q.branch_id = $2
+          AND q.queue_date = CURRENT_DATE
+          AND q.status IN ('WAITING', 'BEING_CALLED')
+        ORDER BY q.queue_number ASC
+      `;
+      const result = await this.pool.query(query, [doctorId, branchId]);
+      return result.rows.map(row => ({
+        queueId: row.queue_id,
+        queueNumber: row.queue_number,
+        bookingId: row.booking_id,
+        patientId: row.patient_id,
+        patientName: row.patient_name,
+        bookingTime: row.booking_time,
+        checkInTime: row.check_in_time,
+        calledAt: row.called_at,
+        status: row.status,
+      }));
+    } catch (error: any) {
+      logger.error({ error: error.message, stack: error.stack }, 'Error fetching doctor queue');
+      throw new Error('Failed to fetch doctor queue');
+    }
+  }
+
+  /**
+   * Doctor checks in a patient (start service)
+   * - Updates queue status to BEING_CALLED
+   * - Creates an encounter (EMR) with status ONGOING
+   * - Logs audit event
+   */
+  async checkInPatient(queueId: string, doctorId: string): Promise<{ queue: any; encounter: any }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // 1. Get queue record & validate
+      const queueResult = await client.query(
+        `SELECT q.*, b.branch_id 
+         FROM queues q
+         JOIN bookings b ON q.booking_id = b.id
+         WHERE q.id = $1`,
+        [queueId]
+      );
+      if (queueResult.rows.length === 0) {
+        throw new Error('QUEUE_NOT_FOUND');
+      }
+      const queue = queueResult.rows[0];
+
+      // Validate doctor ownership
+      if (queue.doctor_id !== doctorId) {
+        throw new Error('QUEUE_NOT_OWNED_BY_DOCTOR');
+      }
+
+      // Validate status
+      if (queue.status !== 'WAITING') {
+        throw new Error('QUEUE_NOT_WAITING');
+      }
+
+      // 2. Update queue status to BEING_CALLED
+      const updateResult = await client.query(
+        `UPDATE queues 
+         SET status = 'BEING_CALLED', called_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [queueId]
+      );
+      const updatedQueue = updateResult.rows[0];
+
+      // 3. Create encounter via EncounterService
+      const encounter = await this.encounterService.startEncounter(
+        queue.booking_id,
+        doctorId,
+        queue.branch_id
+      );
+
+      // 4. Audit log
+      await auditService.logEvent({
+        branchId: queue.branch_id,
+        userId: doctorId,
+        eventType: AuditEventType.QUEUE_CALLED,
+        entityType: 'QUEUE',
+        entityId: queueId,
+        description: `Dokter memulai pelayanan pasien dengan nomor antrian ${queue.queue_number}`,
+        newValues: { queueStatus: 'BEING_CALLED', encounterId: encounter.id },
+      });
+
+      await client.query('COMMIT');
+
+      return { queue: updatedQueue, encounter };
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      logger.error({ error: error.message, stack: error.stack }, 'Error in checkInPatient');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Get queue statistics for a doctor
+   * - Total waiting, being called, completed
+   * - Average wait time (from check-in to now for waiting patients)
+   */
+  async getQueueStats(doctorId: string, branchId: string): Promise<QueueStats> {
+    try {
+      const query = `
+        SELECT 
+          COUNT(*) FILTER (WHERE status = 'WAITING') as total_waiting,
+          COUNT(*) FILTER (WHERE status = 'BEING_CALLED') as total_being_called,
+          COUNT(*) FILTER (WHERE status = 'COMPLETED') as total_completed,
+          AVG(EXTRACT(EPOCH FROM (NOW() - created_at)) / 60) FILTER (WHERE status = 'WAITING') as avg_wait_minutes
+        FROM queues
+        WHERE doctor_id = $1
+          AND branch_id = $2
+          AND queue_date = CURRENT_DATE
+      `;
+      const result = await this.pool.query(query, [doctorId, branchId]);
+      const row = result.rows[0];
+      return {
+        totalWaiting: parseInt(row.total_waiting) || 0,
+        totalBeingCalled: parseInt(row.total_being_called) || 0,
+        totalCompleted: parseInt(row.total_completed) || 0,
+        averageWaitTimeMinutes: parseFloat(row.avg_wait_minutes) || 0,
+      };
+    } catch (error: any) {
+      logger.error({ error: error.message, stack: error.stack }, 'Error fetching queue stats');
+      throw new Error('Failed to fetch queue stats');
+    }
+  }
+}

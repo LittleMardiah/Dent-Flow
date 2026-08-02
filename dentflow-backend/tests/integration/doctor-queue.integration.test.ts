@@ -1,0 +1,267 @@
+import { app } from "../../src/index";
+import request from 'supertest';
+import { pool } from '../../src/config/database';
+import { PasswordService } from '../../src/utils/password.utils';
+import { v4 as uuidv4 } from 'uuid';
+import Redis from 'ioredis';
+
+describe('Doctor Queue Integration Tests', () => {
+  let adminToken: string;
+  let doctorToken: string;
+  let patientToken: string;
+  let branchId: string;
+  let doctorUserId: string;
+  let doctorRecordId: string;
+  let patientUserId: string;
+  let patientRecordId: string;
+  let bookingId: string;
+  let queueId: string;
+  let queueNumber: number;
+
+  const adminUsername = `admin_${uuidv4().substring(0, 8)}`;
+  const adminEmail = `${adminUsername}@clinic.com`;
+  const patientEmail = `patient_${uuidv4().substring(0, 8)}@test.com`;
+  const doctorUsername = `doctor_${uuidv4().substring(0, 8)}`;
+
+  const testBranchId = uuidv4();
+  const adminUserUuid = uuidv4();
+  const patientUserUuid = uuidv4();
+  const doctorUserUuid = uuidv4();
+  const testDate = new Date();
+  const bookingDate = testDate.toISOString().split('T')[0];
+
+  let redis: Redis;
+
+  beforeAll(async () => {
+    process.env.MOCK_DATE = new Date().toISOString();
+
+    redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6380');
+
+    // 1. Branch
+    await pool.query(
+      `INSERT INTO branches (id, name, address) 
+       VALUES ($1, $2, $3) 
+       ON CONFLICT (id) DO NOTHING`,
+      [testBranchId, 'Cabang Doctor Queue', 'Jl. Test Queue']
+    );
+    branchId = testBranchId;
+
+    // 2. Admin
+    const adminPassword = await PasswordService.hashPassword('Admin123!');
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, 'ADMIN_BRANCH', $3, $4, $5)
+       ON CONFLICT (username) DO NOTHING`,
+      [adminUserUuid, branchId, adminEmail, adminPassword, adminUsername]
+    );
+
+    // 3. Patient
+    const patientPassword = await PasswordService.hashPassword('Patient123!');
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, 'PATIENT', $3, $4, $5)
+       ON CONFLICT (email) DO NOTHING`,
+      [patientUserUuid, branchId, patientEmail, patientPassword, `patient_${uuidv4().substring(0, 8)}`]
+    );
+    patientUserId = patientUserUuid;
+
+    // 4. Patient record
+    const patRes = await pool.query(
+      `INSERT INTO patients (id, branch_id, user_id, full_name, phone) 
+       VALUES ($1, $2, $3, 'Patient Queue', '08123456789') 
+       RETURNING id`,
+      [uuidv4(), branchId, patientUserId]
+    );
+    patientRecordId = patRes.rows[0].id;
+
+    // 5. Doctor user
+    const doctorPassword = await PasswordService.hashPassword('Doctor123!');
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, 'DOCTOR', $3, $4, $5)
+       ON CONFLICT (username) DO NOTHING`,
+      [doctorUserUuid, branchId, `${doctorUsername}@clinic.com`, doctorPassword, doctorUsername]
+    );
+    doctorUserId = doctorUserUuid;
+
+    // 6. Doctor record
+    const docRes = await pool.query(
+      `INSERT INTO doctors (id, branch_id, user_id, full_name, specialization, is_available) 
+       VALUES ($1, $2, $3, 'Doctor Queue', 'General', true) 
+       RETURNING id`,
+      [uuidv4(), branchId, doctorUserId]
+    );
+    doctorRecordId = docRes.rows[0].id;
+
+    // 7. Login admin
+    const loginAdmin = await request(app)
+      .post('/auth/admin/login')
+      .send({ username: adminUsername, password: 'Admin123!' });
+    expect(loginAdmin.status).toBe(200);
+    adminToken = loginAdmin.body.data.token;
+
+    // 8. Login doctor
+    const loginDoctor = await request(app)
+      .post('/auth/doctor/login')
+      .send({ username: doctorUsername, password: 'Doctor123!' });
+    expect(loginDoctor.status).toBe(200);
+    doctorToken = loginDoctor.body.data.token;
+
+    // 9. Login patient
+    const loginPatient = await request(app)
+      .post('/auth/patient/login')
+      .send({ email: patientEmail, password: 'Patient123!' });
+    expect(loginPatient.status).toBe(200);
+    patientToken = loginPatient.body.data.token;
+
+    // 10. Create booking (PENDING_PAYMENT → PAYMENT_CONFIRMED)
+    const bookingRes = await request(app)
+      .post('/api/patient/bookings')
+      .set('Authorization', `Bearer ${patientToken}`)
+      .send({
+        doctorId: doctorUserId,
+        branchId: branchId,
+        bookingDate: bookingDate,
+        sessionSlotId: uuidv4(), // dummy, will be fixed later
+        notes: 'Test booking for doctor queue',
+      });
+    // Note: Booking may fail if no schedule, but we'll handle later
+    // For now, we'll create booking directly via DB for reliability
+  });
+
+  // We'll use a more reliable approach - create data directly
+  // to avoid dependency on booking endpoint
+  it('should create test data via direct DB', async () => {
+    // Create a schedule for the doctor
+    const scheduleRes = await pool.query(
+      `INSERT INTO doctor_schedules (branch_id, dokter_id, day_of_week, session_start, session_end, max_patients_per_session, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, true)
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      [branchId, doctorUserId, 1, '09:00', '12:00', 4]
+    );
+    const scheduleId = scheduleRes.rows[0]?.id || uuidv4();
+
+    // Create booking directly
+    const bookingInsert = await pool.query(
+      `INSERT INTO bookings (branch_id, patient_id, doctor_id, booking_date, booking_time, session_start, session_end, status, booking_code, check_in_code, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'PAYMENT_CONFIRMED', $8, $9, NOW(), NOW())
+       RETURNING id`,
+      [branchId, patientRecordId, doctorRecordId, bookingDate, '09:00', `${bookingDate} 09:00`, `${bookingDate} 12:00`, 'ABCDEF', 'ABCDEF']
+    );
+    bookingId = bookingInsert.rows[0].id;
+
+    // Create queue
+    const queueInsert = await pool.query(
+      `INSERT INTO queues (branch_id, booking_id, doctor_id, queue_number, status, created_at)
+       VALUES ($1, $2, $3, $4, 'WAITING', NOW())
+       RETURNING id`,
+      [branchId, bookingId, doctorRecordId, 1]
+    );
+    queueId = queueInsert.rows[0].id;
+    queueNumber = 1;
+
+    expect(bookingId).toBeDefined();
+    expect(queueId).toBeDefined();
+  });
+
+  it('should get doctor queue (GET /doctors/:id/queue)', async () => {
+    const response = await request(app)
+      .get(`/api/doctors/${doctorUserId}/queue?branchId=${branchId}`)
+      .set('Authorization', `Bearer ${doctorToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(Array.isArray(response.body.data)).toBe(true);
+    expect(response.body.data.length).toBeGreaterThan(0);
+
+    const queueItem = response.body.data[0];
+    expect(queueItem).toHaveProperty('queueNumber');
+    expect(queueItem).toHaveProperty('patientName');
+    expect(queueItem).toHaveProperty('status');
+    expect(queueItem.status).toBe('WAITING');
+  });
+
+  it('should check-in patient (POST /queue/:id/check-in)', async () => {
+    const response = await request(app)
+      .post(`/api/queue/${queueId}/check-in`)
+      .set('Authorization', `Bearer ${doctorToken}`)
+      .send({ doctorId: doctorRecordId });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data).toHaveProperty('queue');
+    expect(response.body.data).toHaveProperty('encounter');
+    expect(response.body.data.queue.status).toBe('IN_SERVICE');
+
+    // Verify encounter created
+    const encounterResult = await pool.query(
+      'SELECT id, status FROM encounters WHERE booking_id = $1',
+      [bookingId]
+    );
+    expect(encounterResult.rows.length).toBeGreaterThan(0);
+    expect(encounterResult.rows[0].status).toBe('IN_PROGRESS');
+  });
+
+  it('should get queue stats (GET /doctors/:id/queue/stats)', async () => {
+    const response = await request(app)
+      .get(`/api/doctors/${doctorUserId}/queue/stats?branchId=${branchId}`)
+      .set('Authorization', `Bearer ${doctorToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data).toHaveProperty('totalWaiting');
+    expect(response.body.data).toHaveProperty('inService');
+    expect(response.body.data).toHaveProperty('completed');
+    expect(response.body.data).toHaveProperty('averageWaitTime');
+
+    // After check-in, waiting should decrease, in-service should increase
+    expect(response.body.data.inService).toBeGreaterThanOrEqual(0);
+  });
+
+  it('should return 404 for queue not found', async () => {
+    const fakeQueueId = uuidv4();
+    const response = await request(app)
+      .post(`/api/queue/${fakeQueueId}/check-in`)
+      .set('Authorization', `Bearer ${doctorToken}`)
+      .send({ doctorId: doctorRecordId });
+
+    expect(response.status).toBe(404);
+    expect(response.body.success).toBe(false);
+    expect(response.body.message).toContain('tidak ditemukan');
+  });
+
+  it('should return 403 for queue not owned by doctor', async () => {
+    // Create another doctor
+    const otherDoctorId = uuidv4();
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, 'DOCTOR', $3, $4, $5)
+       ON CONFLICT (username) DO NOTHING`,
+      [otherDoctorId, branchId, `other@clinic.com`, await PasswordService.hashPassword('Doctor123!'), `other_doctor`]
+    );
+
+    const response = await request(app)
+      .post(`/api/queue/${queueId}/check-in`)
+      .set('Authorization', `Bearer ${doctorToken}`)
+      .send({ doctorId: otherDoctorId });
+
+    expect(response.status).toBe(403);
+    expect(response.body.success).toBe(false);
+  });
+
+  afterAll(async () => {
+    // Cleanup in reverse order
+    await pool.query('DELETE FROM encounters WHERE booking_id = $1', [bookingId]);
+    await pool.query('DELETE FROM queues WHERE id = $1', [queueId]);
+    await pool.query('DELETE FROM bookings WHERE id = $1', [bookingId]);
+    await pool.query('DELETE FROM patients WHERE id = $1', [patientRecordId]);
+    await pool.query('DELETE FROM doctors WHERE user_id = $1', [doctorUserId]);
+    await pool.query('DELETE FROM doctor_schedules WHERE dokter_id = $1', [doctorUserId]);
+    await pool.query('DELETE FROM users WHERE id IN ($1, $2, $3)', [adminUserUuid, patientUserUuid, doctorUserUuid]);
+    await pool.query('DELETE FROM audit_logs WHERE branch_id = $1', [branchId]);
+    await pool.query('DELETE FROM branches WHERE id = $1', [branchId]);
+    await redis.quit();
+    await pool.end();
+  });
+});

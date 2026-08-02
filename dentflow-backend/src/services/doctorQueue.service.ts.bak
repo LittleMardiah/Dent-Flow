@@ -46,16 +46,16 @@ export class DoctorQueueService {
           q.id as queue_id,
           q.queue_number,
           q.booking_id,
-          q.patient_id,
-          u.full_name as patient_name,
+          b.patient_id,
+          u.username as patient_name,
           b.booking_date as booking_time,
-          q.check_in_time,
+          queues.check_in_time,
           q.called_at,
           q.status,
           b.notes
         FROM queues q
         JOIN bookings b ON q.booking_id = b.id
-        JOIN users u ON q.patient_id = u.id
+        JOIN users u ON b.patient_id = u.id
         WHERE q.dokter_id = $1
           AND q.branch_id = $2
           AND q.queue_date = CURRENT_DATE
@@ -93,7 +93,7 @@ export class DoctorQueueService {
     try {
       await client.query('BEGIN');
 
-      // 1. Get queue record and validate
+      // 1. Get queue record & validate
       const queueResult = await client.query(
         `SELECT q.*, b.branch_id 
          FROM queues q

@@ -3,7 +3,7 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
-import { EncounterService } from './encounter.service'; // dari Task 2.5.1
+import { EncounterService } from './encounter.service';
 import { QueueStatus } from '../models/queue.model';
 
 export interface QueuePatient {
@@ -16,14 +16,13 @@ export interface QueuePatient {
   checkInTime: Date;
   calledAt?: Date;
   status: QueueStatus;
-  notes?: string;
 }
 
 export interface QueueStats {
   totalWaiting: number;
   totalBeingCalled: number;
   totalCompleted: number;
-  averageWaitTimeMinutes: number; // rata-rata dari check-in sampai sekarang untuk yang WAITING
+  averageWaitTimeMinutes: number;
 }
 
 export class DoctorQueueService {
@@ -35,10 +34,6 @@ export class DoctorQueueService {
     this.encounterService = new EncounterService();
   }
 
-  /**
-   * Get queue for a specific doctor on today's date
-   * Returns patients with status WAITING or BEING_CALLED, sorted by queue_number ascending
-   */
   async getQueueForDoctor(doctorId: string, branchId: string): Promise<QueuePatient[]> {
     try {
       const query = `
@@ -49,18 +44,17 @@ export class DoctorQueueService {
           b.patient_id,
           u.username as patient_name,
           b.booking_date as booking_time,
-          queues.check_in_time,
+          q.created_at as check_in_time,
           q.called_at,
-          q.status,
-          b.notes
+          q.status
         FROM queues q
         JOIN bookings b ON q.booking_id = b.id
-        JOIN users u ON b.patient_id = u.id
-        WHERE q.dokter_id = $1
+        JOIN patients p ON b.patient_id = p.id
+        JOIN users u ON p.user_id = u.id
+        WHERE q.doctor_id = $1
           AND q.branch_id = $2
-          AND q.queue_date = CURRENT_DATE
+          AND DATE(q.created_at) = CURRENT_DATE
           AND q.status IN ('WAITING', 'BEING_CALLED')
-          AND q.deleted_at IS NULL
         ORDER BY q.queue_number ASC
       `;
       const result = await this.pool.query(query, [doctorId, branchId]);
@@ -74,7 +68,6 @@ export class DoctorQueueService {
         checkInTime: row.check_in_time,
         calledAt: row.called_at,
         status: row.status,
-        notes: row.notes,
       }));
     } catch (error: any) {
       logger.error({ error: error.message, stack: error.stack }, 'Error fetching doctor queue');
@@ -82,23 +75,16 @@ export class DoctorQueueService {
     }
   }
 
-  /**
-   * Doctor checks in a patient (start service)
-   * - Updates queue status to BEING_CALLED
-   * - Creates an encounter (EMR) with status ONGOING
-   * - Logs audit event
-   */
   async checkInPatient(queueId: string, doctorId: string): Promise<{ queue: any; encounter: any }> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
 
-      // 1. Get queue record & validate
       const queueResult = await client.query(
         `SELECT q.*, b.branch_id 
          FROM queues q
          JOIN bookings b ON q.booking_id = b.id
-         WHERE q.id = $1 AND q.deleted_at IS NULL`,
+         WHERE q.id = $1`,
         [queueId]
       );
       if (queueResult.rows.length === 0) {
@@ -106,17 +92,14 @@ export class DoctorQueueService {
       }
       const queue = queueResult.rows[0];
 
-      // Validate doctor ownership
-      if (queue.dokter_id !== doctorId) {
+      if (queue.doctor_id !== doctorId) {
         throw new Error('QUEUE_NOT_OWNED_BY_DOCTOR');
       }
 
-      // Validate status
       if (queue.status !== 'WAITING') {
         throw new Error('QUEUE_NOT_WAITING');
       }
 
-      // 2. Update queue status to BEING_CALLED
       const updateResult = await client.query(
         `UPDATE queues 
          SET status = 'BEING_CALLED', called_at = NOW(), updated_at = NOW()
@@ -126,19 +109,16 @@ export class DoctorQueueService {
       );
       const updatedQueue = updateResult.rows[0];
 
-      // 3. Create encounter via EncounterService (gunakan method startEncounter)
-      // Pastikan EncounterService.startEncounter menerima (bookingId, doctorId, branchId)
       const encounter = await this.encounterService.startEncounter(
         queue.booking_id,
         doctorId,
         queue.branch_id
       );
 
-      // 4. Audit log
       await auditService.logEvent({
         branchId: queue.branch_id,
         userId: doctorId,
-        eventType: AuditEventType.QUEUE_CALLED, // pastikan enum ini ada
+        eventType: AuditEventType.QUEUE_CALLED,
         entityType: 'QUEUE',
         entityId: queueId,
         description: `Dokter memulai pelayanan pasien dengan nomor antrian ${queue.queue_number}`,
@@ -146,7 +126,6 @@ export class DoctorQueueService {
       });
 
       await client.query('COMMIT');
-
       return { queue: updatedQueue, encounter };
     } catch (error: any) {
       await client.query('ROLLBACK');
@@ -157,11 +136,6 @@ export class DoctorQueueService {
     }
   }
 
-  /**
-   * Get queue statistics for a doctor
-   * - Total waiting, being called, completed
-   * - Average wait time (from check-in to now for waiting patients)
-   */
   async getQueueStats(doctorId: string, branchId: string): Promise<QueueStats> {
     try {
       const query = `
@@ -169,12 +143,11 @@ export class DoctorQueueService {
           COUNT(*) FILTER (WHERE status = 'WAITING') as total_waiting,
           COUNT(*) FILTER (WHERE status = 'BEING_CALLED') as total_being_called,
           COUNT(*) FILTER (WHERE status = 'COMPLETED') as total_completed,
-          AVG(EXTRACT(EPOCH FROM (NOW() - check_in_time)) / 60) FILTER (WHERE status = 'WAITING') as avg_wait_minutes
+          AVG(EXTRACT(EPOCH FROM (NOW() - created_at)) / 60) FILTER (WHERE status = 'WAITING') as avg_wait_minutes
         FROM queues
-        WHERE dokter_id = $1
+        WHERE doctor_id = $1
           AND branch_id = $2
-          AND queue_date = CURRENT_DATE
-          AND deleted_at IS NULL
+          AND DATE(created_at) = CURRENT_DATE
       `;
       const result = await this.pool.query(query, [doctorId, branchId]);
       const row = result.rows[0];
