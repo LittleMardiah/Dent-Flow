@@ -1,10 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { BookingService } from '../services/booking.service';
 import { logger } from '../utils/logger';
+import { pool } from '../config/database';
 
 const bookingService = new BookingService();
 
-export const createScheduledBooking = async (req: Request, res: Response, next: NextFunction) => {
+export const createScheduledBooking = async (req: Request, res: Response, _next: NextFunction) => {
   try {
     const patientId = req.user?.userId;
     const branchId = req.user?.branchId;
@@ -28,7 +29,7 @@ export const createScheduledBooking = async (req: Request, res: Response, next: 
 
     res.status(201).json({ success: true, data: result });
   } catch (error: any) {
-    // Handle known error types
+    console.error('Handler error:', error);
     if (error.message === 'DOCTOR_NOT_FOUND') {
       return res.status(404).json({ success: false, message: 'Dokter tidak ditemukan' });
     }
@@ -50,5 +51,126 @@ export const createScheduledBooking = async (req: Request, res: Response, next: 
     });
   }
 };
-// Tambahkan di awal fungsi createScheduledBooking:
-console.log('🔥🔥🔥 CREATE BOOKING HANDLER CALLED!');
+
+export const getPatientBookings = async (req: Request, res: Response, _next: NextFunction) => {
+  try {
+    const patientId = req.user?.userId;
+    if (!patientId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    const result = await pool.query(
+      `SELECT id, booking_code, status, session_start, session_end, created_at
+       FROM bookings
+       WHERE patient_id = (SELECT id FROM patients WHERE user_id = $1)
+       ORDER BY created_at DESC`,
+      [patientId]
+    );
+    res.status(200).json({ success: true, data: { bookings: result.rows } });
+  } catch (error: any) {
+    logger.error({ error: error.message, stack: error.stack }, 'Get patient bookings error');
+    _next(error);
+  }
+};
+
+export const getBookingDetail = async (req: Request, res: Response, _next: NextFunction) => {
+  try {
+    const bookingId = req.params.id;
+    const userId = req.user?.userId;
+    const userRole = req.user?.role;
+    const userBranch = req.user?.branchId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Dapatkan patient record ID dari user yang login
+    const patientRecord = await pool.query(
+      `SELECT id FROM patients WHERE user_id = $1`,
+      [userId]
+    );
+    const patientId = patientRecord.rows[0]?.id;
+
+    const result = await pool.query(
+      `SELECT 
+        b.id, b.branch_id, b.patient_id, b.doctor_id, b.booking_date,
+        b.booking_time, b.status, b.booking_code, b.is_walk_in,
+        b.session_start, b.session_end, b.created_at,
+        d.full_name as doctor_name
+      FROM bookings b
+      LEFT JOIN doctors d ON b.doctor_id = d.id
+      WHERE b.id = $1`,
+      [bookingId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Booking tidak ditemukan' });
+    }
+    const booking = result.rows[0];
+
+    // Authorization
+    if (userRole === 'PATIENT' && booking.patient_id !== patientId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+    if (userRole === 'ADMIN_BRANCH' && booking.branch_id !== userBranch) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+    if (userRole === 'DOCTOR' && booking.branch_id !== userBranch) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    res.status(200).json({ success: true, data: booking });
+  } catch (error: any) {
+    logger.error({ error: error.message, stack: error.stack }, 'Get booking detail error');
+    _next(error);
+  }
+};
+
+export const cancelBooking = async (req: Request, res: Response, _next: NextFunction) => {
+  try {
+    const bookingId = req.params.id;
+    const userId = req.user?.userId;
+    const userRole = req.user?.role;
+    const userBranch = req.user?.branchId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Dapatkan booking
+    const result = await pool.query(
+      `SELECT * FROM bookings WHERE id = $1`,
+      [bookingId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Booking tidak ditemukan' });
+    }
+    const booking = result.rows[0];
+
+    // Authorization
+    if (userRole === 'PATIENT') {
+      const patientRecord = await pool.query(`SELECT id FROM patients WHERE user_id = $1`, [userId]);
+      const patientId = patientRecord.rows[0]?.id;
+      if (booking.patient_id !== patientId) {
+        return res.status(403).json({ success: false, message: 'Forbidden' });
+      }
+      if (['CHECKED_IN', 'COMPLETED', 'NO_SHOW', 'CANCELLED'].includes(booking.status)) {
+        return res.status(409).json({ success: false, message: 'Booking tidak dapat dibatalkan' });
+      }
+    } else if (userRole === 'ADMIN_BRANCH') {
+      if (booking.branch_id !== userBranch) {
+        return res.status(403).json({ success: false, message: 'Forbidden' });
+      }
+    } else {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    // Update status ke CANCELLED
+    await pool.query(
+      `UPDATE bookings SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`,
+      [bookingId]
+    );
+    res.status(200).json({ success: true, message: 'Booking berhasil dibatalkan' });
+  } catch (error: any) {
+    logger.error({ error: error.message, stack: error.stack }, 'Cancel booking error');
+    _next(error);
+  }
+};

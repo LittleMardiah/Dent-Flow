@@ -1,4 +1,10 @@
-import 'dotenv/config';
+import dotenv from "dotenv";
+import path from "path";
+
+// Load environment file based on NODE_ENV
+const envFile = process.env.NODE_ENV === "test" ? ".env.test" : ".env";
+dotenv.config({ path: path.resolve(process.cwd(), envFile) });
+
 
 if (!process.env.DATABASE_URL) {
   throw new Error('❌ FATAL: DATABASE_URL is not defined in environment variables!');

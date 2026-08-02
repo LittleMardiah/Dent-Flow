@@ -55,17 +55,24 @@ app.use('/api/admin', auditRoutes);
 app.use(errorHandler);
 
 // ================================================================
-// EXPORT APP UNTUK TESTING
+// START SERVER (ALWAYS LISTEN, EVEN IN TEST)
 // ================================================================
-export { app };
+console.log('🔍 [DEBUG] About to call app.listen()...');
+
+const server = app.listen(PORT, () => {
+  console.log('🔍 [DEBUG] Callback entered - server listening!');
+  logger.info(`✅ DentFlow API starting on port ${PORT}`);
+  logger.info(`   Environment: ${config.server.nodeEnv}`);
+  
+  // Only initialize job scheduler in production/development
+  if (process.env.NODE_ENV !== 'test') {
+    jobScheduler.initialize();
+  }
+});
+
+console.log('🔍 [DEBUG] app.listen() called, server object created');
 
 // ================================================================
-// START SERVER HANYA JIKA BUKAN TEST
+// EXPORT APP & SERVER UNTUK TESTING
 // ================================================================
-if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    logger.info(`✅ DentFlow API starting on port ${PORT}`);
-    logger.info(`   Environment: ${config.server.nodeEnv}`);
-    jobScheduler.initialize();
-  });
-}
+export { app, server };

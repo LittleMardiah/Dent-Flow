@@ -55,6 +55,7 @@ export class WalkInService {
     try {
       await client.query('BEGIN');
 
+      // 1. Cek temporary patient
       const tempResult = await client.query(
         `SELECT * FROM temporary_patients WHERE id = $1 AND deleted_at IS NULL`,
         [tempPatientId]
@@ -64,6 +65,7 @@ export class WalkInService {
       }
       const tempPatient = tempResult.rows[0];
 
+      // 2. Cek dokter (user)
       const doctorResult = await client.query(
         `SELECT * FROM users WHERE id = $1 AND role = 'DOCTOR' AND is_active = true AND deleted_at IS NULL`,
         [doctorId]
@@ -72,14 +74,61 @@ export class WalkInService {
         throw new Error('DOCTOR_NOT_FOUND');
       }
 
+      // ===== VALIDASI SLOT (DIPINJAM DARI BOOKING SERVICE) =====
+      // 2a. Dapatkan doctor record ID dari tabel doctors
+      const doctorRecordResult = await client.query(
+        `SELECT id FROM doctors WHERE user_id = $1 AND branch_id = $2 AND is_available = true`,
+        [doctorId, branchId]
+      );
+      if (doctorRecordResult.rows.length === 0) {
+        throw new Error('DOCTOR_RECORD_NOT_FOUND');
+      }
+      const doctorRecordId = doctorRecordResult.rows[0].id;
+
+      // 2b. Ambil jadwal dari sessionSlotId
+      const scheduleResult = await client.query(
+        `SELECT session_start, session_end, max_patients_per_session 
+         FROM doctor_schedules 
+         WHERE id = $1 AND is_active = true`,
+        [_sessionSlotId]
+      );
+      if (scheduleResult.rows.length === 0) {
+        throw new Error('DOCTOR_NOT_SCHEDULED');
+      }
+      const schedule = scheduleResult.rows[0];
+      const timeStr = schedule.session_start;
+      const dateStr = bookingDate.toISOString().split('T')[0];
+      const sessionStartTimestamp = `${dateStr} ${timeStr}`;
+
+      // 2c. Hitung booking aktif di sesi tersebut
+      const bookingCountResult = await client.query(
+        `SELECT COUNT(*) as booked 
+         FROM bookings 
+         WHERE doctor_id = $1 
+           AND session_start = $2 
+           AND booking_date = $3 
+           AND status NOT IN ('CANCELLED', 'NO_SHOW')`,
+        [doctorRecordId, sessionStartTimestamp, bookingDate]
+      );
+      const booked = parseInt(bookingCountResult.rows[0].booked);
+
+      // 2d. Cek apakah sudah penuh (max 4)
+      if (booked >= schedule.max_patients_per_session) {
+        throw new Error('SLOT_NOT_AVAILABLE');
+      }
+      // ========================================================
+
+      // 3. Generate queue number
       const queueNumber = await this.queueService.getNextQueueNumber(
         branchId,
         doctorId,
         bookingDate
       );
 
+      // 4. Generate booking code
       const bookingCode = this.generateBookingCode();
 
+      // 5. Insert booking
       const bookingResult = await client.query(
         `INSERT INTO bookings (
           branch_id, pasien_id, dokter_id, booking_date, session_start, session_end,
@@ -91,8 +140,8 @@ export class WalkInService {
           null,
           doctorId,
           bookingDate,
-          bookingDate,
-          bookingDate,
+          sessionStartTimestamp,
+          `${dateStr} ${schedule.session_end}`,
           'PAYMENT_CONFIRMED',
           bookingCode,
           0,
@@ -103,6 +152,7 @@ export class WalkInService {
       );
       const booking = bookingResult.rows[0];
 
+      // 6. Insert queue
       await client.query(
         `INSERT INTO queues (
           branch_id, booking_id, dokter_id, patient_id, queue_number, queue_date, status, check_in_time
@@ -119,6 +169,7 @@ export class WalkInService {
         ]
       );
 
+      // 7. Audit log
       await auditService.logEvent({
         branchId,
         userId: tempPatient.id,
@@ -189,7 +240,6 @@ export class WalkInService {
       );
       const newUser = userResult.rows[0];
 
-      // Create patient record (no need to store result)
       await client.query(
         `INSERT INTO patients (branch_id, user_id, full_name, phone)
          VALUES ($1, $2, $3, $4)`,
@@ -229,7 +279,6 @@ export class WalkInService {
         oldValues: { tempPatientId },
         newValues: { patientId: newUser.id, email },
       });
-
 
       const token = JwtService.generateToken({
         userId: newUser.id,

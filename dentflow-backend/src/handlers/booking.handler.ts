@@ -32,6 +32,7 @@ export const createScheduledBooking = async (req: Request, res: Response, _next:
     console.error('Handler error:', error);
     if (error.message === 'DOCTOR_NOT_FOUND') {
       return res.status(404).json({ success: false, message: 'Dokter tidak ditemukan' });
+      console.log("🔍 [HANDLER] Returning 404 because:", "condition met");
     }
     if (error.message === 'DOCTOR_NOT_SCHEDULED') {
       return res.status(400).json({ success: false, message: 'Dokter tidak memiliki jadwal pada waktu tersebut' });
@@ -103,6 +104,7 @@ export const getBookingDetail = async (req: Request, res: Response, _next: NextF
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Booking tidak ditemukan' });
+      console.log("🔍 [HANDLER] Returning 404 because:", "condition met");
     }
     const booking = result.rows[0];
 
@@ -142,6 +144,7 @@ export const cancelBooking = async (req: Request, res: Response, _next: NextFunc
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Booking tidak ditemukan' });
+      console.log("🔍 [HANDLER] Returning 404 because:", "condition met");
     }
     const booking = result.rows[0];
 

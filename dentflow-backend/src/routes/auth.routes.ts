@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { authService } from '../services/auth.service';
 import { PatientRegisterSchema } from '../middleware/validation';
 import { ZodError } from 'zod';
+console.log("✅ AUTH ROUTES MODULE EXECUTED!");
 
 const router = Router();
 
@@ -197,5 +198,7 @@ router.post('/reset-password', async (req: Request, res: Response) => {
     });
   }
 });
+
+console.log("🔍 ROUTER STACK:", router.stack.map(l => l.route?.path || "middleware"));
 
 export default router;

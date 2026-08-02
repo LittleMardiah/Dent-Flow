@@ -34,7 +34,7 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
 export const roleMiddleware = (allowedRoles: string[]) => {
   // 🔍 DEBUG: Log creation time with stack trace
   console.log('🔍 [CREATE] roleMiddleware called with allowedRoles:', allowedRoles);
-  console.trace('🔍 [CREATE] roleMiddleware stack trace:');
+  // // console.trace(...); // HAPUS SPAM // HAPUS SPAM
 
   return (req: Request, res: Response, next: NextFunction) => {
     console.log('🛡️ [EXEC] roleMiddleware path:', req.path, 'user.role:', req.user?.role, 'allowedRoles (exec):', allowedRoles);

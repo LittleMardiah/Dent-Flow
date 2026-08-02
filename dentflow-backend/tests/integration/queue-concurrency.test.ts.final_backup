@@ -1,0 +1,241 @@
+import { app } from "../../src/index";
+import request from 'supertest';
+import { pool } from '../../src/config/database';
+import { PasswordService } from '../../src/utils/password.utils';
+import { v4 as uuidv4 } from 'uuid';
+import Redis from 'ioredis';
+
+describe('Queue Number Uniqueness & Redis Atomic Operations (Rec #4) - API Endpoint', () => {
+  let adminToken: string;
+  let patientToken: string;
+  let branchId: string;
+  let doctorId: string;
+  let scheduleId: string;
+  let patientRecordId: string;
+  let adminUserId: string;
+  let patientUserId: string;
+  let doctorUserId: string;
+
+  // Generate unique credentials dengan UUID (permanen unik)
+  const adminUsername = `admin_${uuidv4().substring(0, 8)}`;
+  const adminEmail = `${adminUsername}@clinic.com`;
+  const patientEmail = `patient_${uuidv4().substring(0, 8)}@test.com`;
+  const doctorUsername = `doctor_${uuidv4().substring(0, 8)}`;
+
+  const testBranchId = uuidv4();
+  const adminUserUuid = uuidv4();
+  const patientUserUuid = uuidv4();
+  const doctorUserUuid = uuidv4();
+  const testDate = '2026-08-10';
+
+  let redis: Redis;
+
+  beforeAll(async () => {
+  // DEBUG: List all registered routes to find /api/patient/bookings
+  const listRoutes = (app: any) => {
+    const routes: string[] = [];
+    const stack = app._router?.stack || [];
+    for (const layer of stack) {
+      if (layer.route) {
+        const methods = Object.keys(layer.route.methods).join(", ").toUpperCase();
+        routes.push(`${methods} ${layer.route.path}`);
+      }
+      if (layer.name === "router" && layer.handle?.stack) {
+        for (const subLayer of layer.handle.stack) {
+          if (subLayer.route) {
+            const methods = Object.keys(subLayer.route.methods).join(", ").toUpperCase();
+            routes.push(`${methods} /api${subLayer.route.path}`);
+          }
+        }
+      }
+    }
+    console.log("🔍 REGISTERED ROUTES (filtered):");
+    routes.filter(r => r.includes("booking") || r.includes("patient") || r.includes("auth")).sort().forEach(r => console.log("  -", r));
+  };
+  listRoutes(app);
+    process.env.MOCK_DATE = '2026-08-10T09:30:00.000+07:00';
+
+    redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6380');
+
+    // 1. Branch
+    await pool.query(
+      `INSERT INTO branches (id, name, address) 
+       VALUES ($1, $2, $3) 
+       ON CONFLICT (id) DO NOTHING`,
+      [testBranchId, 'Cabang Queue Concurrency', 'Jl. Test Queue']
+    );
+    branchId = testBranchId;
+
+    // 2. Admin
+    const adminPassword = await PasswordService.hashPassword('Admin123!');
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, 'ADMIN_BRANCH', $3, $4, $5)
+       ON CONFLICT (username) DO NOTHING`,
+      [adminUserUuid, branchId, adminEmail, adminPassword, adminUsername]
+    );
+    adminUserId = adminUserUuid;
+
+    // 3. Patient
+    const patientPassword = await PasswordService.hashPassword('Patient123!');
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, 'PATIENT', $3, $4, $5)
+       ON CONFLICT (email) DO NOTHING`,
+      [patientUserUuid, branchId, patientEmail, patientPassword, `patient_${uuidv4().substring(0, 8)}`]
+    );
+    patientUserId = patientUserUuid;
+
+    // 4. Patient record
+    const patRes = await pool.query(
+      `INSERT INTO patients (id, branch_id, user_id, full_name, phone) 
+       VALUES ($1, $2, $3, 'Patient Queue', '08123456789') 
+       RETURNING id`,
+      [uuidv4(), branchId, patientUserId]
+    );
+    patientRecordId = patRes.rows[0].id;
+
+    // 5. Doctor
+    const doctorPassword = await PasswordService.hashPassword('Doctor123!');
+    await pool.query(
+      `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
+       VALUES ($1, $2, 'DOCTOR', $3, $4, $5)
+       ON CONFLICT (username) DO NOTHING`,
+      [doctorUserUuid, branchId, `${doctorUsername}@clinic.com`, doctorPassword, doctorUsername]
+    );
+    doctorUserId = doctorUserUuid;
+
+    // 6. Doctor record
+    const docRes = await pool.query(
+      `INSERT INTO doctors (id, branch_id, user_id, full_name, specialization) 
+       VALUES ($1, $2, $3, 'Doctor Queue', 'General') 
+       RETURNING id`,
+      [uuidv4(), branchId, doctorUserId]
+    );
+    doctorId = docRes.rows[0].id;
+
+    // 7. Schedule
+    const scheduleRes = await pool.query(
+      `INSERT INTO doctor_schedules (branch_id, dokter_id, day_of_week, session_start, session_end, max_patients_per_session)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      [branchId, doctorUserId, 1, '09:00', '12:00', 4]
+    );
+    scheduleId = scheduleRes.rows[0].id;
+
+    // 8. Login admin
+    const loginAdmin = await request(app)
+      .post('/auth/admin/login')
+      .send({ username: adminUsername, password: 'Admin123!' });
+    expect(loginAdmin.status).toBe(200);
+    adminToken = loginAdmin.body.data.token;
+
+    // 9. Login patient
+    const loginPatient = await request(app)
+      .post('/auth/patient/login')
+      .send({ email: patientEmail, password: 'Patient123!' });
+    expect(loginPatient.status).toBe(200);
+    patientToken = loginPatient.body.data.token;
+  });
+
+  afterAll(async () => {
+    await pool.query('DELETE FROM bookings WHERE patient_id = $1', [patientRecordId]);
+    await pool.query('DELETE FROM patients WHERE id = $1', [patientRecordId]);
+    await pool.query('DELETE FROM doctors WHERE id = $1', [doctorId]);
+    await pool.query('DELETE FROM doctor_schedules WHERE dokter_id = $1', [doctorUserId]);
+    await pool.query('DELETE FROM users WHERE id IN ($1, $2, $3)', [adminUserId, patientUserId, doctorUserId]);
+    await pool.query('DELETE FROM audit_logs WHERE branch_id = $1', [branchId]);
+    await pool.query('DELETE FROM branches WHERE id = $1', [branchId]);
+    await redis.quit();
+    await pool.end();
+  });
+
+  it('should generate unique queue numbers via API endpoint (concurrent 100 requests)', async () => {
+    const count = 100;
+    const bookingDate = testDate;
+    const key = `queue:${branchId}:${doctorId}:${bookingDate}`;
+    await redis.del(key);
+
+    const promises = [];
+    for (let i = 0; i < count; i++) {
+      promises.push(
+        request(app)
+          .post('/api/patient/bookings')
+          .set('Authorization', `Bearer ${patientToken}`)
+          .send({
+            doctorId: doctorUserId,
+            branchId: branchId,
+            bookingDate: bookingDate,
+            sessionSlotId: scheduleId,
+            notes: `Concurrent booking ${i}`,
+          })
+      );
+    }
+
+    const results = await Promise.all(promises);
+    const queueNumbers: number[] = [];
+    let successCount = 0;
+
+    for (const res of results) {
+      if (res.status === 201) {
+        successCount++;
+        const qn = res.body.data?.queueNumber;
+        if (qn !== undefined && qn !== null) queueNumbers.push(qn);
+      } else {
+        console.log(`⚠️ Booking failed: ${res.status} ${JSON.stringify(res.body)}`);
+      }
+    }
+
+    console.log(`✅ Success: ${successCount}/${count}, Queue numbers: ${queueNumbers.length}`);
+
+    expect(queueNumbers.length).toBe(count);
+
+    const sorted = [...queueNumbers].sort((a, b) => a - b);
+    expect(sorted).toHaveLength(count);
+    for (let i = 1; i <= count; i++) {
+      expect(sorted[i - 1]).toBe(i);
+    }
+
+    const unique = new Set(queueNumbers);
+    expect(unique.size).toBe(count);
+
+    const redisValue = await redis.get(key);
+    expect(Number(redisValue)).toBe(count);
+  });
+
+  it('should reset queue and start from 1 again', async () => {
+    const bookingDate = testDate;
+    const key = `queue:${branchId}:${doctorId}:${bookingDate}`;
+    await redis.del(key);
+
+    const res1 = await request(app)
+      .post('/api/patient/bookings')
+      .set('Authorization', `Bearer ${patientToken}`)
+      .send({
+        doctorId: doctorUserId,
+        branchId: branchId,
+        bookingDate: bookingDate,
+        sessionSlotId: scheduleId,
+        notes: 'First after reset',
+      });
+    expect(res1.status).toBe(201);
+    expect(res1.body.data.queueNumber).toBe(1);
+
+    const res2 = await request(app)
+      .post('/api/patient/bookings')
+      .set('Authorization', `Bearer ${patientToken}`)
+      .send({
+        doctorId: doctorUserId,
+        branchId: branchId,
+        bookingDate: bookingDate,
+        sessionSlotId: scheduleId,
+        notes: 'Second after reset',
+      });
+    expect(res2.status).toBe(201);
+    expect(res2.body.data.queueNumber).toBe(2);
+
+    const redisValue = await redis.get(key);
+    expect(Number(redisValue)).toBe(2);
+  });
+});
