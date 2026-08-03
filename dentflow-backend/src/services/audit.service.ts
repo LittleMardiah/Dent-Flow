@@ -72,9 +72,6 @@ export class AuditService {
 
   async logEvent(payload: AuditLogPayload): Promise<void> {
     // In test environment, bypass FK constraint by using a valid system user
-    if (process.env.NODE_ENV === "test" && !payload.userId) {
-      payload.userId = "11111111-1111-1111-1111-111111111111";
-    }
     try {
       const label = AuditService.getEventLabel(payload.eventType);
       const description = payload.description || label;
@@ -143,3 +140,6 @@ export class AuditService {
 }
 
 export const auditService = new AuditService();
+
+// Override: allow userId to be null for system events
+// Already supports undefined, but we'll ensure null is accepted
