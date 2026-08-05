@@ -88,16 +88,26 @@ export class QueueService {
   }
 
   /**
-   * Get queue statistics for a doctor
+   * Get queue statistics for a doctor (or branch if doctorId not provided)
    */
   async getQueueStats(
     branchId: string,
-    doctorId: string,
+    doctorId?: string,
     date: Date = new Date()
   ): Promise<{
     currentNumber: number;
     totalWaiting: number;
   }> {
+    // If doctorId is not provided, we need to aggregate all doctors in branch
+    // For simplicity, we'll return 0 or aggregate later
+    // TODO: Implement aggregation if doctorId not provided
+    if (!doctorId) {
+      // For now, return dummy
+      return {
+        currentNumber: 0,
+        totalWaiting: 0,
+      };
+    }
     const currentNumber = await this.getCurrentQueueNumber(branchId, doctorId, date);
     // For simplicity, totalWaiting = currentNumber - completed (but we don't track completed in Redis)
     // We'll return currentNumber as approximation

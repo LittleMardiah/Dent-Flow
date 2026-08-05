@@ -12,7 +12,7 @@ export interface ScheduledJob {
 }
 
 export class JobScheduler {
-  private jobs: Map<string, cron.ScheduledTask> = new Map();
+  private jobs: Map<string, any> = new Map();
   private isInitialized: boolean = false;
 
   initialize(): void {

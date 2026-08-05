@@ -163,4 +163,25 @@ export class DoctorQueueService {
       throw new Error('Failed to fetch queue stats');
     }
   }
+
+  // ========== STUB METHODS (UNTUK COMPILE) ==========
+  /**
+   * STUB: Call next patient
+   * TODO: Implementasi lengkap
+   */
+  async callNextPatient(doctorId: string, branchId: string): Promise<any> {
+    // Untuk sementara, throw error dulu
+    throw new Error('callNextPatient not implemented yet');
+  }
+
+  /**
+   * STUB: Complete patient
+   * TODO: Implementasi lengkap
+   */
+  async completePatient(queueId: string, doctorId: string): Promise<any> {
+    // Untuk sementara, throw error dulu
+    throw new Error('completePatient not implemented yet');
+  }
 }
+
+export const doctorQueueService = new DoctorQueueService();

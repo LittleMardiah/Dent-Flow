@@ -15,7 +15,8 @@ export const getQueueStatus = async (req: Request, res: Response, next: NextFunc
       });
     }
 
-    const result = await queueService.getQueueStatus(
+    // doctor_id bisa undefined, service handle dengan optional parameter
+    const result = await queueService.getQueueStats(
       branch_id as string,
       doctor_id as string | undefined
     );
@@ -84,7 +85,8 @@ export const completePatient = async (req: Request, res: Response, next: NextFun
       });
     }
 
-    const result = await doctorQueueService.completePatient(queue_id, doctorId);
+    // queue_id bisa string atau string[], cast ke string
+    const result = await doctorQueueService.completePatient(queue_id as string, doctorId);
 
     res.status(200).json({
       success: true,

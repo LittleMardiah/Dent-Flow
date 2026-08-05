@@ -4,6 +4,7 @@ import { logger } from '../utils/logger';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
 import { InvoiceGenerationService } from './invoiceGeneration.service';
+import { getErrorMessage, getErrorStack } from '../utils/error.util';
 
 export interface EncounterData {
   id: string;
@@ -99,8 +100,9 @@ export class EncounterService {
       return this.mapEncounter(encounter);
     } catch (error: unknown) {
       await client.query('ROLLBACK');
-      const err = error as Error;
-      logger.error({ error: err.message, stack: err.stack }, 'Error starting encounter');
+      const message = getErrorMessage(error);
+      const stack = getErrorStack(error);
+      logger.error({ error: message, stack }, 'Error starting encounter');
       throw error;
     } finally {
       client.release();
@@ -153,8 +155,9 @@ export class EncounterService {
       return this.mapEncounter(updated);
     } catch (error: unknown) {
       await client.query('ROLLBACK');
-      const err = error as Error;
-      logger.error({ error: err.message, stack: err.stack }, 'Error recording diagnosis');
+      const message = getErrorMessage(error);
+      const stack = getErrorStack(error);
+      logger.error({ error: message, stack }, 'Error recording diagnosis');
       throw error;
     } finally {
       client.release();
@@ -207,8 +210,9 @@ export class EncounterService {
       return this.mapEncounter(updated);
     } catch (error: unknown) {
       await client.query('ROLLBACK');
-      const err = error as Error;
-      logger.error({ error: err.message, stack: err.stack }, 'Error recording treatment');
+      const message = getErrorMessage(error);
+      const stack = getErrorStack(error);
+      logger.error({ error: message, stack }, 'Error recording treatment');
       throw error;
     } finally {
       client.release();
@@ -297,8 +301,9 @@ export class EncounterService {
       return this.mapEncounter(updated);
     } catch (error: unknown) {
       await client.query('ROLLBACK');
-      const err = error as Error;
-      logger.error({ error: err.message, stack: err.stack }, 'Error updating encounter');
+      const message = getErrorMessage(error);
+      const stack = getErrorStack(error);
+      logger.error({ error: message, stack }, 'Error updating encounter');
       throw error;
     } finally {
       client.release();
@@ -327,7 +332,6 @@ export class EncounterService {
         throw new Error('ENCOUNTER_NOT_ONGOING');
       }
 
-      // Get treatment value: use provided or existing
       const finalTreatment = treatment || encounter.treatment;
 
       const updateResult = await client.query(
@@ -350,11 +354,10 @@ export class EncounterService {
         newValues: { status: 'COMPLETED' },
       });
 
-      // Generate invoice with treatment for pricing
+      // 🔥 PERBAIKAN UTAMA: panggil dengan 3 argumen (bukan 4)
       const invoice = await this.invoiceService.generateInvoiceForEncounter(
         encounterId,
         encounter.branch_id,
-        0,
         finalTreatment
       );
 
@@ -362,8 +365,9 @@ export class EncounterService {
       return { encounter: this.mapEncounter(updated), invoice };
     } catch (error: unknown) {
       await client.query('ROLLBACK');
-      const err = error as Error;
-      logger.error({ error: err.message, stack: err.stack }, 'Error completing encounter');
+      const message = getErrorMessage(error);
+      const stack = getErrorStack(error);
+      logger.error({ error: message, stack }, 'Error completing encounter');
       throw error;
     } finally {
       client.release();
