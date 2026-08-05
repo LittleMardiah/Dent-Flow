@@ -1,8 +1,9 @@
-import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { InvoiceStateRepository } from '../repositories/invoiceState.repository';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
 import { logger } from '../utils/logger';
+import { invoiceStateMachineService } from './invoiceStateMachine.service';
+import { getErrorMessage, getErrorStack } from '../utils/error.util';
 
 export class InvoicePaymentService {
   private repo: InvoiceStateRepository;
@@ -13,7 +14,7 @@ export class InvoicePaymentService {
 
   /**
    * Mark invoice as paid (for admin or webhook)
-   * Idempotent: if already PAID, returns success
+   * Now uses centralized InvoiceStateMachineService
    */
   async markInvoicePaid(
     invoiceId: string,
@@ -24,46 +25,27 @@ export class InvoicePaymentService {
     userId?: string
   ): Promise<any> {
     try {
-      // Get current invoice state
-      const invoice = await this.repo.getInvoiceWithHistory(invoiceId);
-      if (invoice.status === 'PAID') {
+      // Check current state (idempotency)
+      const current = await this.repo.getInvoiceWithHistory(invoiceId);
+      if (current.status === 'PAID') {
         logger.info(`Invoice ${invoiceId} already paid (idempotent)`);
-        return invoice;
+        return current;
       }
 
-      // Perform transition
-      await this.repo.transitionState(
+      const paidAmount = amount || current.amount_due;
+
+      return await invoiceStateMachineService.transitionToPaid({
         invoiceId,
-        'UNPAID',
-        'PAID',
-        `Payment via ${paymentMethod} (${transactionId})`,
         paymentMethod,
-        transactionId,
-        amount || invoice.amount_due
-      );
-
-      // Audit log - gunakan userId jika ada, atau undefined (NULL di database)
-      await auditService.logEvent({
+        amount: paidAmount,
         branchId,
-        userId: userId || undefined, // Jangan pake 'system' karena UUID invalid
-        eventType: AuditEventType.INVOICE_MARKED_PAID,
-        entityType: 'INVOICE',
-        entityId: invoiceId,
-        description: `Invoice ${invoiceId} marked as PAID via ${paymentMethod}`,
-        newValues: {
-          status: 'PAID',
-          payment_method: paymentMethod,
-          paid_at: new Date().toISOString(),
-        },
-        oldValues: {
-          status: 'UNPAID',
-        },
+        userId: userId || undefined,
+        transactionId,
       });
-
-      // Get updated invoice with history
-      return await this.repo.getInvoiceWithHistory(invoiceId);
     } catch (error: unknown) {
-      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Failed to mark invoice as paid');
+      const message = getErrorMessage(error);
+      const stack = getErrorStack(error);
+      logger.error({ error: message, stack }, 'Failed to mark invoice as paid');
       throw error;
     }
   }

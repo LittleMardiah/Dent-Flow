@@ -208,8 +208,8 @@ describe('Invoice State Machine & Database Constraints', () => {
         payment_method: 'CASH',
         paid_amount: 200000,
       });
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe('INVOICE_ALREADY_PAID');
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('PAID');
   });
 
   it('should undo payment (admin override)', async () => {

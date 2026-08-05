@@ -4,7 +4,7 @@ import { logger } from '../utils/logger';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
 import { InvoiceStateValidator } from './invoiceStateValidator.service';
-//
+
 export class InvoiceService {
   private pool: Pool;
 
@@ -32,15 +32,17 @@ export class InvoiceService {
       }
       const invoice = invoiceResult.rows[0];
 
+      // ✅ IDEMPOTENT: if already PAID, return success without error
       if (invoice.status === 'PAID') {
-        throw new Error('INVOICE_ALREADY_PAID');
+        logger.info(`Invoice ${invoiceId} already paid (idempotent)`);
+        await client.query('COMMIT');
+        return invoice;
       }
 
       if (!InvoiceStateValidator.validateTransition(invoice.status, 'PAID')) {
         throw new Error('INVALID_STATE_TRANSITION');
       }
 
-      // UPDATE invoice: status, payment_status, paid_at, amount_paid, paid_amount, payment_method
       const updateResult = await client.query(
         `UPDATE invoices
          SET status = 'PAID',
@@ -106,7 +108,6 @@ export class InvoiceService {
         throw new Error('INVOICE_NOT_PAID');
       }
 
-      // Bypass trigger to allow admin override
       await client.query('SET LOCAL session_replication_role = replica;');
 
       const updateResult = await client.query(
