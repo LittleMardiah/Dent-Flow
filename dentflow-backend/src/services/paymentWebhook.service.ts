@@ -1,10 +1,10 @@
-import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import crypto from 'crypto';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
+import { getErrorMessage, getErrorStack } from '../utils/error.util';
 
 export class PaymentWebhookService {
   private pool: Pool;
@@ -35,23 +35,23 @@ export class PaymentWebhookService {
     try {
       const statusCode = String(payload.status_code || payload.statusCode || '');
       const grossAmount = String(payload.gross_amount || payload.grossAmount || '0');
+      const transactionStatus = payload.transaction_status || payload.transactionStatus || '';
 
       if (!this.validateMidtransSignature(orderId, statusCode, grossAmount, signature, serverKey)) {
         logger.warn(`❌ Invalid signature for webhook ${webhookId}`);
         return { success: false, message: 'Invalid signature' };
       }
 
-      // 1. CEK IDEMPOTENCY (cek keberadaan webhook_id di tabel, status apapun)
+      // 1. CEK IDEMPOTENCY
       const exists = await this.isWebhookExists(webhookId);
       if (exists) {
         logger.info(`ℹ️ Webhook ${webhookId} already processed (idempotent)`);
         return { success: true, message: 'Already processed (idempotent)' };
       }
 
-      // 2. Dapatkan invoice dengan fallback: invoice_number → booking_id → id
+      // 2. Dapatkan invoice
       let invoice = null;
 
-      // 2a. Coba cari berdasarkan invoice_number (jika orderId berformat INV-)
       if (orderId.startsWith('INV-')) {
         const result = await this.pool.query(
           'SELECT * FROM invoices WHERE invoice_number = $1',
@@ -60,7 +60,6 @@ export class PaymentWebhookService {
         invoice = result.rows[0] || null;
       }
 
-      // 2b. Jika tidak ditemukan, coba cari berdasarkan booking_id
       if (!invoice) {
         const result = await this.pool.query(
           'SELECT * FROM invoices WHERE booking_id = $1',
@@ -69,7 +68,6 @@ export class PaymentWebhookService {
         invoice = result.rows[0] || null;
       }
 
-      // 2c. Jika masih tidak ditemukan, coba cari berdasarkan id (UUID invoice) sebagai fallback terakhir
       if (!invoice) {
         const result = await this.pool.query(
           'SELECT * FROM invoices WHERE id = $1',
@@ -83,49 +81,110 @@ export class PaymentWebhookService {
         return { success: false, message: 'Invoice not found' };
       }
 
-      // 3. Record webhook (status RECEIVED)
+      // 3. Record webhook
       await this.recordWebhook(webhookId, orderId, signature, payload, invoice.branch_id);
 
-      // 4. Update invoice (status + payment_status + paid_amount)
-      await this.pool.query(
-        `UPDATE invoices 
-         SET status = 'PAID', 
-             payment_status = 'PAID',
-             paid_at = NOW(), 
-             paid_amount = $1 
-         WHERE id = $2`,
-        [parseFloat(payload.gross_amount) || 0, invoice.id]
-      );
+      // 4. Handle berdasarkan transaction_status
+      const successStatuses = ['capture', 'settlement'];
+      const failureStatuses = ['deny', 'expire', 'failure'];
+      const pendingStatuses = ['pending', 'authorize'];
 
-      // 5. Audit log
-      await auditService.logEvent({
-        branchId: invoice.branch_id,
-        userId: undefined,
-        eventType: AuditEventType.INVOICE_MARKED_PAID,
-        entityType: 'INVOICE',
-        entityId: invoice.id,
-        description: `Invoice ${invoice.invoice_number} marked as paid via webhook`,
-        newValues: {
-          status: 'PAID',
-          payment_status: 'PAID',
-          paid_at: new Date().toISOString(),
-          paid_amount: parseFloat(payload.gross_amount) || 0,
-        },
-        oldValues: {
-          status: invoice.status,
-          payment_status: invoice.payment_status,
-        },
-      });
+      if (successStatuses.includes(transactionStatus)) {
+        await this.handleSuccessPayment(invoice, payload);
+        await this.markWebhookProcessed(webhookId);
+        logger.info(`✅ Invoice ${invoice.invoice_number} paid successfully via webhook ${webhookId}`);
+        return { success: true, message: 'Webhook processed successfully' };
 
-      // 6. Mark webhook as PROCESSED
-      await this.markWebhookProcessed(webhookId);
+      } else if (failureStatuses.includes(transactionStatus)) {
+        await this.handleFailedPayment(invoice, orderId, transactionStatus);
+        await this.markWebhookProcessed(webhookId);
+        logger.info(`❌ Payment failed for invoice ${invoice.invoice_number}, status: ${transactionStatus}`);
+        return { success: true, message: `Payment ${transactionStatus} handled` };
 
-      logger.info(`✅ Invoice ${invoice.invoice_number} paid successfully via webhook ${webhookId}`);
-      return { success: true, message: 'Webhook processed successfully' };
+      } else if (pendingStatuses.includes(transactionStatus)) {
+        logger.info(`⏳ Payment pending for invoice ${invoice.invoice_number}, status: ${transactionStatus}`);
+        await this.markWebhookProcessed(webhookId);
+        return { success: true, message: `Payment ${transactionStatus} - pending, keep status` };
+
+      } else {
+        logger.warn(`⚠️ Unknown transaction_status: ${transactionStatus} for invoice ${invoice.invoice_number}`);
+        await this.markWebhookProcessed(webhookId);
+        return { success: true, message: `Unknown status: ${transactionStatus}` };
+      }
     } catch (error: unknown) {
       logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Error processing webhook');
       return { success: false, message: getErrorMessage(error) || 'Internal server error' };
     }
+  }
+
+  private async handleSuccessPayment(invoice: any, payload: any): Promise<void> {
+    await this.pool.query(
+      `UPDATE invoices 
+       SET status = 'PAID', 
+           payment_status = 'PAID',
+           paid_at = NOW(), 
+           paid_amount = $1 
+       WHERE id = $2`,
+      [parseFloat(payload.gross_amount) || 0, invoice.id]
+    );
+
+    await auditService.logEvent({
+      branchId: invoice.branch_id,
+      userId: undefined,
+      eventType: AuditEventType.INVOICE_MARKED_PAID,
+      entityType: 'INVOICE',
+      entityId: invoice.id,
+      description: `Invoice ${invoice.invoice_number} marked as paid via webhook`,
+      newValues: {
+        status: 'PAID',
+        payment_status: 'PAID',
+        paid_at: new Date().toISOString(),
+        paid_amount: parseFloat(payload.gross_amount) || 0,
+      },
+      oldValues: {
+        status: invoice.status,
+        payment_status: invoice.payment_status,
+      },
+    });
+  }
+
+  private async handleFailedPayment(invoice: any, orderId: string, status: string): Promise<void> {
+    // Hanya catat payment_notes, jangan ubah payment_status (biar tetap UNPAID)
+    await this.pool.query(
+      `UPDATE invoices 
+       SET payment_notes = $1 
+       WHERE id = $2`,
+      [`Payment ${status} via webhook`, invoice.id]
+    );
+
+    // Cancel booking if exists
+    if (invoice.booking_id) {
+      await this.pool.query(
+        `UPDATE bookings 
+         SET status = 'CANCELLED', 
+             cancel_reason = $1 
+         WHERE id = $2`,
+        [`Payment ${status} - webhook failed`, invoice.booking_id]
+      );
+      logger.info(`✅ Booking ${invoice.booking_id} cancelled due to failed payment (${status})`);
+    }
+
+    // Audit log
+    await auditService.logEvent({
+      branchId: invoice.branch_id,
+      userId: undefined,
+      eventType: AuditEventType.PAYMENT_FAILED,
+      entityType: 'INVOICE',
+      entityId: invoice.id,
+      description: `Payment ${status} for invoice ${invoice.invoice_number}`,
+      newValues: {
+        payment_notes: `Payment ${status} via webhook`,
+        transaction_status: status,
+      },
+      oldValues: {
+        payment_status: invoice.payment_status,
+      },
+    });
   }
 
   async isWebhookExists(webhookId: string): Promise<boolean> {
