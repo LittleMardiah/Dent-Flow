@@ -152,4 +152,41 @@ describe('Midtrans Webhook Integration', () => {
     expect(res.status).toBe(400);
     expect(res.body.message).toBe('Missing signature');
   });
+
+  // ===== NEW TEST CASE FOR TD-PAY-006: FALLBACK BOOKING_ID =====
+  it('should process webhook using booking_id fallback (TD-PAY-006)', async () => {
+    const webhookId = `webhook-fallback-${uuidv4()}`;
+    // Kirim booking_id (UUID) sebagai order_id, BUKAN invoice_number
+    const payload = {
+      status_code: '200',
+      order_id: bookingId, // <-- Ini UUID booking, bukan INV-...
+      transaction_status: 'capture',
+      gross_amount: '100000',
+      transaction_id: `txn-fallback-${uuidv4().slice(0, 8)}`
+    };
+    const statusCode = String(payload.status_code);
+    const grossAmount = String(payload.gross_amount);
+    const orderId = String(payload.order_id);
+    const signature = crypto.createHmac('sha256', serverKey)
+      .update(orderId + statusCode + grossAmount + serverKey)
+      .digest('hex');
+
+    const res = await request(app)
+      .post('/webhooks/midtrans')
+      .set('x-midtrans-signature', signature)
+      .set('x-midtrans-webhook-id', webhookId)
+      .send(payload);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.message).toContain('processed');
+
+    // Verifikasi invoice benar-benar ter-update
+    const invoiceCheck = await pool.query(
+      'SELECT status, paid_amount FROM invoices WHERE id = $1',
+      [testInvoiceId]
+    );
+    expect(invoiceCheck.rows[0].status).toBe('PAID');
+    expect(Number(invoiceCheck.rows[0].paid_amount)).toBe(100000);
+  });
 });

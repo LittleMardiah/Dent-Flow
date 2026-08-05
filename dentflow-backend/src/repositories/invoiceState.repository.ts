@@ -31,33 +31,39 @@ export class InvoiceStateRepository {
         throw new Error('INVALID_TRANSITION');
       }
 
-      // Update invoice status
+      // Pastikan payment_method tidak NULL (default ke 'GATEWAY' jika tidak diberikan)
+      const finalPaymentMethod = paymentMethod || 'GATEWAY';
+
+      // Update invoice status - juga set payment_status agar sesuai dengan constraint valid_paid_state
+      // NOTE: constraint valid_paid_state menggunakan kolom paid_amount (bukan amount_paid)
       const updateQuery = `
         UPDATE invoices
         SET status = $1,
             previous_status = $2,
+            payment_status = 'PAID',
             payment_method = $3,
             paid_at = NOW(),
-            amount_paid = COALESCE($4, amount_due),
+            paid_amount = COALESCE($4, amount_due),
             updated_at = NOW()
         WHERE id = $5
           AND status = $2  -- Ensure current status is UNPAID
         RETURNING *
       `;
       const result = await client.query(updateQuery, [
-        toState,       // $1
-        fromState,     // $2
-        paymentMethod, // $3
-        amount,        // $4
-        invoiceId,     // $5
+        toState,                // $1
+        fromState,              // $2
+        finalPaymentMethod,     // $3
+        amount,                 // $4
+        invoiceId,              // $5
       ]);
 
       if (result.rows.length === 0) {
         throw new Error('TRANSITION_FAILED');
       }
 
-      await client.query('COMMIT');
       logger.info(`Invoice ${invoiceId} transitioned ${fromState} → ${toState} (${transitionReason})`);
+
+      await client.query('COMMIT');
     } catch (error: any) {
       await client.query('ROLLBACK');
       logger.error({ error: error.message, stack: error.stack }, 'State transition failed');

@@ -41,10 +41,10 @@ export class InvoicePaymentService {
         amount || invoice.amount_due
       );
 
-      // Audit log
+      // Audit log - gunakan userId jika ada, atau undefined (NULL di database)
       await auditService.logEvent({
         branchId,
-        userId: userId || 'system',
+        userId: userId || undefined, // Jangan pake 'system' karena UUID invalid
         eventType: AuditEventType.INVOICE_MARKED_PAID,
         entityType: 'INVOICE',
         entityId: invoiceId,

@@ -60,11 +60,10 @@ export class PaymentInputService {
     try {
       const { order_id, gross_amount, payment_type, status, transaction_id } = webhookData;
 
-      // 1. Find invoice by order_id
-      // Try: direct by invoice_number (if column exists), or parse from order_id
+      // 1. Find invoice by order_id dengan fallback: invoice_number → booking_id → id
       let invoice: any = null;
 
-      // First try: direct query by invoice_number if column exists
+      // 1a. Coba cari berdasarkan invoice_number
       try {
         const result = await this.pool.query(
           'SELECT * FROM invoices WHERE invoice_number = $1',
@@ -77,12 +76,26 @@ export class PaymentInputService {
         // invoice_number column might not exist, skip
       }
 
-      // Second try: parse order_id and find by id/other fields
+      // 1b. Jika tidak ditemukan, coba cari berdasarkan booking_id
       if (!invoice) {
-        // If order_id is just a booking_id, find invoice by booking_id
         try {
           const result = await this.pool.query(
             'SELECT * FROM invoices WHERE booking_id = $1',
+            [order_id]
+          );
+          if (result.rows.length > 0) {
+            invoice = result.rows[0];
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // 1c. Jika masih tidak ditemukan, coba cari berdasarkan id (UUID invoice) sebagai fallback terakhir
+      if (!invoice) {
+        try {
+          const result = await this.pool.query(
+            'SELECT * FROM invoices WHERE id = $1',
             [order_id]
           );
           if (result.rows.length > 0) {

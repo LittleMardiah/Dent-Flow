@@ -47,20 +47,34 @@ export class PaymentWebhookService {
         return { success: true, message: 'Already processed (idempotent)' };
       }
 
-      // 2. Dapatkan invoice (untuk branch_id)
-      let invoice;
+      // 2. Dapatkan invoice dengan fallback: invoice_number → booking_id → id
+      let invoice = null;
+
+      // 2a. Coba cari berdasarkan invoice_number (jika orderId berformat INV-)
       if (orderId.startsWith('INV-')) {
-        const invoiceResult = await this.pool.query(
+        const result = await this.pool.query(
           'SELECT * FROM invoices WHERE invoice_number = $1',
           [orderId]
         );
-        invoice = invoiceResult.rows[0];
-      } else {
-        const invoiceResult = await this.pool.query(
+        invoice = result.rows[0] || null;
+      }
+
+      // 2b. Jika tidak ditemukan, coba cari berdasarkan booking_id
+      if (!invoice) {
+        const result = await this.pool.query(
+          'SELECT * FROM invoices WHERE booking_id = $1',
+          [orderId]
+        );
+        invoice = result.rows[0] || null;
+      }
+
+      // 2c. Jika masih tidak ditemukan, coba cari berdasarkan id (UUID invoice) sebagai fallback terakhir
+      if (!invoice) {
+        const result = await this.pool.query(
           'SELECT * FROM invoices WHERE id = $1',
           [orderId]
         );
-        invoice = invoiceResult.rows[0];
+        invoice = result.rows[0] || null;
       }
 
       if (!invoice) {

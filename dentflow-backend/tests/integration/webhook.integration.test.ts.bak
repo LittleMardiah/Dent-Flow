@@ -1,49 +1,23 @@
 import { app } from "../../src/index";
 import request from 'supertest';
-;
 import { pool } from '../../src/config/database';
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 
-describe.skip('Midtrans Webhook Integration', () => {
+describe('Midtrans Webhook Integration', () => {
   const serverKey = process.env.MIDTRANS_SERVER_KEY || 'test-key';
   let testInvoiceId: string;
   let testInvoiceNumber: string;
   let branchId: string;
   let patientId: string;
   let encounterId: string;
+  let doctorUserId: string;
+  let bookingId: string;
+
+  const generateInvoiceNumber = () => `INV-WH-${Date.now()}-${uuidv4().slice(0, 8)}`;
 
   beforeAll(async () => {
-    // Ensure payment_webhooks table exists
-    const tableCheck = await pool.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_name = 'payment_webhooks'
-      );
-    `);
-    if (!tableCheck.rows[0].exists) {
-      const migrationSQL = fs.readFileSync(
-        path.join(__dirname, '../../migrations/010_payment_webhooks.sql'),
-        'utf8'
-      );
-      await pool.query(migrationSQL);
-    }
-
-    // Ensure order_id column exists
-    const colCheck = await pool.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.columns 
-        WHERE table_name = 'payment_webhooks' AND column_name = 'order_id'
-      );
-    `);
-    if (!colCheck.rows[0].exists) {
-      await pool.query('ALTER TABLE payment_webhooks ADD COLUMN order_id VARCHAR(255)');
-      await pool.query('CREATE INDEX IF NOT EXISTS idx_payment_webhooks_order_id ON payment_webhooks(order_id)');
-    }
-
-    // Create test data: branch, patient, booking, encounter, invoice
     // 1. Branch
     const branchRes = await pool.query(
       `INSERT INTO branches (id, name, phone, address, is_active)
@@ -53,119 +27,107 @@ describe.skip('Midtrans Webhook Integration', () => {
     branchId = branchRes.rows[0].id;
 
     // 2. Patient
-    const userRes = await pool.query(
+    const userId = uuidv4();
+    await pool.query(
       `INSERT INTO users (id, branch_id, role, email, username, password_hash, is_active)
-       VALUES (gen_random_uuid(), $1, 'PATIENT', 'webhook_test@clinic.com', 'webhook_test', $2, true)
-       RETURNING id`,
-      [branchId, await bcrypt.hash('password', 10)]
+       VALUES ($1, $2, 'PATIENT', $3, $4, $5, true)`,
+      [userId, branchId, `wh_patient_${uuidv4().slice(0, 8)}@test.com`, `wh_patient_${uuidv4().slice(0, 8)}`, await bcrypt.hash('password', 10)]
     );
-    const userId = userRes.rows[0].id;
     const patientRes = await pool.query(
       `INSERT INTO patients (id, branch_id, user_id, full_name, phone)
-       VALUES (gen_random_uuid(), $1, $2, 'Webhook Test', '08123456789')
+       VALUES (gen_random_uuid(), $1, $2, 'Webhook Test Patient', '08123456789')
        RETURNING id`,
       [branchId, userId]
     );
     patientId = patientRes.rows[0].id;
 
     // 3. Doctor
-    const doctorUserId = '965dedad-11ba-46a3-a402-f88c2029c676';
+    doctorUserId = uuidv4();
     await pool.query(
       `INSERT INTO users (id, branch_id, role, email, username, password_hash, is_active)
-       VALUES ($1, $2, 'DOCTOR', 'dr_webhook@clinic.com', 'dr_webhook', $3, true)
-       ON CONFLICT (id) DO NOTHING`,
-      [doctorUserId, branchId, await bcrypt.hash('Doctor123!', 10)]
+       VALUES ($1, $2, 'DOCTOR', $3, $4, $5, true)`,
+      [doctorUserId, branchId, `wh_doctor_${uuidv4().slice(0, 8)}@clinic.com`, `wh_doctor_${uuidv4().slice(0, 8)}`, await bcrypt.hash('Doctor123!', 10)]
     );
     const doctorRes = await pool.query(
       `INSERT INTO doctors (id, branch_id, user_id, full_name, specialization, license_number, is_available)
-       VALUES (gen_random_uuid(), $1, $2, 'drg. Webhook Test', 'Sp.BM', 'LIC-001', true)
-       ON CONFLICT (user_id) DO NOTHING
+       VALUES (gen_random_uuid(), $1, $2, 'drg. Webhook Test', 'Sp.BM', 'LIC-WH-001', true)
        RETURNING id`,
       [branchId, doctorUserId]
     );
-    let doctorId;
-    if (doctorRes.rows.length > 0) {
-      doctorId = doctorRes.rows[0].id;
-    } else {
-      const existing = await pool.query('SELECT id FROM doctors WHERE user_id = $1', [doctorUserId]);
-      doctorId = existing.rows[0].id;
-    }
+    const doctorId = doctorRes.rows[0].id;
 
     // 4. Booking
     const bookingRes = await pool.query(
       `INSERT INTO bookings (id, branch_id, patient_id, doctor_id, booking_date, booking_time, status, booking_code, is_walk_in)
-       VALUES (gen_random_uuid(), $1, $2, $3, CURRENT_DATE, '09:00:00', 'PENDING', 'WHK001', false)
+       VALUES (gen_random_uuid(), $1, $2, $3, CURRENT_DATE, '09:00:00', 'PENDING_PAYMENT', $4, false)
        RETURNING id`,
-      [branchId, patientId, doctorId]
+      [branchId, patientId, doctorId, `WHK-${uuidv4().slice(0, 6)}`]
     );
-    const bookingId = bookingRes.rows[0].id;
+    bookingId = bookingRes.rows[0].id;
 
     // 5. Encounter
     const encRes = await pool.query(
       `INSERT INTO encounters (id, branch_id, booking_id, doctor_id, patient_id, status, started_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, 'IN_PROGRESS', NOW())
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, 'ONGOING', NOW())
        RETURNING id`,
       [branchId, bookingId, doctorId, patientId]
     );
     encounterId = encRes.rows[0].id;
 
     // 6. Invoice
+    testInvoiceNumber = generateInvoiceNumber();
     const invoiceRes = await pool.query(
-      `INSERT INTO invoices (id, branch_id, encounter_id, patient_id, amount_due, amount_paid, status)
-       VALUES (gen_random_uuid(), $1, $2, $3, 100000, 0, 'UNPAID')
+      `INSERT INTO invoices (id, branch_id, encounter_id, patient_id, invoice_number, amount_due, amount_paid, status)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, 100000, 0, 'UNPAID')
        RETURNING id`,
-      [branchId, encounterId, patientId]
+      [branchId, encounterId, patientId, testInvoiceNumber]
     );
     testInvoiceId = invoiceRes.rows[0].id;
-    testInvoiceNumber = `INV-WEBHOOK-${Date.now()}`;
-
-    // Update invoice with invoice_number (if column exists)
-    try {
-      await pool.query(
-        `UPDATE invoices SET invoice_number = $1 WHERE id = $2`,
-        [testInvoiceNumber, testInvoiceId]
-      );
-    } catch (e) {
-      // column might not exist, ignore
-    }
   });
 
   afterAll(async () => {
     await pool.query('DELETE FROM payment_webhooks WHERE order_id = $1', [testInvoiceNumber]);
     await pool.query('DELETE FROM invoices WHERE id = $1', [testInvoiceId]);
     await pool.query('DELETE FROM encounters WHERE id = $1', [encounterId]);
-    await pool.query('DELETE FROM bookings WHERE id = (SELECT booking_id FROM encounters WHERE id = $1)', [encounterId]);
+    await pool.query('DELETE FROM bookings WHERE id = $1', [bookingId]);
     await pool.query('DELETE FROM patients WHERE id = $1', [patientId]);
-    await pool.query('DELETE FROM users WHERE id = (SELECT user_id FROM patients WHERE id = $1)', [patientId]);
+    await pool.query('DELETE FROM users WHERE id IN (SELECT user_id FROM patients WHERE id = $1)', [patientId]);
+    await pool.query('DELETE FROM users WHERE id = $1', [doctorUserId]);
+    await pool.query('DELETE FROM users WHERE branch_id = $1', [branchId]);
+    await pool.query('DELETE FROM audit_logs WHERE branch_id = $1', [branchId]);
     await pool.query('DELETE FROM branches WHERE id = $1', [branchId]);
     await pool.end();
   });
 
   it('should process webhook idempotently', async () => {
+    const webhookId = `webhook-${uuidv4()}`;
     const payload = {
+      status_code: '200',
       order_id: testInvoiceNumber,
       transaction_status: 'capture',
       gross_amount: '100000',
-      transaction_id: 'txn-123456'
+      transaction_id: `txn-${uuidv4().slice(0, 8)}`
     };
-    const payloadStr = JSON.stringify(payload);
-    const signature = crypto.createHmac('sha256', serverKey).update(payloadStr).digest('hex');
+    const statusCode = String(payload.status_code);
+    const grossAmount = String(payload.gross_amount);
+    const orderId = String(payload.order_id);
+    const signature = crypto.createHmac('sha256', serverKey)
+      .update(orderId + statusCode + grossAmount + serverKey)
+      .digest('hex');
 
-    // First call
     const res1 = await request(app)
       .post('/webhooks/midtrans')
       .set('x-midtrans-signature', signature)
-      .set('x-midtrans-webhook-id', 'webhook-' + Date.now())
+      .set('x-midtrans-webhook-id', webhookId)
       .send(payload);
     expect(res1.status).toBe(200);
     expect(res1.body.success).toBe(true);
     expect(res1.body.message).toContain('processed');
 
-    // Second identical call (idempotent)
     const res2 = await request(app)
       .post('/webhooks/midtrans')
       .set('x-midtrans-signature', signature)
-      .set('x-midtrans-webhook-id', 'webhook-' + Date.now() + 1)
+      .set('x-midtrans-webhook-id', webhookId)
       .send(payload);
     expect(res2.status).toBe(200);
     expect(res2.body.message).toContain('idempotent');
@@ -176,9 +138,9 @@ describe.skip('Midtrans Webhook Integration', () => {
     const res = await request(app)
       .post('/webhooks/midtrans')
       .set('x-midtrans-signature', 'invalid')
-      .set('x-midtrans-webhook-id', 'webhook-123')
+      .set('x-midtrans-webhook-id', `webhook-${uuidv4()}`)
       .send(payload);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
     expect(res.body.success).toBe(false);
   });
 
