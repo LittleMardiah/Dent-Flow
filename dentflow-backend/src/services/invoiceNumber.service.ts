@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -22,8 +23,8 @@ export class InvoiceNumberService {
       }
       logger.info(`✅ Invoice number generated: ${invoiceNumber}`);
       return invoiceNumber;
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, 'Failed to generate invoice number');
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Failed to generate invoice number');
       throw new Error('INVOICE_NUMBER_GENERATION_FAILED');
     }
   }

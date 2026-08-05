@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -29,7 +30,6 @@ export class InvoiceGenerationService {
       if (result.rows.length === 0) {
         const keywords = treatment.split(' ').filter(w => w.length > 3);
         if (keywords.length > 0) {
-          const searchPattern = keywords.map(k => `%${k}%`).join(' AND ');
           result = await this.pool.query(
             `SELECT price FROM service_pricing 
              WHERE name ILIKE $1 AND is_active = true 
@@ -45,8 +45,8 @@ export class InvoiceGenerationService {
       }
 
       return parseFloat(result.rows[0].price);
-    } catch (error: any) {
-      logger.error({ error: error.message }, `Failed to get price for treatment: ${treatment}`);
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error) }, `Failed to get price for treatment: ${treatment}`);
       return 0;
     }
   }
@@ -54,7 +54,6 @@ export class InvoiceGenerationService {
   async generateInvoiceForEncounter(
     encounterId: string,
     branchId: string,
-    amountDue: number = 0,
     treatment?: string
   ): Promise<any> {
     const client = await this.pool.connect();
@@ -73,7 +72,7 @@ export class InvoiceGenerationService {
       }
       const encounter = encounterResult.rows[0];
 
-      // Check if invoice already exists (from trigger)
+      // Check if invoice already exists
       const existingInvoice = await client.query(
         'SELECT * FROM invoices WHERE encounter_id = $1',
         [encounterId]
@@ -160,9 +159,9 @@ export class InvoiceGenerationService {
       await client.query('COMMIT');
       logger.info(`✅ Invoice ${invoiceNumber} generated for encounter ${encounterId} (amount: ${finalAmount})`);
       return invoice;
-    } catch (error: any) {
+    } catch (error: unknown) {
       await client.query('ROLLBACK');
-      logger.error({ error: error.message, stack: error.stack }, 'Failed to generate invoice');
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Failed to generate invoice');
       throw error;
     } finally {
       client.release();
@@ -201,7 +200,6 @@ export class InvoiceGenerationService {
       const invoice = await this.generateInvoiceForEncounter(
         encounterId,
         branchId,
-        0,
         treatment
       );
 
@@ -224,9 +222,9 @@ export class InvoiceGenerationService {
       await client.query('COMMIT');
       logger.info(`✅ Encounter ${encounterId} completed, invoice generated`);
       return { encounter, invoice };
-    } catch (error: any) {
+    } catch (error: unknown) {
       await client.query('ROLLBACK');
-      logger.error({ error: error.message, stack: error.stack }, 'Failed to complete encounter');
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Failed to complete encounter');
       throw error;
     } finally {
       client.release();

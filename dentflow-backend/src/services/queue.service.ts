@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import Redis from 'ioredis';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -27,8 +28,8 @@ export class QueueService {
       const number = await this.redis.incr(key);
       logger.info(`🔢 Queue number ${number} generated for doctor ${doctorId} on ${dateStr}`);
       return number;
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, 'Failed to generate queue number');
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Failed to generate queue number');
       throw new Error('QUEUE_GENERATION_FAILED');
     }
   }

@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -121,9 +122,9 @@ export class PaymentWebhookService {
 
       logger.info(`✅ Invoice ${invoice.invoice_number} paid successfully via webhook ${webhookId}`);
       return { success: true, message: 'Webhook processed successfully' };
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, 'Error processing webhook');
-      return { success: false, message: error.message || 'Internal server error' };
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Error processing webhook');
+      return { success: false, message: getErrorMessage(error) || 'Internal server error' };
     }
   }
 

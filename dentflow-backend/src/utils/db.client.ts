@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 ﻿import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from './logger';
@@ -18,8 +19,8 @@ export const testDatabaseConnection = async (): Promise<boolean> => {
     await pool.query('SELECT 1');
     logger.info('✅ Database connection successful');
     return true;
-  } catch (error: any) {
-    logger.error({ error: error.message, stack: error.stack });
+  } catch (error: unknown) {
+    logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) });
     logger.warn('⚠️ Database connection failed. Using fallback mode for development.');
     return false;
   }

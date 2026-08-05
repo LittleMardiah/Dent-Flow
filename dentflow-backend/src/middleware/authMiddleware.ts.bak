@@ -12,6 +12,7 @@ declare global {
 }
 
 export const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  console.log("🔍 [authMiddleware] CALLED for path:", req.path);
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -21,6 +22,7 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
     const token = authHeader.substring(7);
     const payload = JwtService.verifyToken(token);
     req.user = payload;
+  console.log("🔍 [authMiddleware] SUCCESS for user:", payload.userId, "role:", payload.role);
     console.log('🔐 Auth success - user:', { userId: payload.userId, role: payload.role, branchId: payload.branchId });
     next();
   } catch (error: any) {
@@ -32,7 +34,7 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
 export const roleMiddleware = (allowedRoles: string[]) => {
   // 🔍 DEBUG: Log creation time with stack trace
   console.log('🔍 [CREATE] roleMiddleware called with allowedRoles:', allowedRoles);
-  console.trace('🔍 [CREATE] roleMiddleware stack trace:');
+  // // console.trace(...); // HAPUS SPAM // HAPUS SPAM
 
   return (req: Request, res: Response, next: NextFunction) => {
     console.log('🛡️ [EXEC] roleMiddleware path:', req.path, 'user.role:', req.user?.role, 'allowedRoles (exec):', allowedRoles);

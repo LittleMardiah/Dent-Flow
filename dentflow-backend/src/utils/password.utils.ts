@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 ﻿import bcrypt from 'bcryptjs';
 import { logger } from './logger';
 
@@ -8,9 +9,9 @@ export class PasswordService {
     try {
       const salt = await bcrypt.genSalt(this.SALT_ROUNDS);
       return await bcrypt.hash(password, salt);
-    } catch (error: any) {
+    } catch (error: unknown) {
       // PERBAIKAN: Pakai object untuk logger.error
-      logger.error({ error: error.message, stack: error.stack });
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) });
       throw error;
     }
   }
@@ -18,9 +19,9 @@ export class PasswordService {
   static async comparePassword(plainPassword: string, hashedPassword: string): Promise<boolean> {
     try {
       return await bcrypt.compare(plainPassword, hashedPassword);
-    } catch (error: any) {
+    } catch (error: unknown) {
       // PERBAIKAN: Pakai object untuk logger.error
-      logger.error({ error: error.message, stack: error.stack });
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) });
       return false;
     }
   }

@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -134,9 +135,9 @@ export class DoctorScheduleService {
 
       await client.query('COMMIT');
       logger.info(`✅ Doctor ${doctorId} leave set from ${startStr} to ${endStr}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       await client.query('ROLLBACK');
-      logger.error({ error: error.message, stack: error.stack }, 'Failed to set doctor leave');
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Failed to set doctor leave');
       throw new Error('LEAVE_SET_FAILED');
     } finally {
       client.release();

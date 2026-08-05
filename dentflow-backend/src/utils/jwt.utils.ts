@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 ﻿import jwt, { JwtPayload } from 'jsonwebtoken';
 import { config } from '../config';
 import { logger } from './logger';
@@ -17,8 +18,8 @@ export class JwtService {
       return jwt.sign(payload, secret, {
         expiresIn: config.jwt.expiry,
       } as jwt.SignOptions);
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack });
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) });
       throw error;
     }
   }
@@ -29,8 +30,8 @@ export class JwtService {
       return jwt.sign({ userId }, secret, {
         expiresIn: config.jwt.refreshExpiry,
       } as jwt.SignOptions);
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack });
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) });
       throw error;
     }
   }
@@ -39,8 +40,8 @@ export class JwtService {
     try {
       const secret = config.jwt.secret as string;
       return jwt.verify(token, secret) as TokenPayload;
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack });
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) });
       throw new Error('Invalid or expired token');
     }
   }

@@ -1,4 +1,3 @@
-import { getCurrentTime } from "../utils/time";
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -108,9 +107,9 @@ export class BookingService {
       await client.query('COMMIT');
 
       return { bookingId, bookingCode: code };
-    } catch (error: any) {
+    } catch (error: unknown) {
       await client.query('ROLLBACK');
-      logger.error({ error: error.message }, 'Booking creation failed');
+      logger.error({ error: getErrorMessage(error) }, 'Booking creation failed');
       throw error;
     } finally {
       client.release();

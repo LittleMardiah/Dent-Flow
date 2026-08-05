@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { InvoiceStateRepository } from '../repositories/invoiceState.repository';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
@@ -61,8 +62,8 @@ export class InvoicePaymentService {
 
       // Get updated invoice with history
       return await this.repo.getInvoiceWithHistory(invoiceId);
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, 'Failed to mark invoice as paid');
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Failed to mark invoice as paid');
       throw error;
     }
   }

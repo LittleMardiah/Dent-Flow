@@ -1,3 +1,4 @@
+import { getErrorMessage } from "../utils/error.util";
 import { Router, Request, Response } from 'express';
 import { healthService } from '../services/health.service';
 import { jobScheduler } from '../jobs/jobScheduler';
@@ -15,10 +16,10 @@ router.get('/', async (req: Request, res: Response) => {
       ...health,
       jobs: jobStatus,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     res.status(503).json({ 
       status: 'error', 
-      error: error.message,
+      error: getErrorMessage(error),
       timestamp: new Date().toISOString()
     });
   }

@@ -1,3 +1,4 @@
+import { getErrorMessage } from "../utils/error.util";
 import { getCurrentTime } from "../utils/time";
 import { Pool } from 'pg';
 import { config } from '../config';
@@ -99,9 +100,9 @@ export class CheckinService {
         patientId: booking.patient_id,
         doctorId: booking.doctor_id,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       await client.query('ROLLBACK');
-      logger.error({ error: error.message, checkInCode, branchId }, 'Check-in failed');
+      logger.error({ error: getErrorMessage(error), checkInCode, branchId }, 'Check-in failed');
       throw error;
     } finally {
       client.release();

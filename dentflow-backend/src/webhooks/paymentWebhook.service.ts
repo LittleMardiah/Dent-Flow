@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -77,9 +78,9 @@ export class PaymentWebhookService {
 
       logger.info(`✅ Webhook processed: ${payload.webhookId}`);
       return { idempotent: false, id: webhookId };
-    } catch (error: any) {
+    } catch (error: unknown) {
       await client.query('ROLLBACK');
-      logger.error({ error: error.message, stack: error.stack });
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) });
       throw error;
     } finally {
       client.release();
@@ -96,8 +97,8 @@ export class PaymentWebhookService {
         [webhookId]
       );
       logger.info(`✅ Webhook marked as processed: ${webhookId}`);
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack });
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) });
     } finally {
       client.release();
     }

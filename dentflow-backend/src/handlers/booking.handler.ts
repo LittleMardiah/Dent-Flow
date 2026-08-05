@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { BookingService } from '../services/booking.service';
 import { logger } from '../utils/logger';
 import { pool } from '../config/database';
+import { getErrorMessage, getErrorStack } from '../utils/error.util';
 
 const bookingService = new BookingService();
 
@@ -28,27 +29,28 @@ export const createScheduledBooking = async (req: Request, res: Response, _next:
     );
 
     res.status(201).json({ success: true, data: result });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    const stack = getErrorStack(error);
     console.error('Handler error:', error);
-    if (error.message === 'DOCTOR_NOT_FOUND') {
+    if (message === 'DOCTOR_NOT_FOUND') {
       return res.status(404).json({ success: false, message: 'Dokter tidak ditemukan' });
-      console.log("🔍 [HANDLER] Returning 404 because:", "condition met");
     }
-    if (error.message === 'DOCTOR_NOT_SCHEDULED') {
+    if (message === 'DOCTOR_NOT_SCHEDULED') {
       return res.status(400).json({ success: false, message: 'Dokter tidak memiliki jadwal pada waktu tersebut' });
     }
-    if (error.message === 'SLOT_NOT_AVAILABLE') {
+    if (message === 'SLOT_NOT_AVAILABLE') {
       return res.status(409).json({ success: false, message: 'Slot sudah penuh (maksimal 4 pasien per sesi)' });
     }
-    if (error.message === 'FAILED_TO_GENERATE_BOOKING_CODE') {
+    if (message === 'FAILED_TO_GENERATE_BOOKING_CODE') {
       return res.status(500).json({ success: false, message: 'Gagal generate kode booking, silakan coba lagi' });
     }
 
-    logger.error({ error: error.message, stack: error.stack }, 'Create booking error');
+    logger.error({ error: message, stack }, 'Create booking error');
     res.status(500).json({ 
       success: false, 
-      message: error.message || 'Internal server error',
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      message: message || 'Internal server error',
+      stack: process.env.NODE_ENV === 'development' ? stack : undefined
     });
   }
 };
@@ -67,8 +69,10 @@ export const getPatientBookings = async (req: Request, res: Response, _next: Nex
       [patientId]
     );
     res.status(200).json({ success: true, data: { bookings: result.rows } });
-  } catch (error: any) {
-    logger.error({ error: error.message, stack: error.stack }, 'Get patient bookings error');
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    const stack = getErrorStack(error);
+    logger.error({ error: message, stack }, 'Get patient bookings error');
     _next(error);
   }
 };
@@ -84,7 +88,6 @@ export const getBookingDetail = async (req: Request, res: Response, _next: NextF
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    // Dapatkan patient record ID dari user yang login
     const patientRecord = await pool.query(
       `SELECT id FROM patients WHERE user_id = $1`,
       [userId]
@@ -104,7 +107,6 @@ export const getBookingDetail = async (req: Request, res: Response, _next: NextF
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Booking tidak ditemukan' });
-      console.log("🔍 [HANDLER] Returning 404 because:", "condition met");
     }
     const booking = result.rows[0];
 
@@ -120,8 +122,10 @@ export const getBookingDetail = async (req: Request, res: Response, _next: NextF
     }
 
     res.status(200).json({ success: true, data: booking });
-  } catch (error: any) {
-    logger.error({ error: error.message, stack: error.stack }, 'Get booking detail error');
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    const stack = getErrorStack(error);
+    logger.error({ error: message, stack }, 'Get booking detail error');
     _next(error);
   }
 };
@@ -137,14 +141,12 @@ export const cancelBooking = async (req: Request, res: Response, _next: NextFunc
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    // Dapatkan booking
     const result = await pool.query(
       `SELECT * FROM bookings WHERE id = $1`,
       [bookingId]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Booking tidak ditemukan' });
-      console.log("🔍 [HANDLER] Returning 404 because:", "condition met");
     }
     const booking = result.rows[0];
 
@@ -166,14 +168,15 @@ export const cancelBooking = async (req: Request, res: Response, _next: NextFunc
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
 
-    // Update status ke CANCELLED
     await pool.query(
       `UPDATE bookings SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`,
       [bookingId]
     );
     res.status(200).json({ success: true, message: 'Booking berhasil dibatalkan' });
-  } catch (error: any) {
-    logger.error({ error: error.message, stack: error.stack }, 'Cancel booking error');
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    const stack = getErrorStack(error);
+    logger.error({ error: message, stack }, 'Cancel booking error');
     _next(error);
   }
 };

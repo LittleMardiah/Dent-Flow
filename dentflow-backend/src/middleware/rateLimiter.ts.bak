@@ -1,38 +1,10 @@
-import { Request, Response, NextFunction } from 'express';
-import { logger } from '../utils/logger';
+import rateLimit from 'express-rate-limit';
 
-// Bypass rate limiting in test environment
-const isTestEnv = process.env.NODE_ENV === 'test' || process.env.RATE_LIMIT_DISABLED === 'true';
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'test' ? 9999 : 5,
+  message: 'Too many requests, please try again later.',
+  skip: (_req) => process.env.NODE_ENV === 'test',
+});
 
-const requests: Record<string, number[]> = {};
-
-export const rateLimiter = (req: Request, res: Response, next: NextFunction) => {
-  // Skip rate limiting for test environment
-  if (isTestEnv) {
-    return next();
-  }
-
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  const now = Date.now();
-  const windowMs = 1000; // 1 second
-  const maxRequests = 5;
-
-  if (!requests[ip]) {
-    requests[ip] = [];
-  }
-
-  // Filter out requests older than window
-  requests[ip] = requests[ip].filter((timestamp) => now - timestamp < windowMs);
-
-  if (requests[ip].length >= maxRequests) {
-    logger.warn(`Rate limit exceeded for IP: ${ip}`);
-    res.status(429).json({
-      success: false,
-      message: 'Too many requests, please try again later.',
-    });
-    return;
-  }
-
-  requests[ip].push(now);
-  next();
-};
+export const rateLimiter = limiter;

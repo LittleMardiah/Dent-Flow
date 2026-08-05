@@ -1,53 +1,62 @@
 import { Request, Response, NextFunction } from 'express';
-import { JwtService, TokenPayload } from '../utils/jwt.utils';
+import { JwtService } from '../utils/jwt.utils';
 import { logger } from '../utils/logger';
+import { getErrorMessage, getErrorStack } from '../utils/error.util';
 
 declare global {
   namespace Express {
     interface Request {
-      user?: TokenPayload;
-      requestId?: string;
+      user?: {
+        userId: string;
+        branchId: string;
+        role: string;
+        email?: string;
+      };
     }
   }
 }
 
 export const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
-  console.log("🔍 [authMiddleware] CALLED for path:", req.path);
   try {
+    console.log(`🔍 [authMiddleware] CALLED for path: ${req.path}`);
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Missing or invalid token' });
+      console.log('🔍 [authMiddleware] No token provided');
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const token = authHeader.substring(7);
-    const payload = JwtService.verifyToken(token);
-    req.user = payload;
-  console.log("🔍 [authMiddleware] SUCCESS for user:", payload.userId, "role:", payload.role);
-    console.log('🔐 Auth success - user:', { userId: payload.userId, role: payload.role, branchId: payload.branchId });
+    const token = authHeader.split(' ')[1];
+    const decoded = JwtService.verifyToken(token);
+    req.user = {
+      userId: decoded.userId,
+      branchId: decoded.branchId,
+      role: decoded.role,
+      email: decoded.email,
+    };
+    console.log(`🔍 [authMiddleware] SUCCESS for user: ${decoded.userId} role: ${decoded.role}`);
+    console.log('🔐 Auth success - user:', JSON.stringify(req.user, null, 2));
     next();
-  } catch (error: any) {
-    logger.error('Auth middleware error:', error);
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    const stack = getErrorStack(error);
+    console.log('🔍 [authMiddleware] FAILED:', message);
+    logger.error({ error: message, stack }, 'Auth middleware error');
     res.status(401).json({ error: 'Unauthorized' });
   }
 };
 
 export const roleMiddleware = (allowedRoles: string[]) => {
-  // 🔍 DEBUG: Log creation time with stack trace
-  console.log('🔍 [CREATE] roleMiddleware called with allowedRoles:', allowedRoles);
-  // // console.trace(...); // HAPUS SPAM // HAPUS SPAM
-
   return (req: Request, res: Response, next: NextFunction) => {
-    console.log('🛡️ [EXEC] roleMiddleware path:', req.path, 'user.role:', req.user?.role, 'allowedRoles (exec):', allowedRoles);
-    console.log("🔍 [EXEC] DEBUG: allowedRoles:", allowedRoles, "user.role:", req.user?.role, "path:", req.path);
-
-    if (!req.user || !allowedRoles.includes(req.user.role)) {
-      console.log('🛡️ Role check FAILED - user:', req.user, 'allowed:', allowedRoles);
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Forbidden: Insufficient permissions' 
-      });
+    console.log(`🛡️ [EXEC] roleMiddleware path: ${req.path} user.role: ${req.user?.role} allowedRoles (exec): ${allowedRoles}`);
+    console.log(`🔍 [EXEC] DEBUG: allowedRoles: ${allowedRoles} user.role: ${req.user?.role} path: ${req.path}`);
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
-    console.log('🛡️ Role check PASSED - user:', req.user.role, 'allowed:', allowedRoles);
+    if (!allowedRoles.includes(req.user.role)) {
+      console.log(`❌ Role check FAILED - user: ${req.user.role} allowed: ${allowedRoles}`);
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    console.log(`🛡️ Role check PASSED - user: ${req.user.role} allowed: ${allowedRoles}`);
     next();
   };
 };

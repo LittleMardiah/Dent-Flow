@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -166,11 +167,11 @@ export class PaymentInputService {
         success: false,
         message: `Unknown status: ${status}`,
       };
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, 'PaymentInputService error');
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'PaymentInputService error');
       return {
         success: false,
-        message: error.message || 'Payment processing failed',
+        message: getErrorMessage(error) || 'Payment processing failed',
       };
     }
   }

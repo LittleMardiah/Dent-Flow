@@ -2,6 +2,7 @@ import { logger } from '../utils/logger';
 import { PaymentWebhookService } from '../services/paymentWebhook.service';
 import { PaymentWebhookRepository } from '../repositories/paymentWebhook.repository';
 import { pool } from '../config/database';
+import { getErrorMessage, getErrorStack } from '../utils/error.util';
 
 export const webhookRetryJob = {
   name: 'webhook-retry',
@@ -60,8 +61,10 @@ export const webhookRetryJob = {
       }
 
       logger.info('✅ Webhook retry job completed');
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, '❌ Webhook retry job failed');
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      const stack = getErrorStack(error);
+      logger.error({ error: message, stack }, '❌ Webhook retry job failed');
     }
   },
 
@@ -95,8 +98,10 @@ export const webhookRetryJob = {
       );
 
       logger.info(`✅ Booking ${booking.id} auto-cancelled due to payment failure timeout`);
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, 'Failed to auto-cancel booking');
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      const stack = getErrorStack(error);
+      logger.error({ error: message, stack }, 'Failed to auto-cancel booking');
     }
   }
 };

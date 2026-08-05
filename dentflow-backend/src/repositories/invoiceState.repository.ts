@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -64,9 +65,9 @@ export class InvoiceStateRepository {
       logger.info(`Invoice ${invoiceId} transitioned ${fromState} → ${toState} (${transitionReason})`);
 
       await client.query('COMMIT');
-    } catch (error: any) {
+    } catch (error: unknown) {
       await client.query('ROLLBACK');
-      logger.error({ error: error.message, stack: error.stack }, 'State transition failed');
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'State transition failed');
       throw error;
     } finally {
       client.release();

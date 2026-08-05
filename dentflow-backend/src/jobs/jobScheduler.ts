@@ -1,14 +1,16 @@
-import * as cron from 'node-cron';
+import cron from 'node-cron';
 import { logger } from '../utils/logger';
+import { getErrorMessage, getErrorStack } from '../utils/error.util';
 import { noShowDetectionJob } from './noShowDetection.job';
 import { resetQueueJob } from './resetQueue.job';
 import { webhookRetryJob } from './webhookRetry.job';
-// 
+
 export interface ScheduledJob {
   name: string;
   schedule: string;
   execute: () => Promise<void>;
 }
+
 export class JobScheduler {
   private jobs: Map<string, cron.ScheduledTask> = new Map();
   private isInitialized: boolean = false;
@@ -22,7 +24,7 @@ export class JobScheduler {
     const jobs: ScheduledJob[] = [
       noShowDetectionJob,
       resetQueueJob,
-    webhookRetryJob,
+      webhookRetryJob,
     ];
 
     logger.info(`🚀 Initializing ${jobs.length} scheduled job(s)...`);
@@ -32,14 +34,27 @@ export class JobScheduler {
         const task = cron.schedule(job.schedule, async () => {
           try {
             await job.execute();
-          } catch (error: any) {
-            logger.error({ error: error.message, stack: error.stack, job: job.name });
+          } catch (error: unknown) {
+            const message = getErrorMessage(error);
+            const stack = getErrorStack(error);
+            logger.error({ 
+              error: message, 
+              stack,
+              job: job.name,
+            });
           }
         });
+
         this.jobs.set(job.name, task);
         logger.info(`✅ Registered job: ${job.name} (${job.schedule})`);
-      } catch (error: any) {
-        logger.error({ error: error.message, stack: error.stack, job: job.name });
+      } catch (error: unknown) {
+        const message = getErrorMessage(error);
+        const stack = getErrorStack(error);
+        logger.error({ 
+          error: message, 
+          stack,
+          job: job.name,
+        });
       }
     }
 
@@ -62,7 +77,12 @@ export class JobScheduler {
       running: task.getStatus() === 'running' || task.getStatus() === 'scheduled',
       status: task.getStatus(),
     }));
-    return { initialized: this.isInitialized, totalJobs: this.jobs.size, jobs };
+
+    return {
+      initialized: this.isInitialized,
+      totalJobs: this.jobs.size,
+      jobs,
+    };
   }
 }
 

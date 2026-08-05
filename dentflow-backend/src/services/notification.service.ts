@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -28,8 +29,8 @@ export class NotificationService {
         [bookingId, patientId, type, content]
       );
       logger.info(`📧 Notification logged: ${type} for booking ${bookingId} (id: ${result.rows[0].id})`);
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, 'Failed to log notification');
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Failed to log notification');
       throw new Error('NOTIFICATION_LOG_FAILED');
     } finally {
       client.release();
@@ -60,8 +61,8 @@ export class NotificationService {
       const content = `Booking Anda berhasil dibuat. Kode booking: ${bookingId}. Silakan datang sesuai jadwal.`;
       await this.logNotification(bookingId, patientId, 'CONFIRMATION', content);
       logger.info(`✅ Booking confirmation sent for booking ${bookingId}`);
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, `Failed to send booking confirmation for ${bookingId}`);
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, `Failed to send booking confirmation for ${bookingId}`);
       throw error;
     }
   }
@@ -76,8 +77,8 @@ export class NotificationService {
       const content = `Pengingat: Anda memiliki janji temu besok. Kode booking: ${bookingId}. Jangan lupa datang!`;
       await this.logNotification(bookingId, patientId, 'REMINDER', content);
       logger.info(`✅ Reminder sent for booking ${bookingId}`);
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, `Failed to send reminder for ${bookingId}`);
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, `Failed to send reminder for ${bookingId}`);
       throw error;
     }
   }
@@ -92,8 +93,8 @@ export class NotificationService {
       const content = `Booking Anda dengan kode ${bookingId} telah dibatalkan. Jika ada pertanyaan, hubungi klinik.`;
       await this.logNotification(bookingId, patientId, 'CANCELLATION', content);
       logger.info(`✅ Cancellation notification sent for booking ${bookingId}`);
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, `Failed to send cancellation for ${bookingId}`);
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, `Failed to send cancellation for ${bookingId}`);
       throw error;
     }
   }

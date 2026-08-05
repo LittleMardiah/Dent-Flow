@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 ﻿import Redis from 'ioredis';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -52,8 +53,8 @@ export class HealthService {
     try {
       await pool.query('SELECT 1');
       return 'ok';
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack });
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) });
       return 'down';
     }
   }
@@ -62,8 +63,8 @@ export class HealthService {
     try {
       await this.redis.ping();
       return 'ok';
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack });
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) });
       return 'down';
     }
   }

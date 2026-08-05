@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { checkinService } from '../services/checkin.service';
 import { logger } from '../utils/logger';
+import { getErrorMessage, getErrorStack } from '../utils/error.util';
 
 export const adminCheckin = async (req: Request, res: Response) => {
   try {
@@ -51,57 +52,59 @@ export const adminCheckin = async (req: Request, res: Response) => {
       },
       message: `Check-in berhasil. Nomor antrian: ${result.queueNumber}`,
     });
-  } catch (error: any) {
-    // 🔥 LOG DETAIL ERROR UNTUK DEBUGGING
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    const stack = getErrorStack(error);
+    
     console.error('❌ [ERROR DETAIL]', {
-      message: error.message,
-      stack: error.stack,
-      detail: error.detail,
-      code: error.code,
-      table: error.table,
-      constraint: error.constraint,
+      message,
+      stack,
+      detail: (error as any)?.detail,
+      code: (error as any)?.code,
+      table: (error as any)?.table,
+      constraint: (error as any)?.constraint,
     });
     logger.error({ 
-      error: error.message, 
-      detail: error.detail, 
-      code: error.code,
-      constraint: error.constraint 
+      error: message, 
+      detail: (error as any)?.detail, 
+      code: (error as any)?.code,
+      constraint: (error as any)?.constraint 
     }, 'Admin check-in error');
 
     let status = 400;
-    let message = 'Check-in gagal';
+    let responseMessage = 'Check-in gagal';
 
-    switch (error.message) {
+    switch (message) {
       case 'KODE_TIDAK_VALID':
-        message = 'Kode booking tidak ditemukan';
+        responseMessage = 'Kode booking tidak ditemukan';
         break;
       case 'BRANCH_TIDAK_SESUAI':
-        message = 'Cabang tidak sesuai dengan booking';
+        responseMessage = 'Cabang tidak sesuai dengan booking';
         break;
       case 'STATUS_TIDAK_VALID':
-        message = 'Booking tidak dalam status yang valid untuk check-in';
+        responseMessage = 'Booking tidak dalam status yang valid untuk check-in';
         break;
       case 'PAYMENT_BELUM_KONFIRMASI':
-        message = 'Pembayaran belum dikonfirmasi';
+        responseMessage = 'Pembayaran belum dikonfirmasi';
         break;
       case 'SUDAH_CHECK_IN':
-        message = 'Booking sudah check-in';
+        responseMessage = 'Booking sudah check-in';
         break;
       case 'SESI_BELUM_DIMULAI':
-        message = 'Sesi belum dimulai';
+        responseMessage = 'Sesi belum dimulai';
         break;
       case 'SESI_SUDAH_BERAKHIR':
-        message = 'Sesi sudah berakhir';
+        responseMessage = 'Sesi sudah berakhir';
         break;
       default:
         status = 500;
-        message = 'Terjadi kesalahan server';
+        responseMessage = 'Terjadi kesalahan server';
     }
 
     return res.status(status).json({
       success: false,
-      message,
-      error: error.message,
+      message: responseMessage,
+      error: message,
     });
   }
 };

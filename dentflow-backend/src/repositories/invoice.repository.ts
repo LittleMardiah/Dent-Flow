@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { BaseRepository } from './base.repository';
 import { logger } from '../utils/logger';
 import { auditService } from '../services/audit.service';
@@ -129,9 +130,9 @@ export class InvoiceRepository extends BaseRepository {
       await client.query('COMMIT');
       logger.info(`✅ Invoice ${id} status updated: ${oldStatus} → ${newStatus}`);
       return updatedInvoice;
-    } catch (error: any) {
+    } catch (error: unknown) {
       await client.query('ROLLBACK');
-      logger.error({ error: error.message, stack: error.stack });
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) });
       throw error;
     } finally {
       client.release();

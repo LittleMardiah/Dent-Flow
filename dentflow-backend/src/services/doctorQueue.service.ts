@@ -1,3 +1,4 @@
+import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -69,8 +70,8 @@ export class DoctorQueueService {
         calledAt: row.called_at,
         status: row.status,
       }));
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, 'Error fetching doctor queue');
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Error fetching doctor queue');
       throw new Error('Failed to fetch doctor queue');
     }
   }
@@ -127,9 +128,9 @@ export class DoctorQueueService {
 
       await client.query('COMMIT');
       return { queue: updatedQueue, encounter };
-    } catch (error: any) {
+    } catch (error: unknown) {
       await client.query('ROLLBACK');
-      logger.error({ error: error.message, stack: error.stack }, 'Error in checkInPatient');
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Error in checkInPatient');
       throw error;
     } finally {
       client.release();
@@ -157,8 +158,8 @@ export class DoctorQueueService {
         totalCompleted: parseInt(row.total_completed) || 0,
         averageWaitTimeMinutes: parseFloat(row.avg_wait_minutes) || 0,
       };
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack }, 'Error fetching queue stats');
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Error fetching queue stats');
       throw new Error('Failed to fetch queue stats');
     }
   }

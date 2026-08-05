@@ -1,3 +1,4 @@
+import { getErrorMessage } from "../utils/error.util";
 import { Router, Request, Response } from 'express';
 import { authService } from '../services/auth.service';
 import { PatientRegisterSchema } from '../middleware/validation';
@@ -70,10 +71,10 @@ router.post('/patient/login', async (req: Request, res: Response) => {
         refreshToken: result.refreshToken,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     res.status(401).json({
       success: false,
-      message: error.message || 'Login gagal',
+      message: getErrorMessage(error) || 'Login gagal',
     });
   }
 });
@@ -100,10 +101,10 @@ router.post('/admin/login', async (req: Request, res: Response) => {
         refreshToken: result.refreshToken,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     res.status(401).json({
       success: false,
-      message: error.message || 'Login gagal',
+      message: getErrorMessage(error) || 'Login gagal',
     });
   }
 });
@@ -130,10 +131,10 @@ router.post('/doctor/login', async (req: Request, res: Response) => {
         refreshToken: result.refreshToken,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     res.status(401).json({
       success: false,
-      message: error.message || 'Login gagal',
+      message: getErrorMessage(error) || 'Login gagal',
     });
   }
 });
@@ -157,10 +158,10 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
       message: result.message,
       ...(process.env.NODE_ENV === 'development' && { devToken: result.devToken }),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     res.status(400).json({
       success: false,
-      message: error.message || 'Terjadi kesalahan',
+      message: getErrorMessage(error) || 'Terjadi kesalahan',
     });
   }
 });
@@ -191,10 +192,10 @@ router.post('/reset-password', async (req: Request, res: Response) => {
       success: true,
       message: result.message,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     res.status(400).json({
       success: false,
-      message: error.message || 'Reset password gagal',
+      message: getErrorMessage(error) || 'Reset password gagal',
     });
   }
 });
