@@ -4,7 +4,7 @@ import { logger } from '../utils/logger';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
 import { InvoiceStateValidator } from './invoiceStateValidator.service';
-// 
+
 export class InvoiceService {
   private pool: Pool;
 
@@ -40,11 +40,14 @@ export class InvoiceService {
         throw new Error('INVALID_STATE_TRANSITION');
       }
 
+      // UPDATE invoice: status, payment_status, paid_at, amount_paid, paid_amount, payment_method
       const updateResult = await client.query(
         `UPDATE invoices
          SET status = 'PAID',
+             payment_status = 'PAID',
              paid_at = NOW(),
              amount_paid = $1,
+             paid_amount = $1,
              payment_method = $3,
              updated_at = NOW()
          WHERE id = $2
@@ -62,12 +65,15 @@ export class InvoiceService {
         description: `Invoice ${invoiceId} marked as paid by admin ${adminId}`,
         newValues: {
           status: 'PAID',
+          payment_status: 'PAID',
           paid_at: updated.paid_at,
           amount_paid: updated.amount_paid,
+          paid_amount: updated.paid_amount,
           payment_method: paymentMethod,
         },
         oldValues: {
           status: invoice.status,
+          payment_status: invoice.payment_status,
         },
       });
 
@@ -106,8 +112,10 @@ export class InvoiceService {
       const updateResult = await client.query(
         `UPDATE invoices
          SET status = 'UNPAID',
+             payment_status = 'UNPAID',
              paid_at = NULL,
              amount_paid = 0,
+             paid_amount = NULL,
              updated_at = NOW()
          WHERE id = $1
          RETURNING *`,
@@ -127,9 +135,11 @@ export class InvoiceService {
         description: `Payment undone for invoice ${invoiceId} by admin ${adminId}. Reason: ${reason}`,
         newValues: {
           status: 'UNPAID',
+          payment_status: 'UNPAID',
         },
         oldValues: {
           status: 'PAID',
+          payment_status: 'PAID',
         },
       });
 
