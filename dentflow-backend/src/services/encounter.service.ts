@@ -8,18 +8,17 @@ import { InvoiceGenerationService } from './invoiceGeneration.service';
 export interface EncounterData {
   id: string;
   bookingId: string;
-  patientId: string;
   doctorId: string;
+  patientId: string;
   branchId: string;
-  complaint?: string;
-  diagnosis?: string;
-  icd10Code?: string;
-  treatment?: string;
-  prescription?: string;
-  notes?: string;
+  complaint: string;
+  treatment: string;
+  diagnosis: string;
+  prescription: string;
+  notes: string;
   status: 'ONGOING' | 'COMPLETED' | 'CANCELLED';
   startedAt: Date;
-  completedAt?: Date;
+  completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,13 +36,12 @@ export class EncounterService {
     return {
       id: row.id,
       bookingId: row.booking_id,
-      patientId: row.patient_id,
       doctorId: row.doctor_id,
+      patientId: row.patient_id,
       branchId: row.branch_id,
       complaint: row.complaint,
-      diagnosis: row.diagnosis,
-      icd10Code: row.icd10_code,
       treatment: row.treatment,
+      diagnosis: row.diagnosis,
       prescription: row.prescription,
       notes: row.notes,
       status: row.status,
@@ -54,58 +52,37 @@ export class EncounterService {
     };
   }
 
-  async startEncounter(bookingId: string, doctorUserId: string, branchId: string): Promise<EncounterData> {
+  async startEncounter(
+    bookingId: string,
+    doctorUserId: string,
+    branchId: string
+  ): Promise<EncounterData> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
 
-      // 1. Ambil booking
       const bookingResult = await client.query(
-        `SELECT b.*, b.patient_id, b.doctor_id 
-         FROM bookings b
-         WHERE b.id = $1 AND b.branch_id = $2`,
-        [bookingId, branchId]
+        `SELECT b.id, b.patient_id, b.doctor_id, b.status 
+         FROM bookings b 
+         WHERE b.id = $1`,
+        [bookingId]
       );
       if (bookingResult.rows.length === 0) {
         throw new Error('BOOKING_NOT_FOUND');
       }
       const booking = bookingResult.rows[0];
 
-      if (!['CHECKED_IN', 'PAYMENT_CONFIRMED'].includes(booking.status)) {
+      if (booking.status !== 'CHECKED_IN' && booking.status !== 'PAYMENT_CONFIRMED') {
         throw new Error('BOOKING_NOT_READY_FOR_ENCOUNTER');
       }
 
-      // 🔥 2. Mapping user ID → doctor record ID
-      const doctorResult = await client.query(
-        `SELECT id FROM doctors WHERE user_id = $1 AND branch_id = $2`,
-        [doctorUserId, branchId]
-      );
-      if (doctorResult.rows.length === 0) {
-        throw new Error('DOCTOR_NOT_FOUND');
-      }
-      const doctorRecordId = doctorResult.rows[0].id;
-
-      // 3. Validasi: pastikan doctor ini sesuai dengan doctor di booking
-      if (doctorRecordId !== booking.doctor_id) {
-        throw new Error('DOCTOR_NOT_AUTHORIZED');
-      }
-
-      // 4. Cek apakah encounter sudah ada
-      const existing = await client.query(
-        `SELECT id FROM encounters WHERE booking_id = $1`,
-        [bookingId]
-      );
-      if (existing.rows.length > 0) {
-        throw new Error('ENCOUNTER_ALREADY_EXISTS');
-      }
-
-      // 5. 🔥 INSERT dengan doctorRecordId (bukan user ID)
       const result = await client.query(
-        `INSERT INTO encounters 
-         (booking_id, patient_id, doctor_id, branch_id, status, started_at)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *`,
-        [bookingId, booking.patient_id, doctorRecordId, branchId, 'ONGOING', new Date()]
+        `INSERT INTO encounters (
+          id, branch_id, booking_id, doctor_id, patient_id, status, started_at
+        ) VALUES (
+          gen_random_uuid(), $1, $2, $3, $4, 'ONGOING', NOW()
+        ) RETURNING *`,
+        [branchId, bookingId, booking.doctor_id, booking.patient_id]
       );
       const encounter = result.rows[0];
 
@@ -115,8 +92,7 @@ export class EncounterService {
         eventType: AuditEventType.ENCOUNTER_STARTED,
         entityType: 'ENCOUNTER',
         entityId: encounter.id,
-        description: 'Pemeriksaan dimulai untuk pasien',
-        newValues: { bookingId, doctorRecordId },
+        description: `Encounter started for booking ${bookingId}`,
       });
 
       await client.query('COMMIT');
@@ -130,11 +106,6 @@ export class EncounterService {
       client.release();
     }
   }
-
-  // === METHOD LAINNYA (recordDiagnosis, recordTreatment, updateEncounter, completeEncounter, getEncounterById) ===
-  // Sama seperti sebelumnya, hanya dengan perubahan parameter doctorId menjadi doctorUserId di beberapa method
-  // Untuk efisiensi, kita copy dari versi sebelumnya dengan penyesuaian.
-
 
   async recordDiagnosis(
     encounterId: string,
@@ -227,7 +198,7 @@ export class EncounterService {
         eventType: AuditEventType.ENCOUNTER_TREATMENT_RECORDED,
         entityType: 'ENCOUNTER',
         entityId: encounterId,
-        description: 'Pengobatan dicatat',
+        description: 'Treatment dicatat',
         oldValues: { treatment: encounter.treatment, notes: encounter.notes },
         newValues: { treatment, notes },
       });
@@ -246,7 +217,13 @@ export class EncounterService {
 
   async updateEncounter(
     encounterId: string,
-    data: Partial<Pick<EncounterData, 'complaint' | 'diagnosis' | 'icd10Code' | 'treatment' | 'prescription' | 'notes'>>,
+    data: {
+      complaint?: string;
+      treatment?: string;
+      diagnosis?: string;
+      prescription?: string;
+      notes?: string;
+    },
     doctorUserId: string
   ): Promise<EncounterData> {
     const client = await this.pool.connect();
@@ -268,21 +245,18 @@ export class EncounterService {
       const updates: string[] = [];
       const values: any[] = [];
       let idx = 1;
+
       if (data.complaint !== undefined) {
         updates.push(`complaint = $${idx++}`);
         values.push(data.complaint);
       }
-      if (data.diagnosis !== undefined) {
-        updates.push(`diagnosis = $${idx++}`);
-        values.push(data.diagnosis);
-      }
-      if (data.icd10Code !== undefined) {
-        updates.push(`icd10_code = $${idx++}`);
-        values.push(data.icd10Code);
-      }
       if (data.treatment !== undefined) {
         updates.push(`treatment = $${idx++}`);
         values.push(data.treatment);
+      }
+      if (data.diagnosis !== undefined) {
+        updates.push(`diagnosis = $${idx++}`);
+        values.push(data.diagnosis);
       }
       if (data.prescription !== undefined) {
         updates.push(`prescription = $${idx++}`);
@@ -293,14 +267,20 @@ export class EncounterService {
         values.push(data.notes);
       }
 
-      if (updates.length === 0) {
+      updates.push(`updated_at = NOW()`);
+
+      if (updates.length === 1) {
         throw new Error('NO_FIELDS_TO_UPDATE');
       }
 
-      updates.push(`updated_at = NOW()`);
+      const query = `
+        UPDATE encounters 
+        SET ${updates.join(', ')}
+        WHERE id = $${idx}
+        RETURNING *
+      `;
       values.push(encounterId);
 
-      const query = `UPDATE encounters SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`;
       const updateResult = await client.query(query, values);
       const updated = updateResult.rows[0];
 
@@ -310,9 +290,7 @@ export class EncounterService {
         eventType: AuditEventType.EMR_UPDATED,
         entityType: 'ENCOUNTER',
         entityId: encounterId,
-        description: 'EMR diperbarui',
-        oldValues: { complaint: encounter.complaint, diagnosis: encounter.diagnosis, treatment: encounter.treatment },
-        newValues: data,
+        description: 'EMR updated',
       });
 
       await client.query('COMMIT');
@@ -327,7 +305,11 @@ export class EncounterService {
     }
   }
 
-  async completeEncounter(encounterId: string, doctorUserId: string): Promise<{ encounter: EncounterData; invoice: any }> {
+  async completeEncounter(
+    encounterId: string,
+    doctorUserId: string,
+    treatment?: string
+  ): Promise<{ encounter: EncounterData; invoice: any }> {
     console.log("🔍 [EncounterService.completeEncounter] START for encounterId:", encounterId);
     const client = await this.pool.connect();
     try {
@@ -344,6 +326,9 @@ export class EncounterService {
       if (encounter.status !== 'ONGOING') {
         throw new Error('ENCOUNTER_NOT_ONGOING');
       }
+
+      // Get treatment value: use provided or existing
+      const finalTreatment = treatment || encounter.treatment;
 
       const updateResult = await client.query(
         `UPDATE encounters 
@@ -365,10 +350,12 @@ export class EncounterService {
         newValues: { status: 'COMPLETED' },
       });
 
+      // Generate invoice with treatment for pricing
       const invoice = await this.invoiceService.generateInvoiceForEncounter(
         encounterId,
         encounter.branch_id,
-        
+        0,
+        finalTreatment
       );
 
       await client.query('COMMIT');
@@ -384,40 +371,31 @@ export class EncounterService {
   }
 
   async getEncounterById(encounterId: string, userId: string, userRole: string): Promise<EncounterData> {
-    try {
-      const result = await this.pool.query(
-        `SELECT * FROM encounters WHERE id = $1`,
-        [encounterId]
-      );
-      if (result.rows.length === 0) {
-        throw new Error('ENCOUNTER_NOT_FOUND');
-      }
-      const encounter = result.rows[0];
+    const result = await this.pool.query(
+      `SELECT e.* FROM encounters e
+       LEFT JOIN bookings b ON e.booking_id = b.id
+       WHERE e.id = $1`,
+      [encounterId]
+    );
+    if (result.rows.length === 0) {
+      throw new Error('ENCOUNTER_NOT_FOUND');
+    }
+    const encounter = result.rows[0];
 
-      if (userRole === 'PATIENT' && encounter.patient_id !== userId) {
+    if (userRole === 'PATIENT') {
+      const patientCheck = await this.pool.query(
+        'SELECT id FROM patients WHERE user_id = $1',
+        [userId]
+      );
+      if (patientCheck.rows.length === 0 || patientCheck.rows[0].id !== encounter.patient_id) {
         throw new Error('ACCESS_DENIED');
       }
-      if (userRole === 'DOCTOR' && encounter.doctor_id !== userId) {
-        // Untuk doctor, userId di sini adalah user ID, bukan doctor record ID
-        // Kita perlu cek mapping
-        const doctorCheck = await this.pool.query(
-          `SELECT id FROM doctors WHERE user_id = $1`,
-          [userId]
-        );
-        if (doctorCheck.rows.length === 0 || doctorCheck.rows[0].id !== encounter.doctor_id) {
-          throw new Error('ACCESS_DENIED');
-        }
-      }
-      if (userRole === 'ADMIN_BRANCH') {
-        // Admin bisa lihat semua encounter di branch-nya
-        // Kita asumsikan handler sudah filter branch
-      }
-
-      return this.mapEncounter(encounter);
-    } catch (error: unknown) {
-      const err = error as Error;
-      logger.error({ error: err.message, stack: err.stack }, 'Error getting encounter');
-      throw error;
     }
+
+    if (userRole === 'DOCTOR' && encounter.doctor_id !== userId) {
+      throw new Error('ACCESS_DENIED');
+    }
+
+    return this.mapEncounter(encounter);
   }
 }

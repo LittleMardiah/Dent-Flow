@@ -52,7 +52,7 @@ export const updateEncounter = async (req: Request, res: Response, next: NextFun
   try {
     const encounterId = String(req.params.id);
     const doctorId = req.user?.userId;
-    const { complaint, diagnosis, icd10Code, treatment, prescription, notes } = req.body;
+    const { complaint, diagnosis, treatment, prescription, notes } = req.body;
 
     if (!doctorId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -64,7 +64,6 @@ export const updateEncounter = async (req: Request, res: Response, next: NextFun
       {
         complaint,
         diagnosis,
-        icd10Code,
         treatment,
         prescription,
         notes,
