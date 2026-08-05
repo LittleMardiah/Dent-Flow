@@ -1,0 +1,70 @@
+import { pool } from '../../src/config/database';
+import { v4 as uuidv4 } from 'uuid';
+
+/**
+ * Get or create a test branch with the given name.
+ * If the branch already exists, return its ID.
+ * If not, create a new branch and return its ID.
+ */
+export async function getOrCreateTestBranch(name: string = 'Test Branch'): Promise<string> {
+  const client = await pool.connect();
+  try {
+    // Check if branch exists
+    const result = await client.query(
+      `SELECT id FROM branches WHERE name = $1 LIMIT 1`,
+      [name]
+    );
+    if (result.rows.length > 0) {
+      return result.rows[0].id;
+    }
+
+    // Create new branch
+    const insertResult = await client.query(
+      `INSERT INTO branches (id, name, address, is_active) 
+       VALUES (gen_random_uuid(), $1, 'Test Address', true) 
+       RETURNING id`,
+      [name]
+    );
+    return insertResult.rows[0].id;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Get or create a test doctor with the given user_id.
+ * For integration tests, we need a valid doctor record.
+ */
+export async function getOrCreateTestDoctor(branchId: string, userId?: string): Promise<string> {
+  const client = await pool.connect();
+  try {
+    const doctorUserId = userId || uuidv4();
+    // Check if doctor exists
+    const result = await client.query(
+      `SELECT id FROM doctors WHERE user_id = $1 AND branch_id = $2`,
+      [doctorUserId, branchId]
+    );
+    if (result.rows.length > 0) {
+      return result.rows[0].id;
+    }
+
+    // Create user for doctor if not exists
+    await client.query(
+      `INSERT INTO users (id, branch_id, role, email, username, password_hash, is_active)
+       VALUES ($1, $2, 'DOCTOR', $3, $4, 'hashed_password', true)
+       ON CONFLICT (id) DO NOTHING`,
+      [doctorUserId, branchId, `doctor_${uuidv4().slice(0, 8)}@clinic.com`, `doctor_${uuidv4().slice(0, 8)}`]
+    );
+
+    // Create doctor record
+    const insertResult = await client.query(
+      `INSERT INTO doctors (id, branch_id, user_id, full_name, specialization, license_number, is_available)
+       VALUES (gen_random_uuid(), $1, $2, 'Test Doctor', 'General', 'LIC-001', true)
+       RETURNING id`,
+      [branchId, doctorUserId]
+    );
+    return insertResult.rows[0].id;
+  } finally {
+    client.release();
+  }
+}
