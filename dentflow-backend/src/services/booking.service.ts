@@ -3,12 +3,13 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
+import { slotAvailabilityService } from './slotAvailability.service';
 
 export class BookingService {
   private pool: Pool;
 
-  constructor(pool?: Pool) {
-    this.pool = pool || new Pool({ connectionString: config.database.url });
+  constructor() {
+    this.pool = new Pool({ connectionString: config.database.url });
   }
 
   async createScheduledBooking(
@@ -23,7 +24,7 @@ export class BookingService {
     try {
       await client.query('BEGIN');
 
-      // 0. Dapatkan patient record ID
+      // 0. Get patient record ID
       let patientRecordId: string;
       const patientResult = await client.query(
         `SELECT id FROM patients WHERE user_id = $1`,
@@ -66,25 +67,21 @@ export class BookingService {
       const sessionStartTimestamp = `${dateStr} ${timeStr}`;
       const sessionEndTimestamp = `${dateStr} ${schedule.session_end}`;
 
-      // 3. Check slot availability
-      const bookingCountResult = await client.query(
-        `SELECT COUNT(*) as booked 
-         FROM bookings 
-         WHERE doctor_id = $1 
-           AND session_start = $2 
-           AND booking_date = $3 
-           AND status NOT IN ('CANCELLED', 'NO_SHOW')`,
-        [doctorRecordId, sessionStartTimestamp, bookingDate]
+      // 3. Check slot availability using slotAvailabilityService
+      const isAvailable = await slotAvailabilityService.checkSlotAvailability(
+        doctorRecordId,
+        sessionStartTimestamp,
+        sessionEndTimestamp,
+        bookingDate
       );
-      const booked = parseInt(bookingCountResult.rows[0].booked);
-      if (booked >= schedule.max_patients_per_session) {
+      if (!isAvailable) {
         throw new Error('SLOT_NOT_AVAILABLE');
       }
 
       // 4. Generate booking code
       const code = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-      // 5. Insert booking (dengan check_in_code = booking_code)
+      // 5. Insert booking
       const result = await client.query(
         `INSERT INTO bookings 
          (branch_id, patient_id, doctor_id, booking_date, booking_time, session_start, session_end, status, booking_code, check_in_code, created_at, updated_at)
