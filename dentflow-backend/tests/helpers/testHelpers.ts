@@ -59,9 +59,48 @@ export async function getOrCreateTestDoctor(branchId: string, userId?: string): 
     // Create doctor record
     const insertResult = await client.query(
       `INSERT INTO doctors (id, branch_id, user_id, full_name, specialization, license_number, is_available)
-       VALUES (gen_random_uuid(), $1, $2, 'Test Doctor', 'General', 'LIC-001', true)
+       VALUES (gen_random_uuid(), $1, $2, 'Test Doctor', 'General', 'LIC-${uuidv4().slice(0, 8)}', true)
        RETURNING id`,
       [branchId, doctorUserId]
+    );
+    return insertResult.rows[0].id;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Get or create a test patient with the given branch_id.
+ * If patient already exists, return its ID.
+ * If not, create a new patient and return its ID.
+ */
+export async function getOrCreateTestPatient(branchId: string, userId?: string): Promise<string> {
+  const client = await pool.connect();
+  try {
+    const patientUserId = userId || uuidv4();
+    // Check if patient exists
+    const result = await client.query(
+      `SELECT id FROM patients WHERE user_id = $1 AND branch_id = $2`,
+      [patientUserId, branchId]
+    );
+    if (result.rows.length > 0) {
+      return result.rows[0].id;
+    }
+
+    // Create user for patient if not exists
+    await client.query(
+      `INSERT INTO users (id, branch_id, role, email, username, password_hash, is_active)
+       VALUES ($1, $2, 'PATIENT', $3, $4, 'hashed_password', true)
+       ON CONFLICT (id) DO NOTHING`,
+      [patientUserId, branchId, `patient_${uuidv4().slice(0, 8)}@test.com`, `patient_${uuidv4().slice(0, 8)}`]
+    );
+
+    // Create patient record
+    const insertResult = await client.query(
+      `INSERT INTO patients (id, branch_id, user_id, full_name, phone)
+       VALUES (gen_random_uuid(), $1, $2, 'Test Patient', '08123456789')
+       RETURNING id`,
+      [branchId, patientUserId]
     );
     return insertResult.rows[0].id;
   } finally {

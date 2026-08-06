@@ -11,34 +11,45 @@ export class PaymentReconciliationHandler {
   }
 
   /**
-   * GET /api/admin/payments/reconciliation
-   * Admin endpoint to view payment reconciliation
-   * Query params: date_from (YYYY-MM-DD), date_to (YYYY-MM-DD)
+   * GET /api/payments/reconciliation?date=YYYY-MM-DD
+   * Returns daily reconciliation data
    */
-  getReconciliation = async (req: Request, res: Response): Promise<void> => {
+  getReconciliationByDate = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { date_from, date_to } = req.query;
-      const adminId = req.user?.userId;
-
-      if (!adminId) {
-        res.status(401).json({ success: false, error: 'Unauthorized' });
+      const dateParam = req.query.date as string;
+      if (!dateParam) {
+        res.status(400).json({ success: false, message: 'date parameter required (YYYY-MM-DD)' });
         return;
       }
-
-      if (!date_from || !date_to || typeof date_from !== 'string' || typeof date_to !== 'string') {
-        res.status(400).json({
-          success: false,
-          error: 'date_from and date_to are required (format: YYYY-MM-DD)',
-        });
+      const date = new Date(dateParam);
+      if (isNaN(date.getTime())) {
+        res.status(400).json({ success: false, message: 'Invalid date format' });
         return;
       }
+      const data = await this.service.getReconciliation(date);
+      res.status(200).json({ success: true, data });
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      const stack = getErrorStack(error);
+      logger.error({ error: message, stack });
+      res.status(500).json({ success: false, error: 'INTERNAL_SERVER_ERROR', message: 'Server error' });
+    }
+  };
 
-      const summary = await this.service.getReconciliationSummary(date_from, date_to);
-
-      res.status(200).json({
-        success: true,
-        data: summary,
-      });
+  /**
+   * GET /api/payments/reconciliation/summary?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
+   * Returns summary reconciliation for date range
+   */
+  getReconciliationSummary = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const dateFrom = req.query.date_from as string;
+      const dateTo = req.query.date_to as string;
+      if (!dateFrom || !dateTo) {
+        res.status(400).json({ success: false, message: 'date_from and date_to required' });
+        return;
+      }
+      const data = await this.service.getReconciliationSummary(dateFrom, dateTo);
+      res.status(200).json({ success: true, data });
     } catch (error: unknown) {
       const message = getErrorMessage(error);
       const stack = getErrorStack(error);
