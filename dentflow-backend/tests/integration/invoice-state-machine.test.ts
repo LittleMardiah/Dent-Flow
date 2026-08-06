@@ -13,10 +13,11 @@ describe('Invoice State Machine & Database Constraints', () => {
   let doctorRecordId: string;
   let bookingId: string;
   let encounterId: string;
+  let testPatientUserId: string;
 
   const testBranchId = uuidv4();
   const testAdminUserId = uuidv4();
-  const testPatientUserId = uuidv4();
+  const testPatientUserIdLocal = uuidv4();
   const testDoctorUserId = uuidv4();
 
   beforeAll(async () => {
@@ -80,15 +81,16 @@ describe('Invoice State Machine & Database Constraints', () => {
     await pool.query(
       `INSERT INTO users (id, branch_id, role, email, password_hash, username) 
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [testPatientUserId, branchId, 'PATIENT', `patient_${Date.now()}@test.com`, patientPasswordHash, `patient_${Date.now()}`]
+      [testPatientUserIdLocal, branchId, 'PATIENT', `patient_${Date.now()}@test.com`, patientPasswordHash, `patient_${Date.now()}`]
     );
+    testPatientUserId = testPatientUserIdLocal;
 
     // 5. Patient record
     const patientRes = await pool.query(
       `INSERT INTO patients (id, branch_id, user_id, full_name, phone) 
        VALUES ($1, $2, $3, $4, $5) 
        RETURNING id`,
-      [uuidv4(), branchId, testPatientUserId, 'Test Patient Invoice', '08123456789']
+      [uuidv4(), branchId, testPatientUserIdLocal, 'Test Patient Invoice', '08123456789']
     );
     patientRecordId = patientRes.rows[0].id;
 
@@ -300,5 +302,41 @@ describe('Invoice State Machine & Database Constraints', () => {
     await pool.query('DELETE FROM patients WHERE user_id = $1', [tempPatientUserId]);
     await pool.query('DELETE FROM users WHERE id IN ($1, $2)', [tempPatientUserId, tempDoctorUserId]);
     await pool.query('DELETE FROM branches WHERE id = $1', [tempBranchId]);
+  });
+
+  // ===== ADDED TESTS FOR TD-PAY-012 =====
+  it('should get invoice detail by ID (admin)', async () => {
+    const res = await request(app)
+      .get(`/api/admin/invoices/${testInvoiceId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.id).toBe(testInvoiceId);
+    expect(Number(res.body.data.amount_due)).toBe(200000);
+    expect(res.body.data.status).toBeDefined();
+  });
+
+  it('should return 401 for unauthenticated GET invoice', async () => {
+    const res = await request(app)
+      .get(`/api/admin/invoices/${testInvoiceId}`);
+    expect(res.status).toBe(401);
+  });
+
+  it('should return 403 for non-admin user (patient)', async () => {
+    // Login as patient using testPatientUserId
+    const patientUserRes = await pool.query(
+      'SELECT username FROM users WHERE id = $1',
+      [testPatientUserId]
+    );
+    const patientUsername = patientUserRes.rows[0].username;
+    const patientLoginRes = await request(app)
+      .post('/auth/patient/login')
+      .send({ username: patientUsername, password: 'Patient123!' });
+    expect(patientLoginRes.status).toBe(200);
+    const patientToken = patientLoginRes.body.data.token;
+
+    const res = await request(app)
+      .get(`/api/admin/invoices/${testInvoiceId}`)
+      .set('Authorization', `Bearer ${patientToken}`);
+    expect(res.status).toBe(403);
   });
 });
