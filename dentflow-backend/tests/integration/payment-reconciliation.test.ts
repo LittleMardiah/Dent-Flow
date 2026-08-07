@@ -14,6 +14,7 @@ describe('Payment Reconciliation Endpoint (TD-PAY-014)', () => {
   let adminUsername: string;
   let branchId: string;
   let patientId: string;
+  let patientUsername: string; // 👈 TAMBAHAN
   let doctorId: string;
   let bookingId1: string;
   let encounterId1: string;
@@ -45,6 +46,13 @@ describe('Payment Reconciliation Endpoint (TD-PAY-014)', () => {
       const doctorUserId = uuidv4();
       doctorId = await getOrCreateTestDoctor(branchId, doctorUserId);
       patientId = await getOrCreateTestPatient(branchId);
+
+      // 👇 Ambil username patient yang baru dibuat
+      const userRes = await client.query(
+        `SELECT username FROM users WHERE id = (SELECT user_id FROM patients WHERE id = $1)`,
+        [patientId]
+      );
+      patientUsername = userRes.rows[0].username;
 
       // 4. BOOKING & ENCOUNTER 1 (paid)
       bookingId1 = uuidv4();
@@ -142,6 +150,12 @@ describe('Payment Reconciliation Endpoint (TD-PAY-014)', () => {
       throw new Error('Webhook failed');
     }
     console.log('✅ Webhook sent.');
+        // CEK STATE INVOICE 1
+    const cekInv = await client.query(
+      `SELECT id, invoice_number, payment_status, paid_amount, amount_paid, status FROM invoices WHERE id = $1`,
+      [invoiceId1]
+    );
+    console.log('🔍 INVOICE 1 AFTER WEBHOOK:', JSON.stringify(cekInv.rows[0], null, 2));
   });
 
   afterAll(async () => {
@@ -207,7 +221,7 @@ describe('Payment Reconciliation Endpoint (TD-PAY-014)', () => {
   it('should return 403 for non-admin user', async () => {
     const patientLogin = await request(app)
       .post('/auth/patient/login')
-      .send({ username: `patient_${uuidv4().slice(0, 8)}`, password: 'Patient123!' });
+      .send({ username: patientUsername, password: 'Patient123!' });
     expect(patientLogin.status).toBe(200);
     const patientToken = patientLogin.body.data.token;
 

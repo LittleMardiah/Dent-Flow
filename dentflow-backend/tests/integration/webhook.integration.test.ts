@@ -74,25 +74,26 @@ describe('Midtrans Webhook Integration', () => {
     );
     encounterId = encRes.rows[0].id;
 
-    // 6. Invoice
+    // 6. Invoice (dengan booking_id)
     testInvoiceNumber = generateInvoiceNumber();
     const invoiceRes = await pool.query(
-      `INSERT INTO invoices (id, branch_id, encounter_id, patient_id, invoice_number, amount_due, amount_paid, status)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, 100000, 0, 'UNPAID')
-       RETURNING id`,
-      [branchId, encounterId, patientId, testInvoiceNumber]
+      `INSERT INTO invoices (id, branch_id, encounter_id, patient_id, booking_id, invoice_number, amount_due, amount_paid, status)
+      VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 100000, 0, 'UNPAID')
+      RETURNING id`,
+      [branchId, encounterId, patientId, bookingId, testInvoiceNumber]
     );
     testInvoiceId = invoiceRes.rows[0].id;
+    console.log(`🔍 [TEST] Invoice inserted with id: ${testInvoiceId}, number: ${testInvoiceNumber}`);
   });
 
   afterAll(async () => {
-    await pool.query('DELETE FROM payment_webhooks WHERE order_id = $1', [testInvoiceNumber]);
-    await pool.query('DELETE FROM invoices WHERE id = $1', [testInvoiceId]);
-    await pool.query('DELETE FROM encounters WHERE id = $1', [encounterId]);
-    await pool.query('DELETE FROM bookings WHERE id = $1', [bookingId]);
-    await pool.query('DELETE FROM patients WHERE id = $1', [patientId]);
-    await pool.query('DELETE FROM users WHERE id IN (SELECT user_id FROM patients WHERE id = $1)', [patientId]);
-    await pool.query('DELETE FROM users WHERE id = $1', [doctorUserId]);
+    // Hapus payment_webhooks dulu agar foreign key tidak melanggar
+    await pool.query('DELETE FROM payment_webhooks WHERE branch_id = $1', [branchId]);
+    await pool.query('DELETE FROM invoices WHERE branch_id = $1', [branchId]);
+    await pool.query('DELETE FROM encounters WHERE branch_id = $1', [branchId]);
+    await pool.query('DELETE FROM bookings WHERE branch_id = $1', [branchId]);
+    await pool.query('DELETE FROM patients WHERE branch_id = $1', [branchId]);
+    await pool.query('DELETE FROM doctors WHERE branch_id = $1', [branchId]);
     await pool.query('DELETE FROM users WHERE branch_id = $1', [branchId]);
     await pool.query('DELETE FROM audit_logs WHERE branch_id = $1', [branchId]);
     await pool.query('DELETE FROM branches WHERE id = $1', [branchId]);

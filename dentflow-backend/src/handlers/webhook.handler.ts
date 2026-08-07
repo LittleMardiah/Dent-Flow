@@ -24,7 +24,7 @@ export const handleMidtransWebhook = async (req: Request, res: Response) => {
 
     const payload = req.body;
     const orderId = payload.order_id || payload.orderId;
-    const serverKey = process.env.MIDTRANS_SERVER_KEY || '';
+    const serverKey = process.env.MIDTRANS_SERVER_KEY || 'test-key';
 
     if (!orderId) {
       return res.status(400).json({

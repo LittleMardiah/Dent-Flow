@@ -204,16 +204,16 @@ export class PaymentInputService {
   /**
    * Get reconciliation summary for a date range (admin)
    */
-  async getReconciliationSummary(dateFrom: string, dateTo: string): Promise<any> {
+  async getReconciliationSummary(dateFrom: string, dateTo: string, branchId: string): Promise<any> {
     const result = await this.pool.query(
       `SELECT 
         COUNT(*) as total_invoices,
         SUM(amount_due) as total_amount,
-        SUM(CASE WHEN status = 'PAID' THEN amount_paid ELSE 0 END) as total_paid,
+        SUM(CASE WHEN status = 'PAID' THEN paid_amount ELSE 0 END) as total_paid,
         COUNT(CASE WHEN status = 'UNPAID' THEN 1 END) as unpaid_count
       FROM invoices
-      WHERE invoice_date BETWEEN $1 AND $2`,
-      [dateFrom, dateTo]
+      WHERE invoice_date BETWEEN $1 AND $2 AND branch_id = $3`,
+      [dateFrom, dateTo, branchId]
     );
     return result.rows[0] || { total_invoices: 0, total_amount: 0, total_paid: 0, unpaid_count: 0 };
   }

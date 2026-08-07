@@ -31,12 +31,14 @@ export const webhookRetryJob = {
 
         logger.info(`🔄 Retrying webhook ${webhookId} (attempt ${retryCount + 1}/3)`);
 
+        // 🔥 SKIP VALIDASI SIGNATURE (sudah divalidasi di awal)
         const result = await service.processPaymentWebhook(
           webhookId,
           orderId,
-          '',
+          '', // signature tidak perlu untuk retry
           payload,
-          process.env.MIDTRANS_SERVER_KEY || ''
+          process.env.MIDTRANS_SERVER_KEY || '',
+          true // skipValidation = true
         );
 
         if (result.success) {

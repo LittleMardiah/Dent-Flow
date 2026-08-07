@@ -1,5 +1,6 @@
 import { pool } from '../../src/config/database';
 import { v4 as uuidv4 } from 'uuid';
+import bcrypt from 'bcryptjs';
 
 /**
  * Get or create a test branch with the given name.
@@ -88,11 +89,11 @@ export async function getOrCreateTestPatient(branchId: string, userId?: string):
     }
 
     // Create user for patient if not exists
+    const hashedPassword = await bcrypt.hash('Patient123!', 10);
     await client.query(
       `INSERT INTO users (id, branch_id, role, email, username, password_hash, is_active)
-       VALUES ($1, $2, 'PATIENT', $3, $4, 'hashed_password', true)
-       ON CONFLICT (id) DO NOTHING`,
-      [patientUserId, branchId, `patient_${uuidv4().slice(0, 8)}@test.com`, `patient_${uuidv4().slice(0, 8)}`]
+      VALUES ($1, $2, 'PATIENT', $3, $4, $5, true)`,
+      [patientUserId, branchId, `patient_${uuidv4().slice(0, 8)}@test.com`, `patient_${uuidv4().slice(0, 8)}`, hashedPassword]
     );
 
     // Create patient record

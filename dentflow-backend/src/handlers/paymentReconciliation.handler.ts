@@ -41,20 +41,25 @@ export class PaymentReconciliationHandler {
    * Returns summary reconciliation for date range
    */
   getReconciliationSummary = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const dateFrom = req.query.date_from as string;
-      const dateTo = req.query.date_to as string;
-      if (!dateFrom || !dateTo) {
-        res.status(400).json({ success: false, message: 'date_from and date_to required' });
-        return;
-      }
-      const data = await this.service.getReconciliationSummary(dateFrom, dateTo);
-      res.status(200).json({ success: true, data });
-    } catch (error: unknown) {
-      const message = getErrorMessage(error);
-      const stack = getErrorStack(error);
-      logger.error({ error: message, stack });
-      res.status(500).json({ success: false, error: 'INTERNAL_SERVER_ERROR', message: 'Server error' });
+  try {
+    const dateFrom = req.query.date_from as string;
+    const dateTo = req.query.date_to as string;
+    if (!dateFrom || !dateTo) {
+      res.status(400).json({ success: false, message: 'date_from and date_to required' });
+      return;
+    }
+    const branchId = req.user?.branchId;
+    if (!branchId) {
+      res.status(400).json({ success: false, message: 'Branch ID not found' });
+      return;
+    }
+    const data = await this.service.getReconciliationSummary(dateFrom, dateTo, branchId);
+    res.status(200).json({ success: true, data });
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    const stack = getErrorStack(error);
+    logger.error({ error: message, stack });
+    res.status(500).json({ success: false, error: 'INTERNAL_SERVER_ERROR', message: 'Server error' });
     }
   };
 }
