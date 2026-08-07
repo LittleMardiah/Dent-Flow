@@ -50,11 +50,12 @@ describe('Encounter Complete -> Invoice Generation', () => {
     console.log(`✅ Doctor user verified in DB`);
 
     // 3. Buat doctor record
+    const licenseNumber = `LIC-${uuidv4().slice(0, 8)}`;
     const doctorRes = await pool.query(
       `INSERT INTO doctors (id, branch_id, user_id, full_name, specialization, license_number, is_available)
-       VALUES (gen_random_uuid(), $1, $2, 'drg. Test', 'Sp.BM', 'LIC-001', true)
-       RETURNING id`,
-      [branchId, doctorUserId]
+      VALUES (gen_random_uuid(), $1, $2, 'drg. Test', 'Sp.BM', $3, true)
+      RETURNING id`,
+      [branchId, doctorUserId, licenseNumber]
     );
     doctorId = doctorRes.rows[0].id;
     console.log(`✅ Doctor record created: ${doctorId}`);

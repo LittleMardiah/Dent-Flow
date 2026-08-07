@@ -182,7 +182,7 @@ describe('Midtrans Webhook Integration', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.message).toContain('processed');
 
-    // Verifikasi invoice benar-benar ter-update
+    // Verifikasi invoice benar-benar ter-update.
     const invoiceCheck = await pool.query(
       'SELECT status, paid_amount FROM invoices WHERE id = $1',
       [testInvoiceId]
