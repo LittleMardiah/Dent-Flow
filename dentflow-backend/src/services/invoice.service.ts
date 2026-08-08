@@ -108,7 +108,6 @@ export class InvoiceService {
         throw new Error('INVOICE_NOT_PAID');
       }
 
-      await client.query('SET LOCAL session_replication_role = replica;');
 
       const updateResult = await client.query(
         `UPDATE invoices
@@ -123,7 +122,6 @@ export class InvoiceService {
         [invoiceId]
       );
 
-      await client.query('SET LOCAL session_replication_role = DEFAULT;');
 
       const updated = updateResult.rows[0];
 
