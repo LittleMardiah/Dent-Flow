@@ -4,7 +4,7 @@ import { logger } from '../utils/logger';
 import crypto from 'crypto';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
-import { getErrorMessage } from '../utils/error.util';
+import { getErrorMessage, getErrorStack } from '../utils/error.util';
 import { PaymentWebhookRepository } from '../repositories/paymentWebhook.repository';
 
 export class PaymentWebhookService {
@@ -14,6 +14,11 @@ export class PaymentWebhookService {
   constructor() {
     this.pool = new Pool({ connectionString: config.database.url });
     this.repository = new PaymentWebhookRepository();
+  }
+
+  private isValidUUID(str: string): boolean {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(str);
   }
 
   validateMidtransSignature(
@@ -32,6 +37,49 @@ export class PaymentWebhookService {
     return valid;
   }
 
+  // ============================================================
+  // RECORD WEBHOOK DENGAN BRANCH_ID NULL (TD-PAY-018)
+  // ============================================================
+
+  async recordWebhookWithNullableBranchId(
+    webhookId: string,
+    orderId: string,
+    signature: string,
+    payload: any
+  ): Promise<void> {
+    try {
+      console.log(`🔍 [RECORD] Inserting webhook ${webhookId} for order ${orderId} with NULL branch_id`);
+      await this.pool.query(
+        `INSERT INTO payment_webhooks 
+         (webhook_id, order_id, signature, payload, branch_id, provider, status, created_at)
+         VALUES ($1, $2, $3, $4, NULL, 'midtrans', 'RECEIVED', NOW())
+         ON CONFLICT (webhook_id) DO NOTHING`,
+        [webhookId, orderId, signature, JSON.stringify(payload)]
+      );
+      console.log(`✅ [RECORD] Webhook ${webhookId} inserted successfully with NULL branch_id`);
+    } catch (err) {
+      console.log(`❌ [RECORD] Error inserting webhook: ${getErrorMessage(err)}`);
+      throw err;
+    }
+  }
+
+  async updateWebhookBranchId(webhookId: string, branchId: string): Promise<void> {
+    try {
+      await this.pool.query(
+        `UPDATE payment_webhooks SET branch_id = $1 WHERE webhook_id = $2`,
+        [branchId, webhookId]
+      );
+      console.log(`✅ [UPDATE] Webhook ${webhookId} branch_id updated to ${branchId}`);
+    } catch (err) {
+      console.log(`❌ [UPDATE] Failed to update webhook branch_id: ${getErrorMessage(err)}`);
+      throw err;
+    }
+  }
+
+  // ============================================================
+  // MAIN PROCESS (NEW FLOW - RECORD FIRST, UPDATE LATER)
+  // ============================================================
+
   async processPaymentWebhook(
     webhookId: string,
     orderId: string,
@@ -47,7 +95,6 @@ export class PaymentWebhookService {
 
       console.log(`🔍 [TEST] Processing webhook ${webhookId} for order ${orderId}`);
 
-      // 1. Validasi signature
       if (!skipValidation) {
         if (!this.validateMidtransSignature(orderId, statusCode, grossAmount, signature, serverKey)) {
           console.log(`❌ [TEST] Invalid signature for webhook ${webhookId}`);
@@ -55,7 +102,6 @@ export class PaymentWebhookService {
         }
       }
 
-      // 2. CEK IDEMPOTENCY
       try {
         const exists = await this.repository.isWebhookProcessed(webhookId);
         if (exists) {
@@ -67,46 +113,50 @@ export class PaymentWebhookService {
         return { success: false, message: 'Idempotency check failed' };
       }
 
-      // 3. Dapatkan invoice (SEBELUM record webhook)
+      // ✅ STEP 1: RECORD WEBHOOK FIRST (dengan branch_id = NULL)
+      try {
+        await this.recordWebhookWithNullableBranchId(
+          webhookId,
+          orderId,
+          signature,
+          payload
+        );
+      } catch (err) {
+        console.log(`❌ [WEBHOOK] Failed to record webhook: ${getErrorMessage(err)}`);
+        return { success: false, message: 'Failed to record webhook' };
+      }
+
+      // ✅ STEP 2: LOOKUP INVOICE
       console.log(`🔍 [LOOKUP] Starting invoice lookup for order ${orderId}`);
       let invoice = null;
 
       try {
         if (orderId.startsWith('INV-')) {
-          console.log(`🔍 [LOOKUP] Query by invoice_number: ${orderId}`);
           const result = await this.pool.query(
             'SELECT * FROM invoices WHERE invoice_number = $1',
             [orderId]
           );
-          console.log(`🔍 [LOOKUP] invoice_number result rows: ${result.rows.length}`);
           invoice = result.rows[0] || null;
         }
-
-        if (!invoice) {
-          console.log(`🔍 [LOOKUP] Query by booking_id: ${orderId}`);
+        if (!invoice && this.isValidUUID(orderId)) {
           const result = await this.pool.query(
             'SELECT * FROM invoices WHERE booking_id = $1',
             [orderId]
           );
-          console.log(`🔍 [LOOKUP] booking_id result rows: ${result.rows.length}`);
           invoice = result.rows[0] || null;
         }
-
-        if (!invoice) {
-          console.log(`🔍 [LOOKUP] Query by id: ${orderId}`);
+        if (!invoice && this.isValidUUID(orderId)) {
           const result = await this.pool.query(
             'SELECT * FROM invoices WHERE id = $1',
             [orderId]
           );
-          console.log(`🔍 [LOOKUP] id result rows: ${result.rows.length}`);
           invoice = result.rows[0] || null;
         }
       } catch (err) {
         console.log(`❌ [LOOKUP] Database error: ${getErrorMessage(err)}`);
-        return { success: false, message: 'Database error fetching invoice' };
       }
 
-      // 4. Invoice tidak ditemukan → QUEUE RETRY
+      // ✅ STEP 3: HANDLE INVOICE NOT FOUND
       if (!invoice) {
         console.log(`❌ [LOOKUP] Invoice NOT found for order ${orderId}`);
         try {
@@ -124,18 +174,16 @@ export class PaymentWebhookService {
         return { success: false, message: 'Invoice not found, queued for retry' };
       }
 
-      console.log(`✅ [TEST] Invoice found: ${invoice.invoice_number} (${invoice.id})`);
+      console.log(`✅ [LOOKUP] Invoice found: ${invoice.invoice_number} (${invoice.id})`);
 
-      // 5. RECORD WEBHOOK (SETELAH invoice ditemukan, dengan branch_id)
+      // ✅ STEP 4: UPDATE WEBHOOK BRANCH_ID (karena sekarang sudah tau branch_id)
       try {
-        await this.recordWebhook(webhookId, orderId, signature, payload, invoice.branch_id);
-        console.log(`✅ [TEST] Record webhook success for ${webhookId}`);
+        await this.updateWebhookBranchId(webhookId, invoice.branch_id);
       } catch (err) {
-        console.log(`❌ [TEST] Record webhook failed: ${getErrorMessage(err)}`);
-        return { success: false, message: 'Failed to record webhook' };
+        console.log(`⚠️ [LOOKUP] Warning: Failed to update webhook branch_id: ${getErrorMessage(err)}`);
       }
 
-      // 6. Handle status
+      // ✅ STEP 5: PROCESS PAYMENT
       const successStatuses = ['capture', 'settlement'];
       const failureStatuses = ['deny', 'expire', 'failure'];
       const pendingStatuses = ['pending', 'authorize'];
@@ -226,6 +274,7 @@ export class PaymentWebhookService {
     });
   }
 
+  // Method lama dipertahankan untuk kompatibilitas
   async recordWebhook(
     webhookId: string,
     orderId: string,
@@ -233,20 +282,7 @@ export class PaymentWebhookService {
     payload: any,
     branchId: string
   ): Promise<void> {
-    try {
-      console.log(`🔍 [RECORD] Inserting webhook ${webhookId} for order ${orderId}, branch ${branchId}`);
-      await this.pool.query(
-        `INSERT INTO payment_webhooks 
-        (webhook_id, order_id, signature, payload, branch_id, provider, status, created_at)
-        VALUES ($1, $2, $3, $4, $5, 'midtrans', 'RECEIVED', NOW())
-        ON CONFLICT (webhook_id) DO NOTHING`,
-        [webhookId, orderId, signature, payload, branchId]
-      );
-      console.log(`✅ [RECORD] Webhook ${webhookId} inserted successfully`);
-    } catch (err) {
-      console.log(`❌ [RECORD] Error inserting webhook: ${getErrorMessage(err)}`);
-      throw err;
-    }
+    await this.recordWebhookWithNullableBranchId(webhookId, orderId, signature, payload);
   }
 
   async isWebhookExists(webhookId: string): Promise<boolean> {

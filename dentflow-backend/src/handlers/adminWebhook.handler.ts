@@ -42,12 +42,16 @@ export class AdminWebhookHandler {
       const webhookId = req.params.id as string;
       const adminId = req.user?.userId;
 
+      console.log(`🔍 [REPLAY] Looking for error record with webhook_id: ${webhookId}`);
+
       if (!adminId) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return;
       }
 
       const errorRecord = await this.repo.getErrorByWebhookId(webhookId);
+      console.log(`🔍 [REPLAY] Error record found:`, errorRecord);
+
       if (!errorRecord) {
         res.status(404).json({ success: false, error: 'WEBHOOK_NOT_FOUND', message: 'Webhook error record not found' });
         return;
@@ -58,12 +62,14 @@ export class AdminWebhookHandler {
         return;
       }
 
+      // 🔥 Fix: skipValidation = true karena signature tidak perlu divalidasi ulang di replay
       const result = await this.service.processPaymentWebhook(
         webhookId,
         errorRecord.order_id,
         '',
         errorRecord.payload,
-        process.env.MIDTRANS_SERVER_KEY || ''
+        process.env.MIDTRANS_SERVER_KEY || '',
+        true  // skipValidation = true
       );
 
       if (result.success) {

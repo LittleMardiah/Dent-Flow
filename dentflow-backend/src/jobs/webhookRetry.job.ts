@@ -76,7 +76,7 @@ export const webhookRetryJob = {
         `SELECT b.id, b.patient_id, b.doctor_id, b.branch_id, b.queue_number, b.created_at
          FROM bookings b
          LEFT JOIN invoices i ON b.id = i.booking_id
-         WHERE i.invoice_number = $1 OR b.id = $1
+         WHERE i.invoice_number = $1 OR b.id::text = $1
          LIMIT 1`,
         [orderId]
       );

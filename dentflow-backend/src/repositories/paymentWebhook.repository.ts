@@ -47,15 +47,42 @@ export class PaymentWebhookRepository {
   }
 
   async createErrorRecord(webhookId: string, error: string, nextRetryAt: Date): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO payment_webhook_errors (webhook_id, last_error, next_retry_at, retry_count)
-       VALUES ($1, $2, $3, 0)
-       ON CONFLICT (webhook_id) DO UPDATE
-       SET last_error = EXCLUDED.last_error,
-           next_retry_at = EXCLUDED.next_retry_at,
-           retry_count = payment_webhook_errors.retry_count + 1`,
-      [webhookId, error, nextRetryAt]
+    const webhookExists = await this.pool.query(
+      'SELECT webhook_id FROM payment_webhooks WHERE webhook_id = $1',
+      [webhookId]
     );
+
+    if (webhookExists.rows.length === 0) {
+      const errorMsg = `Cannot create error record: webhook_id ${webhookId} not found in payment_webhooks table.`;
+      console.log(`❌ [REPO] ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+
+    console.log(`✅ [REPO] Webhook ${webhookId} exists, proceeding to create error record`);
+
+    const exists = await this.pool.query(
+      'SELECT id FROM payment_webhook_errors WHERE webhook_id = $1',
+      [webhookId]
+    );
+
+    if (exists.rows.length > 0) {
+      await this.pool.query(
+        `UPDATE payment_webhook_errors 
+         SET last_error = $1, 
+             next_retry_at = $2, 
+             retry_count = retry_count + 1,
+             updated_at = NOW()
+         WHERE webhook_id = $3`,
+        [error, nextRetryAt, webhookId]
+      );
+    } else {
+      await this.pool.query(
+        `INSERT INTO payment_webhook_errors 
+         (webhook_id, last_error, next_retry_at, retry_count, created_at)
+         VALUES ($1, $2, $3, 0, NOW())`,
+        [webhookId, error, nextRetryAt]
+      );
+    }
   }
 
   async getPendingRetries(limit: number = 10): Promise<any[]> {
@@ -74,10 +101,10 @@ export class PaymentWebhookRepository {
   }
 
   async incrementRetryCount(webhookId: string, nextRetryAt: Date): Promise<void> {
+    // Fix: hapus last_retry_at karena kolom tidak ada di tabel
     await this.pool.query(
       `UPDATE payment_webhook_errors 
        SET retry_count = retry_count + 1, 
-           last_retry_at = NOW(), 
            next_retry_at = $1
        WHERE webhook_id = $2`,
       [nextRetryAt, webhookId]
@@ -137,5 +164,13 @@ export class PaymentWebhookRepository {
     query += ` ORDER BY e.created_at DESC LIMIT 100`;
     const result = await this.pool.query(query, params);
     return result.rows;
+  }
+
+  async isWebhookExistsById(webhookId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      'SELECT 1 FROM payment_webhooks WHERE webhook_id = $1 LIMIT 1',
+      [webhookId]
+    );
+    return result.rows.length > 0;
   }
 }

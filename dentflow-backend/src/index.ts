@@ -22,7 +22,8 @@ import adminRoutes from './routes/admin.routes';
 import encounterRoutes from './routes/encounter.routes';
 import invoiceRoutes from './routes/invoice.routes';
 import auditRoutes from './routes/audit.routes';
-import paymentReconciliationRoutes from "./routes/paymentReconciliation.routes";
+import paymentReconciliationRoutes from './routes/paymentReconciliation.routes';
+import adminWebhookRoutes from './routes/adminWebhook.routes'; // 👈 TAMBAHKAN
 
 // Import job scheduler
 import { jobScheduler } from './jobs/jobScheduler';
@@ -51,7 +52,8 @@ app.use('/api', attendanceRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/invoices', invoiceRoutes);
 app.use('/api/admin', auditRoutes);
-app.use("/api/payments", paymentReconciliationRoutes);
+app.use('/api/payments', paymentReconciliationRoutes);
+app.use('/api/admin', adminWebhookRoutes); // 👈 TAMBAHKAN MOUNT
 
 // Global error handler
 app.use(errorHandler);

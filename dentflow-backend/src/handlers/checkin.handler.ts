@@ -1,7 +1,11 @@
 import { Request, Response } from 'express';
 import { checkinService } from '../services/checkin.service';
+import { WalkInService } from '../services/walkIn.service';
 import { logger } from '../utils/logger';
 import { getErrorMessage, getErrorStack } from '../utils/error.util';
+
+// Create instance of WalkInService
+const walkInService = new WalkInService();
 
 export const checkInPatient = async (req: Request, res: Response) => {
   try {
@@ -112,12 +116,65 @@ export const addWalkIn = async (req: Request, res: Response) => {
       });
     }
 
-    const result = await checkinService.walkInPatient(
-      name,
-      phone,
+    // STEP 1: Create temporary patient profile (gunakan properti yang benar)
+    const tempPatient = await walkInService.createTemporaryProfile({
+      branchId: branch_id,      // <-- branchId, bukan branch_id
+      fullName: name,           // <-- fullName, bukan full_name
+      phone: phone || null,
+    });
+
+    if (!tempPatient || !tempPatient.id) {
+      throw new Error('GAGAL_BUAT_TEMP_PASIEN');
+    }
+
+    // STEP 2: Get today's date for booking
+    const bookingDate = new Date();
+
+    // STEP 3: Find an available session slot for the doctor today
+    let sessionSlotId = '';
+    try {
+      const schedulesResult = await walkInService['pool'].query(
+        `SELECT id FROM doctor_schedules 
+         WHERE doctor_id = $1 
+           AND branch_id = $2 
+           AND day_of_week = EXTRACT(DOW FROM CURRENT_DATE)
+           AND is_active = true
+         LIMIT 1`,
+        [doctor_id, branch_id]
+      );
+      if (schedulesResult.rows.length > 0) {
+        sessionSlotId = schedulesResult.rows[0].id;
+      } else {
+        const fallbackResult = await walkInService['pool'].query(
+          `SELECT id FROM doctor_schedules 
+           WHERE doctor_id = $1 
+             AND branch_id = $2 
+             AND is_active = true
+           LIMIT 1`,
+          [doctor_id, branch_id]
+        );
+        if (fallbackResult.rows.length > 0) {
+          sessionSlotId = fallbackResult.rows[0].id;
+        } else {
+          throw new Error('DOKTER_TIDAK_MEMILIKI_JADWAL');
+        }
+      }
+    } catch (scheduleError) {
+      logger.error({ 
+        error: getErrorMessage(scheduleError), 
+        doctor_id, 
+        branch_id 
+      }, 'Error fetching doctor schedule');
+      throw new Error('GAGAL_AMBIL_JADWAL_DOKTER');
+    }
+
+    // STEP 4: Book appointment (5 parameter terpisah)
+    const result = await walkInService.bookAppointment(
+      tempPatient.id,
       doctor_id,
       branch_id,
-      adminId
+      sessionSlotId,
+      bookingDate
     );
 
     return res.status(201).json({
@@ -125,7 +182,7 @@ export const addWalkIn = async (req: Request, res: Response) => {
       data: {
         queue_number: result.queueNumber,
         booking_id: result.bookingId,
-        temp_patient_id: result.tempPatientId,
+        temp_patient_id: tempPatient.id,
       },
       message: `Walk-in berhasil. Nomor antrian: ${result.queueNumber}`,
     });
@@ -133,6 +190,32 @@ export const addWalkIn = async (req: Request, res: Response) => {
     const message = getErrorMessage(error);
     const stack = getErrorStack(error);
     logger.error({ error: message, stack }, 'Walk-in error');
-    res.status(500).json({ success: false, message: 'Internal server error' });
+
+    let status = 500;
+    let responseMessage = 'Terjadi kesalahan saat menambahkan walk-in';
+
+    switch (message) {
+      case 'DOKTER_TIDAK_MEMILIKI_JADWAL':
+        status = 400;
+        responseMessage = 'Dokter tidak memiliki jadwal aktif';
+        break;
+      case 'GAGAL_BUAT_TEMP_PASIEN':
+        status = 500;
+        responseMessage = 'Gagal membuat profil pasien sementara';
+        break;
+      case 'GAGAL_AMBIL_JADWAL_DOKTER':
+        status = 500;
+        responseMessage = 'Gagal mengambil jadwal dokter';
+        break;
+      default:
+        status = 500;
+        responseMessage = 'Terjadi kesalahan server';
+    }
+
+    return res.status(status).json({
+      success: false,
+      message: responseMessage,
+      error: message,
+    });
   }
 };
