@@ -1,0 +1,144 @@
+import { DoctorQueueService } from '../../../src/services/doctorQueue.service';
+import { Pool } from 'pg';
+import { EncounterService } from '../../../src/services/encounter.service';
+import { auditService } from '../../../src/services/audit.service';
+
+// Mock dependencies
+jest.mock('pg');
+jest.mock('../../../src/services/encounter.service');
+jest.mock('../../../src/services/audit.service');
+
+describe('DoctorQueueService', () => {
+  let service: DoctorQueueService;
+  let mockPool: jest.Mocked<Pool>;
+  let mockEncounterService: jest.Mocked<EncounterService>;
+
+  beforeEach(() => {
+    mockPool = new Pool() as jest.Mocked<Pool>;
+    mockEncounterService = new EncounterService() as jest.Mocked<EncounterService>;
+    service = new DoctorQueueService();
+    (service as any).pool = mockPool;
+    (service as any).encounterService = mockEncounterService;
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('getQueueForDoctor', () => {
+    it('should return queue sorted by queue_number', async () => {
+      const mockRows = [
+        { queue_id: 'q1', queue_number: 1, booking_id: 'b1', patient_id: 'p1', patient_name: 'John', booking_time: new Date(), check_in_time: new Date(), called_at: null, status: 'WAITING', notes: null },
+        { queue_id: 'q2', queue_number: 2, booking_id: 'b2', patient_id: 'p2', patient_name: 'Jane', booking_time: new Date(), check_in_time: new Date(), called_at: null, status: 'WAITING', notes: null },
+      ];
+      mockPool.query = jest.fn().mockResolvedValue({ rows: mockRows });
+
+      const result = await service.getQueueForDoctor('doc1', 'A');
+      expect(result).toHaveLength(2);
+      expect(result[0].queueNumber).toBe(1);
+      expect(result[1].queueNumber).toBe(2);
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('ORDER BY q.queue_number ASC'),
+        ['doc1', 'A']
+      );
+    });
+
+    it('should return empty array if no queue', async () => {
+      mockPool.query = jest.fn().mockResolvedValue({ rows: [] });
+      const result = await service.getQueueForDoctor('doc1', 'A');
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('checkInPatient', () => {
+    it('should update queue to BEING_CALLED and create encounter', async () => {
+      const mockQueue = { 
+        id: 'q1', 
+        doctor_id: 'doc1', 
+        booking_id: 'b1', 
+        branch_id: 'A', 
+        status: 'WAITING', 
+        queue_number: 1 
+      };
+      const mockEncounter = { id: 'enc1', status: 'ONGOING' };
+      
+      // Mock client transaction - perhatikan urutan query
+      const mockClient = {
+        query: jest.fn()
+          .mockResolvedValueOnce(undefined) // BEGIN
+          .mockResolvedValueOnce({ rows: [mockQueue] }) // SELECT
+          .mockResolvedValueOnce({ rows: [{ ...mockQueue, status: 'BEING_CALLED' }] }) // UPDATE
+          .mockResolvedValueOnce(undefined), // COMMIT
+        release: jest.fn(),
+      };
+      (mockPool.connect as jest.Mock).mockResolvedValue(mockClient);
+      mockEncounterService.startEncounter = jest.fn().mockResolvedValue(mockEncounter);
+      (auditService.logEvent as jest.Mock).mockResolvedValue(undefined);
+
+      const result = await service.checkInPatient('q1', 'doc1');
+      expect(result.queue.status).toBe('BEING_CALLED');
+      expect(result.encounter).toEqual(mockEncounter);
+      expect(mockEncounterService.startEncounter).toHaveBeenCalledWith('b1', 'doc1', 'A');
+      expect(auditService.logEvent).toHaveBeenCalled();
+    });
+
+    it('should throw error if queue not found', async () => {
+      const mockClient = {
+        query: jest.fn()
+          .mockResolvedValueOnce(undefined) // BEGIN
+          .mockResolvedValueOnce({ rows: [] }), // SELECT returns empty
+        release: jest.fn(),
+      };
+      (mockPool.connect as jest.Mock).mockResolvedValue(mockClient);
+      
+      await expect(service.checkInPatient('invalid', 'doc1')).rejects.toThrow('QUEUE_NOT_FOUND');
+    });
+
+    it('should throw error if queue not owned by doctor', async () => {
+      const mockQueue = { 
+        id: 'q1', 
+        doctor_id: 'doc2', 
+        booking_id: 'b1', 
+        branch_id: 'A', 
+        status: 'WAITING', 
+        queue_number: 1 
+      };
+      const mockClient = {
+        query: jest.fn()
+          .mockResolvedValueOnce(undefined) // BEGIN
+          .mockResolvedValueOnce({ rows: [mockQueue] }), // SELECT
+        release: jest.fn(),
+      };
+      (mockPool.connect as jest.Mock).mockResolvedValue(mockClient);
+      
+      await expect(service.checkInPatient('q1', 'doc1')).rejects.toThrow('QUEUE_NOT_OWNED_BY_DOCTOR');
+    });
+  });
+
+  describe('getQueueStats', () => {
+    it('should return correct statistics', async () => {
+      const mockStats = {
+        total_waiting: '5',
+        total_being_called: '2',
+        total_completed: '10',
+        avg_wait_minutes: '12.5',
+      };
+      mockPool.query = jest.fn().mockResolvedValue({ rows: [mockStats] });
+
+      const result = await service.getQueueStats('doc1', 'A');
+      expect(result.totalWaiting).toBe(5);
+      expect(result.totalBeingCalled).toBe(2);
+      expect(result.totalCompleted).toBe(10);
+      expect(result.averageWaitTimeMinutes).toBe(12.5);
+    });
+
+    it('should return zeros if no data', async () => {
+      mockPool.query = jest.fn().mockResolvedValue({ rows: [{ total_waiting: '0', total_being_called: '0', total_completed: '0', avg_wait_minutes: null }] });
+      const result = await service.getQueueStats('doc1', 'A');
+      expect(result.totalWaiting).toBe(0);
+      expect(result.totalBeingCalled).toBe(0);
+      expect(result.totalCompleted).toBe(0);
+      expect(result.averageWaitTimeMinutes).toBe(0);
+    });
+  });
+});
