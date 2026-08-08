@@ -1,0 +1,124 @@
+import { Pool } from 'pg';
+import { config } from '../config';
+import { logger } from '../utils/logger';
+import { getErrorMessage, getErrorStack } from '../utils/error.util';
+
+export interface EncounterHistory {
+  id: string;
+  encounter_date: Date;
+  doctor_name: string;
+  specialization: string;
+  complaint: string;
+  treatment: string;
+  prescription?: string;
+  diagnosis?: string;
+  status: string;
+}
+
+export interface PatientHistory {
+  encounters: EncounterHistory[];
+  invoices: any[];
+  bookings: any[];
+}
+
+export class PatientHistoryService {
+  private pool: Pool;
+
+  constructor() {
+    this.pool = new Pool({ connectionString: config.database.url });
+  }
+
+  async getPatientHistory(patientId: string, branchId: string): Promise<PatientHistory> {
+    try {
+      // 1. Encounters
+      const encounterQuery = `
+        SELECT 
+          e.id,
+          e.created_at as encounter_date,
+          u.full_name as doctor_name,
+          d.specialization,
+          e.complaint,
+          e.treatment,
+          e.prescription,
+          e.status
+        FROM encounters e
+        JOIN doctors d ON e.doctor_id = d.id
+        JOIN users u ON d.user_id = u.id
+        WHERE e.patient_id = $1 
+          AND e.branch_id = $2
+          AND e.deleted_at IS NULL
+        ORDER BY e.created_at DESC
+      `;
+      const encounterResult = await this.pool.query(encounterQuery, [patientId, branchId]);
+
+      // 2. Invoices
+      const invoiceQuery = `
+        SELECT 
+          i.id,
+          i.invoice_number,
+          i.total_amount,
+          i.status as payment_status,
+          i.created_at as invoice_date
+        FROM invoices i
+        WHERE i.patient_id = $1 
+          AND i.branch_id = $2
+          AND i.deleted_at IS NULL
+        ORDER BY i.created_at DESC
+      `;
+      const invoiceResult = await this.pool.query(invoiceQuery, [patientId, branchId]);
+
+      // 3. Bookings
+      const bookingQuery = `
+        SELECT 
+          b.id,
+          b.booking_date,
+          b.status,
+          b.created_at
+        FROM bookings b
+        WHERE b.patient_id = $1 
+          AND b.branch_id = $2
+          AND b.deleted_at IS NULL
+        ORDER BY b.created_at DESC
+      `;
+      const bookingResult = await this.pool.query(bookingQuery, [patientId, branchId]);
+
+      return {
+        encounters: encounterResult.rows,
+        invoices: invoiceResult.rows,
+        bookings: bookingResult.rows,
+      };
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Error fetching patient history');
+      throw new Error('Failed to fetch patient history');
+    }
+  }
+
+  async getMedicalRecords(patientId: string, branchId: string): Promise<EncounterHistory[]> {
+    try {
+      const query = `
+        SELECT 
+          e.id,
+          e.created_at as encounter_date,
+          u.full_name as doctor_name,
+          d.specialization,
+          e.complaint,
+          e.treatment,
+          e.prescription,
+          e.diagnosis,
+          e.status
+        FROM encounters e
+        JOIN doctors d ON e.doctor_id = d.id
+        JOIN users u ON d.user_id = u.id
+        WHERE e.patient_id = $1 
+          AND e.branch_id = $2
+          AND e.deleted_at IS NULL
+        ORDER BY e.created_at DESC
+      `;
+      const result = await this.pool.query(query, [patientId, branchId]);
+      return result.rows;
+    } catch (error: unknown) {
+      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Error fetching medical records');
+      throw new Error('Failed to fetch medical records');
+    }
+  }
+}

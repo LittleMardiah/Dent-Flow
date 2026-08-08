@@ -1,0 +1,122 @@
+import { Request, Response } from 'express';
+import { PatientHistoryService } from '../services/patientHistory.service';
+import { logger } from '../utils/logger';
+import { getErrorMessage, getErrorStack } from '../utils/error.util';
+
+const patientHistoryService = new PatientHistoryService();
+
+/**
+ * GET /patients/:id/history?branchId=...
+ * Returns patient history (encounters, invoices, bookings)
+ * Access: Patient (own), Doctor (same branch), Admin (same branch)
+ */
+export const getPatientHistory = async (req: Request, res: Response) => {
+  try {
+    const patientId = String(req.params.id);
+    const branchId = String(req.query.branchId);
+    const userId = req.user?.userId;
+    const userRole = req.user?.role;
+
+    if (!userId || !userRole) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    if (!branchId) {
+      return res.status(400).json({ success: false, message: 'branchId is required' });
+    }
+
+    // Authorization checks
+    // Patient can only view own history
+    if (userRole === 'PATIENT') {
+      // Check if patient_id matches current user
+      const patientCheck = await patientHistoryService['pool'].query(
+        'SELECT id FROM patients WHERE user_id = $1 AND branch_id = $2',
+        [userId, branchId]
+      );
+      if (patientCheck.rows.length === 0) {
+        return res.status(403).json({ success: false, message: 'Forbidden' });
+      }
+      const ownPatientId = patientCheck.rows[0].id;
+      if (ownPatientId !== patientId) {
+        return res.status(403).json({ success: false, message: 'Forbidden' });
+      }
+    }
+
+    // Doctor/Admin can only access patients in their branch
+    if (userRole === 'DOCTOR' || userRole === 'ADMIN_BRANCH') {
+      // Check if patient belongs to same branch
+      const patientCheck = await patientHistoryService['pool'].query(
+        'SELECT id FROM patients WHERE id = $1 AND branch_id = $2',
+        [patientId, branchId]
+      );
+      if (patientCheck.rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Patient not found' });
+      }
+      // Branch isolation already handled by query
+    }
+
+    const history = await patientHistoryService.getPatientHistory(patientId, branchId);
+    return res.status(200).json({
+      success: true,
+      data: history,
+    });
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    const stack = getErrorStack(error);
+    logger.error({ error: message, stack, path: req.path }, 'Failed to fetch patient history');
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch patient history',
+    });
+  }
+};
+
+/**
+ * GET /patients/:id/medical-records?branchId=...
+ * Returns medical records (encounters with diagnosis)
+ * Access: Doctor only
+ */
+export const getMedicalRecords = async (req: Request, res: Response) => {
+  try {
+    const patientId = String(req.params.id);
+    const branchId = String(req.query.branchId);
+    const userId = req.user?.userId;
+    const userRole = req.user?.role;
+
+    if (!userId || !userRole) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    if (!branchId) {
+      return res.status(400).json({ success: false, message: 'branchId is required' });
+    }
+
+    // Only doctor can access medical records
+    if (userRole !== 'DOCTOR') {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    // Check if patient belongs to same branch
+    const patientCheck = await patientHistoryService['pool'].query(
+      'SELECT id FROM patients WHERE id = $1 AND branch_id = $2',
+      [patientId, branchId]
+    );
+    if (patientCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Patient not found' });
+    }
+
+    const records = await patientHistoryService.getMedicalRecords(patientId, branchId);
+    return res.status(200).json({
+      success: true,
+      data: records,
+    });
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    const stack = getErrorStack(error);
+    logger.error({ error: message, stack, path: req.path }, 'Failed to fetch medical records');
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch medical records',
+    });
+  }
+};

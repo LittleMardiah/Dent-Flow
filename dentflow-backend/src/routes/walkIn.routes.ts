@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { walkInRateLimiter } from '../middleware/rateLimiter';
 import { authMiddleware, roleMiddleware } from '../middleware/authMiddleware';
 import {
   createTemporaryProfile,
@@ -9,17 +10,17 @@ import {
 const router = Router();
 
 // Public endpoint: create temporary profile (no auth)
-router.post('/walk-in/create-profile', createTemporaryProfile);
+router.post('/create-profile', walkInRateLimiter, createTemporaryProfile);
 
 // Admin only: book appointment for walk-in
 router.post(
-  '/walk-in/book-appointment',
+  '/book-appointment',
   authMiddleware,
   roleMiddleware(['ADMIN_BRANCH']),
   bookWalkInAppointment
 );
 
 // Public endpoint: convert temp to full patient (no auth)
-router.post('/walk-in/convert-to-patient', convertTemporaryToPatient);
+router.post('/convert-to-patient', convertTemporaryToPatient);
 
 export default router;

@@ -1,104 +1,75 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import { PatientHistoryService } from '../services/patientHistory.service';
 import { logger } from '../utils/logger';
+import { getErrorMessage, getErrorStack } from '../utils/error.util';
 
 const patientHistoryService = new PatientHistoryService();
 
-/**
- * GET /patients/:id/history?branchId=...
- * Get patient history (encounters, invoices, bookings)
- * Accessible by: patient themselves, doctor, or admin
- */
-export const getPatientHistory = async (req: Request, res: Response, next: NextFunction) => {
+export const getPatientHistory = async (req: Request, res: Response) => {
   try {
-    const patientId = String(req.params.id);
-    const branchId = Array.isArray(req.query.branchId) 
-      ? req.query.branchId[0] 
-      : req.query.branchId;
+    const patientId = req.params.id as string;
+    const branchId = req.query.branchId as string;
+    const user = req.user;
 
-    if (!branchId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'branchId query parameter is required' 
-      });
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    // Authorization check: only patient themselves, doctor, or admin can access
-    const userId = req.user?.userId;
-    const userRole = req.user?.role;
-    const userBranch = req.user?.branchId;
-
-    // If user is a patient, they can only access their own history
-    if (userRole === 'PATIENT' && userId !== patientId) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Anda tidak memiliki akses ke riwayat pasien lain' 
-      });
+    // Validasi branch: user hanya bisa akses branch sendiri
+    if (user.branchId !== branchId) {
+      return res.status(403).json({ success: false, message: 'Access denied: branch mismatch' });
     }
 
-    // If user is admin or doctor, they must be in the same branch
-    if ((userRole === 'ADMIN_BRANCH' || userRole === 'DOCTOR') && userBranch !== branchId) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Anda tidak memiliki akses ke cabang ini' 
-      });
+    // Validasi akses patient
+    // Patient hanya bisa lihat dirinya sendiri
+    // Doctor dan admin bisa lihat semua pasien di branch mereka
+    if (user.role === 'PATIENT') {
+      // Cari patient_id dari user_id
+      const patientResult = await patientHistoryService['pool'].query(
+        'SELECT id FROM patients WHERE user_id = $1',
+        [user.userId]
+      );
+      if (patientResult.rows.length === 0 || patientResult.rows[0].id !== patientId) {
+        return res.status(403).json({ success: false, message: 'Access denied: patient mismatch' });
+      }
     }
 
-    const history = await patientHistoryService.getPatientHistory(patientId, branchId as string);
-    res.status(200).json({
-      success: true,
-      data: history,
-    });
+    const history = await patientHistoryService.getPatientHistory(patientId, branchId, user.role === 'DOCTOR');
+    res.status(200).json({ success: true, data: history });
   } catch (error: unknown) {
-    const err = error as Error;
-    logger.error({ error: err.message, stack: err.stack });
-    next(error);
+    const message = getErrorMessage(error);
+    const stack = getErrorStack(error);
+    logger.error({ error: message, stack, path: req.path, method: req.method, requestId: req.requestId }, 'Failed to fetch patient history');
+    res.status(500).json({ success: false, message: 'Failed to fetch patient history' });
   }
 };
 
-/**
- * GET /patients/:id/medical-records?branchId=...
- * Get medical records (full encounter details including diagnosis)
- * Doctor-only endpoint
- */
-export const getMedicalRecords = async (req: Request, res: Response, next: NextFunction) => {
+export const getMedicalRecords = async (req: Request, res: Response) => {
   try {
-    const patientId = String(req.params.id);
-    const branchId = Array.isArray(req.query.branchId) 
-      ? req.query.branchId[0] 
-      : req.query.branchId;
+    const patientId = req.params.id as string;
+    const branchId = req.query.branchId as string;
+    const user = req.user;
 
-    if (!branchId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'branchId query parameter is required' 
-      });
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    // Only doctors can access medical records
-    if (req.user?.role !== 'DOCTOR') {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Hanya dokter yang dapat mengakses rekam medis lengkap' 
-      });
+    // Hanya doctor yang boleh akses medical records (roleMiddleware sudah check, tapi kita tambahkan)
+    if (user.role !== 'DOCTOR') {
+      return res.status(403).json({ success: false, message: 'Access denied: only doctors can view medical records' });
     }
 
-    // Doctor must be in the same branch
-    if (req.user?.branchId !== branchId) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Anda tidak memiliki akses ke cabang ini' 
-      });
+    // Validasi branch
+    if (user.branchId !== branchId) {
+      return res.status(403).json({ success: false, message: 'Access denied: branch mismatch' });
     }
 
-    const records = await patientHistoryService.getMedicalRecords(patientId, branchId as string);
-    res.status(200).json({
-      success: true,
-      data: records,
-    });
+    const records = await patientHistoryService.getMedicalRecords(patientId, branchId);
+    res.status(200).json({ success: true, data: records });
   } catch (error: unknown) {
-    const err = error as Error;
-    logger.error({ error: err.message, stack: err.stack });
-    next(error);
+    const message = getErrorMessage(error);
+    const stack = getErrorStack(error);
+    logger.error({ error: message, stack, path: req.path, method: req.method, requestId: req.requestId }, 'Failed to fetch medical records');
+    res.status(500).json({ success: false, message: 'Failed to fetch medical records' });
   }
 };

@@ -7,6 +7,8 @@ import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { rateLimiter } from './middleware/rateLimiter';
 import { requestLoggerMiddleware } from './middleware/requestLogger';
+import walkInRoutes from './routes/walkIn.routes';
+import { walkInRateLimiter } from './middleware/rateLimiter';
 
 // Import routes
 import authRoutes from './routes/auth.routes';
@@ -50,10 +52,11 @@ app.use('/api', patientHistoryRoutes);
 app.use('/api/no-shows', noShowRoutes);
 app.use('/api', attendanceRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/walk-in', walkInRateLimiter, walkInRoutes);
 app.use('/api/admin/invoices', invoiceRoutes);
 app.use('/api/admin', auditRoutes);
 app.use('/api/payments', paymentReconciliationRoutes);
-app.use('/api/admin', adminWebhookRoutes); // 👈 TAMBAHKAN MOUNT
+app.use('/api/admin', adminWebhookRoutes); 
 
 // Global error handler
 app.use(errorHandler);
