@@ -170,6 +170,9 @@ describe('Webhook Retry Integration (Full)', () => {
     }
   });
 
+  // ============================================================
+  // TEST 1: HAPPY PATH WEBHOOK
+  // ============================================================
   it('should process webhook successfully and update invoice', async () => {
     const serverKey = process.env.MIDTRANS_SERVER_KEY || 'test-key';
     const statusCode = '200';
@@ -202,10 +205,11 @@ describe('Webhook Retry Integration (Full)', () => {
     expect(Number(invoiceCheck.rows[0].paid_amount)).toBe(50000);
   });
 
+  // ============================================================
+  // TEST 2: RETRY AUTOMATIS (Invoice not found)
+  // ============================================================
   it('should retry failed webhook automatically (Invoice not found)', async () => {
     const serverKey = process.env.MIDTRANS_SERVER_KEY || 'test-key';
-
-    // 🔥 GENERATE UNIQUE INVOICE NUMBER
     const failOrderId = `INV-NOTEXIST-${Date.now()}-${uuidv4().slice(0, 6)}`;
     const payload = {
       status_code: '200',
@@ -272,10 +276,11 @@ describe('Webhook Retry Integration (Full)', () => {
     expect(Number(invoiceCheck.rows[0].paid_amount)).toBe(50000);
   });
 
+  // ============================================================
+  // TEST 3: ADMIN REPLAY HAPPY PATH
+  // ============================================================
   it('should replay webhook manually via admin endpoint', async () => {
     const serverKey = process.env.MIDTRANS_SERVER_KEY || 'test-key';
-
-    // 🔥 GENERATE UNIQUE INVOICE NUMBER
     const failOrderId = `INV-FAIL-REPLAY-${Date.now()}-${uuidv4().slice(0, 6)}`;
     const payload = {
       status_code: '200',
@@ -340,5 +345,58 @@ describe('Webhook Retry Integration (Full)', () => {
     );
     expect(invoiceCheck.rows[0].status).toBe('PAID');
     expect(Number(invoiceCheck.rows[0].paid_amount)).toBe(50000);
+  });
+
+  // ============================================================
+  // TEST 4: ADMIN REPLAY IDEMPOTENCY (ALREADY PROCESSED)
+  // ============================================================
+  it('should return 409 when replaying already processed webhook', async () => {
+    const serverKey = process.env.MIDTRANS_SERVER_KEY || 'test-key';
+    const failOrderId = `INV-IDEMPOTENT-${Date.now()}-${uuidv4().slice(0, 6)}`;
+    const payload = {
+      status_code: '200',
+      order_id: failOrderId,
+      transaction_status: 'capture',
+      gross_amount: '50000',
+      transaction_id: `txn-${uuidv4().slice(0, 8)}`
+    };
+    const raw = failOrderId + '200' + '50000' + serverKey;
+    const signature = crypto.createHmac('sha256', serverKey).update(raw).digest('hex');
+    const webhookIdIdempotent = `webhook-idempotent-${uuidv4()}`;
+
+    // 1. Kirim webhook gagal (invoice belum ada) → buat error record
+    await request(app)
+      .post('/webhooks/midtrans')
+      .set('x-midtrans-signature', signature)
+      .set('x-midtrans-webhook-id', webhookIdIdempotent)
+      .send(payload);
+
+    // 2. Update status error record menjadi PROCESSED (simulasi sudah diproses)
+    await pool.query(
+      `UPDATE payment_webhook_errors 
+       SET retry_count = 3, next_retry_at = NULL 
+       WHERE webhook_id = $1`,
+      [webhookIdIdempotent]
+    );
+    await pool.query(
+      `UPDATE payment_webhooks 
+       SET status = 'PROCESSED' 
+       WHERE webhook_id = $1`,
+      [webhookIdIdempotent]
+    );
+
+    // 3. Coba replay → harus return 409
+    const replayRes = await request(app)
+      .post(`/api/admin/webhooks/${webhookIdIdempotent}/replay`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send();
+
+    expect(replayRes.status).toBe(409);
+    expect(replayRes.body.error).toBe('ALREADY_PROCESSED');
+    expect(replayRes.body.message).toContain('already processed');
+
+    // 4. Cleanup
+    await pool.query('DELETE FROM payment_webhook_errors WHERE webhook_id = $1', [webhookIdIdempotent]);
+    await pool.query('DELETE FROM payment_webhooks WHERE webhook_id = $1', [webhookIdIdempotent]);
   });
 });
