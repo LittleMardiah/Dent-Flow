@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger';
 import { PaymentWebhookService } from '../services/paymentWebhook.service';
 import { PaymentWebhookRepository } from '../repositories/paymentWebhook.repository';
+import { notificationService } from "../services/notification.service";
 import { pool } from '../config/database';
 import { getErrorMessage, getErrorStack } from '../utils/error.util';
 
@@ -49,6 +50,16 @@ export const webhookRetryJob = {
           
           if (newRetryCount >= 3) {
             await repo.markPermanentlyFailed(webhookId);
+            // 🔔 Send notification to admin
+            await notificationService.sendWebhookFailureAlert(
+              webhookId,
+              orderId,
+              newRetryCount,
+              result.message || "Unknown error",
+              item.branch_id,
+              item.invoice_id,
+              item.booking_id
+            );
             logger.error(`❌ Webhook ${webhookId} permanently failed after 3 retries`);
             await webhookRetryJob.handleAutoCancel(orderId);
           } else {
