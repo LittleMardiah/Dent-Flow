@@ -17,7 +17,7 @@ export class NotificationService {
   private async logNotification(
     bookingId: string,
     patientId: string,
-    type: 'CONFIRMATION' | 'REMINDER' | 'CANCELLATION' | 'WEBHOOK_FAILURE',
+    type: 'CONFIRMATION' | 'REMINDER' | 'CANCELLATION',
     content: string
   ): Promise<void> {
     const client = await this.pool.connect();
@@ -28,7 +28,10 @@ export class NotificationService {
          RETURNING id`,
         [bookingId, patientId, type, content]
       );
-      logger.info(`📧 Notification logged: ${type} for booking ${bookingId} (id: ${result.rows[0].id})`);
+      logger.info({ 
+        msg: `📧 Notification logged: ${type} for booking ${bookingId}`, 
+        notificationId: result.rows[0].id 
+      });
     } catch (error: unknown) {
       logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Failed to log notification');
       throw new Error('NOTIFICATION_LOG_FAILED');
@@ -60,7 +63,7 @@ export class NotificationService {
       const patientId = await this.getPatientIdFromBooking(bookingId);
       const content = `Booking Anda berhasil dibuat. Kode booking: ${bookingId}. Silakan datang sesuai jadwal.`;
       await this.logNotification(bookingId, patientId, 'CONFIRMATION', content);
-      logger.info(`✅ Booking confirmation sent for booking ${bookingId}`);
+      logger.info({ msg: `✅ Booking confirmation sent for booking ${bookingId}` });
     } catch (error: unknown) {
       logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, `Failed to send booking confirmation for ${bookingId}`);
       throw error;
@@ -76,7 +79,7 @@ export class NotificationService {
       const patientId = await this.getPatientIdFromBooking(bookingId);
       const content = `Pengingat: Anda memiliki janji temu besok. Kode booking: ${bookingId}. Jangan lupa datang!`;
       await this.logNotification(bookingId, patientId, 'REMINDER', content);
-      logger.info(`✅ Reminder sent for booking ${bookingId}`);
+      logger.info({ msg: `✅ Reminder sent for booking ${bookingId}` });
     } catch (error: unknown) {
       logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, `Failed to send reminder for ${bookingId}`);
       throw error;
@@ -92,7 +95,7 @@ export class NotificationService {
       const patientId = await this.getPatientIdFromBooking(bookingId);
       const content = `Booking Anda dengan kode ${bookingId} telah dibatalkan. Jika ada pertanyaan, hubungi klinik.`;
       await this.logNotification(bookingId, patientId, 'CANCELLATION', content);
-      logger.info(`✅ Cancellation notification sent for booking ${bookingId}`);
+      logger.info({ msg: `✅ Cancellation notification sent for booking ${bookingId}` });
     } catch (error: unknown) {
       logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, `Failed to send cancellation for ${bookingId}`);
       throw error;
@@ -127,8 +130,9 @@ Action Required: Manual intervention needed to resolve this webhook failure.
 Check the admin dashboard for more details.
 `;
 
-    // Log to console (always visible in logs)
-    logger.warn('🚨 [ALERT] Webhook permanently failed:', {
+    // Log to console (always visible in logs) - FIXED: single object
+    logger.warn({
+      msg: '🚨 [ALERT] Webhook permanently failed:',
       webhookId,
       orderId,
       retryCount,
@@ -139,8 +143,9 @@ Check the admin dashboard for more details.
       timestamp: new Date().toISOString(),
     });
 
-    // Send email (mock for now, implement with nodemailer later)
-    logger.info('📧 [EMAIL] Webhook failure alert would be sent to admin:', {
+    // Send email (mock for now, implement with nodemailer later) - FIXED: single object
+    logger.info({
+      msg: '📧 [EMAIL] Webhook failure alert would be sent to admin:',
       to: process.env.ADMIN_EMAIL || 'admin@dentflow.local',
       subject: `[DentFlow] ⚠️ Webhook ${webhookId} permanently failed`,
       body: content,
@@ -170,7 +175,7 @@ Check the admin dashboard for more details.
             }],
           }),
         });
-        logger.info('✅ Slack alert sent for webhook failure');
+        logger.info({ msg: '✅ Slack alert sent for webhook failure' });
       } catch (error) {
         logger.error({ error: getErrorMessage(error) }, 'Failed to send Slack alert');
       }
@@ -189,5 +194,43 @@ Check the admin dashboard for more details.
   }
 }
 
-// Export singleton instance
 export const notificationService = new NotificationService();
+
+  /**
+   * Send NO-SHOW notification to patient and admin
+   */
+  async sendNoShowNotification(
+    bookingId: string,
+    patientId: string,
+    bookingCode: string,
+    sessionStart: Date,
+    sessionEnd: Date
+  ): Promise<void> {
+    const patient = await this.pool.query(
+      `SELECT full_name, phone FROM patients WHERE user_id = $1`,
+      [patientId]
+    );
+    const patientName = patient.rows[0]?.full_name || 'Pasien';
+
+    // 1. Notifikasi untuk pasien
+    const patientContent = `Anda terdaftar sebagai NO-SHOW untuk booking ${bookingCode} pada sesi ${sessionStart} - ${sessionEnd}. Silakan hubungi klinik untuk informasi lebih lanjut.`;
+    await this.logNotification(bookingId, patientId, 'CANCELLATION', patientContent);
+
+    // 2. Notifikasi untuk admin cabang (cari admin dari branch booking)
+    const branchRes = await this.pool.query(
+      `SELECT branch_id FROM bookings WHERE id = $1`,
+      [bookingId]
+    );
+    const branchId = branchRes.rows[0]?.branch_id;
+    if (branchId) {
+      const adminRes = await this.pool.query(
+        `SELECT id FROM users WHERE branch_id = $1 AND role = 'ADMIN_BRANCH' LIMIT 1`,
+        [branchId]
+      );
+      if (adminRes.rows.length > 0) {
+        const adminId = adminRes.rows[0].id;
+        const adminContent = `Pasien ${patientName} (${bookingCode}) tidak hadir pada sesi ${sessionStart} - ${sessionEnd}. Status: NO-SHOW.`;
+        await this.logNotification(bookingId, adminId, 'CANCELLATION', adminContent);
+      }
+    }
+  }

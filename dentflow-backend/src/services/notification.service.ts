@@ -12,11 +12,10 @@ export class NotificationService {
 
   /**
    * Core method: log notification to database
-   * (simulated send, actual SMS/email will be implemented in Phase 3)
    */
   private async logNotification(
     bookingId: string,
-    patientId: string,
+    userId: string,
     type: 'CONFIRMATION' | 'REMINDER' | 'CANCELLATION',
     content: string
   ): Promise<void> {
@@ -26,11 +25,11 @@ export class NotificationService {
         `INSERT INTO notifications (booking_id, patient_id, type, status, sent_at, content)
          VALUES ($1, $2, $3, 'SENT', NOW(), $4)
          RETURNING id`,
-        [bookingId, patientId, type, content]
+        [bookingId, userId, type, content]
       );
-      logger.info({ 
-        msg: `📧 Notification logged: ${type} for booking ${bookingId}`, 
-        notificationId: result.rows[0].id 
+      logger.info({
+        msg: `📧 Notification logged: ${type} for booking ${bookingId}`,
+        notificationId: result.rows[0].id
       });
     } catch (error: unknown) {
       logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Failed to log notification');
@@ -56,142 +55,72 @@ export class NotificationService {
 
   /**
    * Send booking confirmation notification
-   * Called after booking is created (will be integrated in Phase 3)
    */
   async sendBookingConfirmation(bookingId: string): Promise<void> {
-    try {
-      const patientId = await this.getPatientIdFromBooking(bookingId);
-      const content = `Booking Anda berhasil dibuat. Kode booking: ${bookingId}. Silakan datang sesuai jadwal.`;
-      await this.logNotification(bookingId, patientId, 'CONFIRMATION', content);
-      logger.info({ msg: `✅ Booking confirmation sent for booking ${bookingId}` });
-    } catch (error: unknown) {
-      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, `Failed to send booking confirmation for ${bookingId}`);
-      throw error;
-    }
+    const patientId = await this.getPatientIdFromBooking(bookingId);
+    const content = `Booking Anda telah dikonfirmasi. Kode booking: ${bookingId}. Terima kasih!`;
+    await this.logNotification(bookingId, patientId, 'CONFIRMATION', content);
   }
 
   /**
-   * Send reminder SMS/Email
-   * Called manually by admin or scheduled (Phase 3)
+   * Send reminder SMS notification
    */
   async sendReminderSMS(bookingId: string): Promise<void> {
-    try {
-      const patientId = await this.getPatientIdFromBooking(bookingId);
-      const content = `Pengingat: Anda memiliki janji temu besok. Kode booking: ${bookingId}. Jangan lupa datang!`;
-      await this.logNotification(bookingId, patientId, 'REMINDER', content);
-      logger.info({ msg: `✅ Reminder sent for booking ${bookingId}` });
-    } catch (error: unknown) {
-      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, `Failed to send reminder for ${bookingId}`);
-      throw error;
-    }
+    const patientId = await this.getPatientIdFromBooking(bookingId);
+    const content = `Pengingat: Anda memiliki janji temu hari ini. Kode booking: ${bookingId}`;
+    await this.logNotification(bookingId, patientId, 'REMINDER', content);
   }
 
   /**
    * Send appointment cancelled notification
-   * Called when booking is cancelled (will be integrated in Phase 3)
    */
   async sendAppointmentCancelledNotification(bookingId: string): Promise<void> {
-    try {
-      const patientId = await this.getPatientIdFromBooking(bookingId);
-      const content = `Booking Anda dengan kode ${bookingId} telah dibatalkan. Jika ada pertanyaan, hubungi klinik.`;
-      await this.logNotification(bookingId, patientId, 'CANCELLATION', content);
-      logger.info({ msg: `✅ Cancellation notification sent for booking ${bookingId}` });
-    } catch (error: unknown) {
-      logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, `Failed to send cancellation for ${bookingId}`);
-      throw error;
-    }
+    const patientId = await this.getPatientIdFromBooking(bookingId);
+    const content = `Booking Anda telah dibatalkan. Kode booking: ${bookingId}`;
+    await this.logNotification(bookingId, patientId, 'CANCELLATION', content);
   }
 
   /**
-   * Send webhook failure alert to admin
-   * Called when webhook permanently failed after 3 retries
+   * Send NO-SHOW notification to patient and admin
    */
-  async sendWebhookFailureAlert(
-    webhookId: string,
-    orderId: string,
-    retryCount: number,
-    lastError: string,
-    branchId?: string,
-    invoiceId?: string,
-    bookingId?: string
+  async sendNoShowNotification(
+    bookingId: string,
+    patientId: string,
+    bookingCode: string,
+    sessionStart: Date,
+    sessionEnd: Date
   ): Promise<void> {
-    const content = `
-🚨 WEBHOOK PERMANENTLY FAILED
-Webhook ID: ${webhookId}
-Order ID: ${orderId}
-Retry Count: ${retryCount}/3
-Last Error: ${lastError || 'Unknown error'}
-Branch ID: ${branchId || 'N/A'}
-Invoice ID: ${invoiceId || 'N/A'}
-Booking ID: ${bookingId || 'N/A'}
-Timestamp: ${new Date().toISOString()}
-
-Action Required: Manual intervention needed to resolve this webhook failure.
-Check the admin dashboard for more details.
-`;
-
-    // Log to console (always visible in logs) - FIXED: single object
-    logger.warn({
-      msg: '🚨 [ALERT] Webhook permanently failed:',
-      webhookId,
-      orderId,
-      retryCount,
-      lastError,
-      branchId,
-      invoiceId,
-      bookingId,
-      timestamp: new Date().toISOString(),
-    });
-
-    // Send email (mock for now, implement with nodemailer later) - FIXED: single object
-    logger.info({
-      msg: '📧 [EMAIL] Webhook failure alert would be sent to admin:',
-      to: process.env.ADMIN_EMAIL || 'admin@dentflow.local',
-      subject: `[DentFlow] ⚠️ Webhook ${webhookId} permanently failed`,
-      body: content,
-    });
-
-    // Send Slack (if configured)
-    const slackUrl = process.env.SLACK_WEBHOOK_URL;
-    if (slackUrl) {
-      try {
-        await fetch(slackUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: `🚨 *Webhook Permanently Failed*`,
-            attachments: [{
-              color: 'danger',
-              fields: [
-                { title: 'Webhook ID', value: webhookId, short: true },
-                { title: 'Order ID', value: orderId, short: true },
-                { title: 'Retry Count', value: `${retryCount}/3`, short: true },
-                { title: 'Last Error', value: lastError || 'Unknown', short: false },
-                { title: 'Branch ID', value: branchId || 'N/A', short: true },
-                { title: 'Booking ID', value: bookingId || 'N/A', short: true },
-              ],
-              footer: 'DentFlow Payment System',
-              ts: Math.floor(Date.now() / 1000),
-            }],
-          }),
-        });
-        logger.info({ msg: '✅ Slack alert sent for webhook failure' });
-      } catch (error) {
-        logger.error({ error: getErrorMessage(error) }, 'Failed to send Slack alert');
-      }
+    // 1. Dapatkan user_id dari patients berdasarkan patient_id
+    const patientRes = await this.pool.query(
+      `SELECT user_id, full_name FROM patients WHERE id = $1`,
+      [patientId]
+    );
+    if (patientRes.rows.length === 0) {
+      throw new Error('PATIENT_NOT_FOUND');
     }
+    const userId = patientRes.rows[0].user_id;
+    const patientName = patientRes.rows[0].full_name || 'Pasien';
 
-    // Store in notifications table (optional, for audit)
-    try {
-      await this.pool.query(
-        `INSERT INTO notifications (booking_id, patient_id, type, status, sent_at, content)
-         VALUES ($1, $2, 'WEBHOOK_FAILURE', 'SENT', NOW(), $3)`,
-        [bookingId || null, null, content]
+    // 2. Notifikasi untuk pasien
+    const patientContent = `Anda terdaftar sebagai NO-SHOW untuk booking ${bookingCode} pada sesi ${sessionStart} - ${sessionEnd}. Silakan hubungi klinik untuk informasi lebih lanjut.`;
+    await this.logNotification(bookingId, userId, 'CANCELLATION', patientContent);
+
+    // 3. Notifikasi untuk admin cabang
+    const branchRes = await this.pool.query(
+      `SELECT branch_id FROM bookings WHERE id = $1`,
+      [bookingId]
+    );
+    const branchId = branchRes.rows[0]?.branch_id;
+    if (branchId) {
+      const adminRes = await this.pool.query(
+        `SELECT id FROM users WHERE branch_id = $1 AND role = 'ADMIN_BRANCH' LIMIT 1`,
+        [branchId]
       );
-    } catch (error) {
-      logger.error({ error: getErrorMessage(error) }, 'Failed to log webhook failure notification');
+      if (adminRes.rows.length > 0) {
+        const adminId = adminRes.rows[0].id;
+        const adminContent = `Pasien ${patientName} (${bookingCode}) tidak hadir pada sesi ${sessionStart} - ${sessionEnd}. Status: NO-SHOW.`;
+        await this.logNotification(bookingId, adminId, 'CANCELLATION', adminContent);
+      }
     }
   }
 }
-
-export const notificationService = new NotificationService();

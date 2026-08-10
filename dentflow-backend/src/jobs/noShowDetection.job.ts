@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { getErrorMessage, getErrorStack } from '../utils/error.util';
+import { NotificationService } from '../services/notification.service';
 
 const pool = new Pool({ connectionString: config.database.url });
 
@@ -10,10 +11,11 @@ export const noShowDetectionJob = {
   schedule: '*/30 * * * *',
   
   async execute(): Promise<void> {
+    const notificationService = new NotificationService();
+    
     try {
       logger.info('🔄 Running NO-SHOW detection job...');
       
-      // Query bookings yang sudah melewati session_end + grace period 15 menit
       const result = await pool.query(
         `UPDATE bookings 
          SET status = 'NO_SHOW', 
@@ -28,9 +30,23 @@ export const noShowDetectionJob = {
       if (result.rows.length > 0) {
         logger.info(`✅ Marked ${result.rows.length} bookings as NO-SHOW`);
         
-        // TODO: Send notifications to patients
-        // TODO: Create audit logs
-        // TODO: Update attendance statistics
+        for (const row of result.rows) {
+          try {
+            await notificationService.sendNoShowNotification(
+              row.id,
+              row.patient_id,
+              row.booking_code,
+              row.session_start,
+              row.session_end
+            );
+            logger.info(`📧 NO-SHOW notification sent for booking ${row.booking_code}`);
+          } catch (notifError) {
+            logger.error(
+              { error: notifError },
+              `Failed to send notification for booking ${row.booking_code}`
+            );
+          }
+        }
       } else {
         logger.info('ℹ️ No NO-SHOW bookings found');
       }
