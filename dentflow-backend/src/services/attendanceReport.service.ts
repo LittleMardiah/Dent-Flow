@@ -8,7 +8,7 @@ export interface PatientAttendance {
   completed: number;
   noShows: number;
   cancellations: number;
-  showRate: number; // percentage (completed / totalBookings * 100)
+  showRate: number;
 }
 
 export interface NoShowSummary {
@@ -18,6 +18,7 @@ export interface NoShowSummary {
   noShowCount: number;
   lastNoShowDate: Date | null;
   totalBookings: number;
+  isWalkIn: boolean;
 }
 
 export class AttendanceReportService {
@@ -28,21 +29,41 @@ export class AttendanceReportService {
   }
 
   /**
-   * Get attendance statistics for a specific patient
+   * Get attendance statistics for a specific patient (regular or walk-in)
+   * Supports both patient_id (users) and temp_patient_id (temporary_patients)
    */
-  async getPatientAttendanceRate(patientId: string): Promise<PatientAttendance> {
+  async getPatientAttendanceRate(patientId: string, isWalkIn: boolean = false): Promise<PatientAttendance> {
     try {
-      const query = `
-        SELECT 
-          COUNT(*) as total_bookings,
-          COUNT(*) FILTER (WHERE status = 'COMPLETED') as completed,
-          COUNT(*) FILTER (WHERE status = 'NO_SHOW') as no_shows,
-          COUNT(*) FILTER (WHERE status = 'CANCELLED') as cancellations
-        FROM bookings
-        WHERE pasien_id = $1
-          AND deleted_at IS NULL
-      `;
-      const result = await this.pool.query(query, [patientId]);
+      let query: string;
+      let params: any[];
+
+      if (isWalkIn) {
+        query = `
+          SELECT 
+            COUNT(*) as total_bookings,
+            COUNT(*) FILTER (WHERE status = 'COMPLETED') as completed,
+            COUNT(*) FILTER (WHERE status = 'NO_SHOW') as no_shows,
+            COUNT(*) FILTER (WHERE status = 'CANCELLED') as cancellations
+          FROM bookings
+          WHERE temp_patient_id = $1
+            AND deleted_at IS NULL
+        `;
+        params = [patientId];
+      } else {
+        query = `
+          SELECT 
+            COUNT(*) as total_bookings,
+            COUNT(*) FILTER (WHERE status = 'COMPLETED') as completed,
+            COUNT(*) FILTER (WHERE status = 'NO_SHOW') as no_shows,
+            COUNT(*) FILTER (WHERE status = 'CANCELLED') as cancellations
+          FROM bookings
+          WHERE pasien_id = $1
+            AND deleted_at IS NULL
+        `;
+        params = [patientId];
+      }
+
+      const result = await this.pool.query(query, params);
       const row = result.rows[0];
 
       const totalBookings = parseInt(row.total_bookings) || 0;
@@ -50,7 +71,6 @@ export class AttendanceReportService {
       const noShows = parseInt(row.no_shows) || 0;
       const cancellations = parseInt(row.cancellations) || 0;
 
-      // Show rate = completed / totalBookings * 100 (only if total > 0)
       const showRate = totalBookings > 0 ? (completed / totalBookings) * 100 : 0;
 
       return {
@@ -59,7 +79,7 @@ export class AttendanceReportService {
         completed,
         noShows,
         cancellations,
-        showRate: Math.round(showRate * 100) / 100, // round to 2 decimals
+        showRate: Math.round(showRate * 100) / 100,
       };
     } catch (error: unknown) {
       const err = error as Error;
@@ -70,18 +90,21 @@ export class AttendanceReportService {
 
   /**
    * Get no-show summary for a branch (top chronic no-shows)
+   * NOW INCLUDES WALK-IN PATIENTS from temporary_patients
    * Returns patients sorted by no-show count descending
    */
   async getNoShowSummary(branchId: string, limit: number = 20): Promise<NoShowSummary[]> {
     try {
-      const query = `
+      // Query untuk regular patients (dari users)
+      const regularQuery = `
         SELECT 
           u.id as patient_id,
           u.full_name as patient_name,
           u.phone_number as phone,
           COUNT(*) FILTER (WHERE b.status = 'NO_SHOW') as no_show_count,
           MAX(b.no_show_at) as last_no_show_date,
-          COUNT(*) as total_bookings
+          COUNT(*) as total_bookings,
+          false as is_walk_in
         FROM users u
         JOIN bookings b ON u.id = b.pasien_id
         WHERE u.branch_id = $1
@@ -90,57 +113,50 @@ export class AttendanceReportService {
           AND u.deleted_at IS NULL
         GROUP BY u.id, u.full_name, u.phone_number
         HAVING COUNT(*) FILTER (WHERE b.status = 'NO_SHOW') > 0
+      `;
+
+      // Query untuk walk-in patients (dari temporary_patients)
+      const walkInQuery = `
+        SELECT 
+          tp.id as patient_id,
+          tp.full_name as patient_name,
+          tp.phone as phone,
+          COUNT(*) FILTER (WHERE b.status = 'NO_SHOW') as no_show_count,
+          MAX(b.no_show_at) as last_no_show_date,
+          COUNT(*) as total_bookings,
+          true as is_walk_in
+        FROM temporary_patients tp
+        JOIN bookings b ON tp.id = b.temp_patient_id
+        WHERE tp.branch_id = $1
+          AND b.deleted_at IS NULL
+          AND tp.deleted_at IS NULL
+          AND tp.converted_to_patient_id IS NULL
+        GROUP BY tp.id, tp.full_name, tp.phone
+        HAVING COUNT(*) FILTER (WHERE b.status = 'NO_SHOW') > 0
+      `;
+
+      // UNION kedua query
+      const fullQuery = `
+        SELECT * FROM (${regularQuery} UNION ${walkInQuery}) combined
         ORDER BY no_show_count DESC
         LIMIT $2
       `;
-      const result = await this.pool.query(query, [branchId, limit]);
-      
+
+      const result = await this.pool.query(fullQuery, [branchId, limit]);
+
       return result.rows.map(row => ({
         patientId: row.patient_id,
         patientName: row.patient_name,
-        phone: row.phone || '-',
-        noShowCount: parseInt(row.no_show_count),
-        lastNoShowDate: row.last_no_show_date,
-        totalBookings: parseInt(row.total_bookings),
+        phone: row.phone || 'N/A',
+        noShowCount: parseInt(row.no_show_count) || 0,
+        lastNoShowDate: row.last_no_show_date || null,
+        totalBookings: parseInt(row.total_bookings) || 0,
+        isWalkIn: row.is_walk_in,
       }));
     } catch (error: unknown) {
       const err = error as Error;
       logger.error({ error: err.message, stack: err.stack }, 'Error fetching no-show summary');
       throw new Error('Failed to fetch no-show summary');
-    }
-  }
-
-  /**
-   * Get attendance trend for a patient (last 3 months)
-   */
-  async getPatientTrend(patientId: string): Promise<any[]> {
-    try {
-      const query = `
-        SELECT 
-          DATE_TRUNC('month', booking_date) as month,
-          COUNT(*) as total,
-          COUNT(*) FILTER (WHERE status = 'COMPLETED') as completed,
-          COUNT(*) FILTER (WHERE status = 'NO_SHOW') as no_shows,
-          COUNT(*) FILTER (WHERE status = 'CANCELLED') as cancellations
-        FROM bookings
-        WHERE pasien_id = $1
-          AND booking_date >= CURRENT_DATE - INTERVAL '3 months'
-          AND deleted_at IS NULL
-        GROUP BY DATE_TRUNC('month', booking_date)
-        ORDER BY month DESC
-      `;
-      const result = await this.pool.query(query, [patientId]);
-      return result.rows.map(row => ({
-        month: row.month,
-        total: parseInt(row.total),
-        completed: parseInt(row.completed),
-        noShows: parseInt(row.no_shows),
-        cancellations: parseInt(row.cancellations),
-      }));
-    } catch (error: unknown) {
-      const err = error as Error;
-      logger.error({ error: err.message, stack: err.stack }, 'Error fetching patient trend');
-      throw new Error('Failed to fetch patient trend');
     }
   }
 }
