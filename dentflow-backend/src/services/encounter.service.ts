@@ -1,3 +1,4 @@
+import { EncounterStatus } from '../models/encounter.model';
 import { Pool } from 'pg';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -17,7 +18,7 @@ export interface EncounterData {
   diagnosis: string;
   prescription: string;
   notes: string;
-  status: 'ONGOING' | 'COMPLETED' | 'CANCELLED';
+  status: EncounterStatus.ONGOING | EncounterStatus.COMPLETED | EncounterStatus.CANCELLED;
   startedAt: Date;
   completedAt: Date | null;
   createdAt: Date;
@@ -81,7 +82,7 @@ export class EncounterService {
         `INSERT INTO encounters (
           id, branch_id, booking_id, doctor_id, patient_id, status, started_at
         ) VALUES (
-          gen_random_uuid(), $1, $2, $3, $4, 'ONGOING', NOW()
+          gen_random_uuid(), $1, $2, $3, $4, EncounterStatus.ONGOING, NOW()
         ) RETURNING *`,
         [branchId, bookingId, booking.doctor_id, booking.patient_id]
       );
@@ -127,7 +128,7 @@ export class EncounterService {
         throw new Error('ENCOUNTER_NOT_FOUND');
       }
       const encounter = result.rows[0];
-      if (encounter.status !== 'ONGOING') {
+      if (encounter.status !== EncounterStatus.ONGOING) {
         throw new Error('ENCOUNTER_NOT_ONGOING');
       }
 
@@ -182,7 +183,7 @@ export class EncounterService {
         throw new Error('ENCOUNTER_NOT_FOUND');
       }
       const encounter = result.rows[0];
-      if (encounter.status !== 'ONGOING') {
+      if (encounter.status !== EncounterStatus.ONGOING) {
         throw new Error('ENCOUNTER_NOT_ONGOING');
       }
 
@@ -242,7 +243,7 @@ export class EncounterService {
         throw new Error('ENCOUNTER_NOT_FOUND');
       }
       const encounter = result.rows[0];
-      if (encounter.status !== 'ONGOING') {
+      if (encounter.status !== EncounterStatus.ONGOING) {
         throw new Error('ENCOUNTER_NOT_ONGOING');
       }
 
@@ -328,7 +329,7 @@ export class EncounterService {
         throw new Error('ENCOUNTER_NOT_FOUND');
       }
       const encounter = result.rows[0];
-      if (encounter.status !== 'ONGOING') {
+      if (encounter.status !== EncounterStatus.ONGOING) {
         throw new Error('ENCOUNTER_NOT_ONGOING');
       }
 
@@ -336,7 +337,7 @@ export class EncounterService {
 
       const updateResult = await client.query(
         `UPDATE encounters 
-         SET status = 'COMPLETED', completed_at = NOW(), updated_at = NOW()
+         SET status = EncounterStatus.COMPLETED, completed_at = NOW(), updated_at = NOW()
          WHERE id = $1
          RETURNING *`,
         [encounterId]
@@ -351,7 +352,7 @@ export class EncounterService {
         entityId: encounterId,
         description: 'Pemeriksaan selesai',
         oldValues: { status: encounter.status },
-        newValues: { status: 'COMPLETED' },
+        newValues: { status: EncounterStatus.COMPLETED },
       });
 
       // 🔥 PERBAIKAN UTAMA: panggil dengan 3 argumen (bukan 4)
