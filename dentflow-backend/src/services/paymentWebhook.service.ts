@@ -195,6 +195,8 @@ export class PaymentWebhookService {
           console.log(`✅ [TEST] Invoice ${invoice.invoice_number} paid successfully`);
           return { success: true, message: 'Webhook processed successfully' };
         } else if (failureStatuses.includes(transactionStatus)) {
+        } else if (refundStatuses.includes(transactionStatus)) {
+          await this.handleRefundPayment(invoice, orderId, transactionStatus, payload, webhookId);
           await this.handleFailedPayment(invoice, orderId, transactionStatus);
           await this.repository.updateStatus(webhookId, 'PROCESSED');
           console.log(`❌ [TEST] Payment failed for invoice ${invoice.invoice_number}`);
