@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { logger } from '../utils/logger';
 import { getErrorMessage, getErrorStack } from '../utils/error.util';
 import { noShowDetectionJob } from './noShowDetection.job';
+import { cleanupTempPatientsJob } from './cleanupTempPatients.job';
 import { resetQueueJob } from './resetQueue.job';
 import { webhookRetryJob } from './webhookRetry.job';
 
@@ -22,6 +23,7 @@ export class JobScheduler {
     }
 
     const jobs: ScheduledJob[] = [
+    cleanupTempPatientsJob,
       noShowDetectionJob,
       resetQueueJob,
       webhookRetryJob,
