@@ -1,33 +1,45 @@
+import { Pool } from 'pg';
+import { config } from '../config';
 import { logger } from '../utils/logger';
+import { getErrorMessage, getErrorStack } from '../utils/error.util';
 
-/**
- * NO-SHOW Detection Job
- * Menandai booking yang tidak check-in sampai sesi berakhir sebagai NO-SHOW.
- * 
- * Logika lengkap akan diimplementasikan di Week 3.
- * Saat ini hanya placeholder untuk memastikan job scheduler berjalan.
- */
+const pool = new Pool({ connectionString: config.database.url });
+
 export const noShowDetectionJob = {
   name: 'no-show-detection',
-  schedule: '*/30 * * * *', // Every 30 minutes (cron expression)
+  schedule: '*/30 * * * *',
   
-  /**
-   * Execute the job
-   */
   async execute(): Promise<void> {
     try {
       logger.info('🔄 Running NO-SHOW detection job...');
       
-      // TODO: Implement NO-SHOW detection logic in Week 3
-      // 1. Query bookings where status = 'PAYMENT_CONFIRMED' 
-      //    AND session_end < NOW() AND checked_in_at IS NULL
-      // 2. Update status to 'NO_SHOW'
-      // 3. Create audit log (APPOINTMENT_NO_SHOW)
-      // 4. Send notification to patient
+      // Query bookings yang sudah melewati session_end + grace period 15 menit
+      const result = await pool.query(
+        `UPDATE bookings 
+         SET status = 'NO_SHOW', 
+             no_show_at = NOW(), 
+             updated_at = NOW()
+         WHERE status = 'PAYMENT_CONFIRMED'
+           AND session_end < NOW() - INTERVAL '15 minutes'
+           AND checked_in_at IS NULL
+         RETURNING id, patient_id, booking_code, session_start, session_end`
+      );
       
-      logger.info('✅ NO-SHOW detection job completed (placeholder)');
-    } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack });
+      if (result.rows.length > 0) {
+        logger.info(`✅ Marked ${result.rows.length} bookings as NO-SHOW`);
+        
+        // TODO: Send notifications to patients
+        // TODO: Create audit logs
+        // TODO: Update attendance statistics
+      } else {
+        logger.info('ℹ️ No NO-SHOW bookings found');
+      }
+      
+      logger.info('✅ NO-SHOW detection job completed');
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      const stack = getErrorStack(error);
+      logger.error({ error: message, stack }, 'NO-SHOW detection job failed');
     }
   },
 };

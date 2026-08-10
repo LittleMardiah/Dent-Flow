@@ -22,7 +22,6 @@ export const noShowDetectionJob = {
          WHERE status = 'PAYMENT_CONFIRMED'
            AND session_end < NOW() - INTERVAL '15 minutes'
            AND checked_in_at IS NULL
-           AND deleted_at IS NULL
          RETURNING id, patient_id, booking_code, session_start, session_end`
       );
       
