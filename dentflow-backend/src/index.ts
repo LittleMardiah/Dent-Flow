@@ -10,7 +10,7 @@ import { requestLoggerMiddleware } from './middleware/requestLogger';
 import walkInRoutes from './routes/walkIn.routes';
 import { walkInRateLimiter } from './middleware/rateLimiter';
 
-// Import routes.
+// Import routes
 import authRoutes from './routes/auth.routes';
 import healthRoutes from './routes/health.routes';
 import webhookRoutes from './routes/webhook.routes';
