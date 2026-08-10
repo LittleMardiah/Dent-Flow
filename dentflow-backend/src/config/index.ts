@@ -32,7 +32,7 @@ export const config = {
     url: process.env.DATABASE_URL,
   },
   redis: {
-    url: process.env.REDIS_URL || 'redis://localhost:6380',
+    url: process.env.REDIS_URL || 'redis://localhost:6379',
   },
   minio: {
     endpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9002',
