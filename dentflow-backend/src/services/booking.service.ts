@@ -1,5 +1,6 @@
 import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
+import { NotificationService } from "./notification.service";
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { auditService } from './audit.service';
@@ -11,6 +12,7 @@ export class BookingService {
 
   constructor() {
     this.pool = new Pool({ connectionString: config.database.url });
+    this.notificationService = new NotificationService();
   }
 
   async createScheduledBooking(
@@ -102,6 +104,9 @@ export class BookingService {
         description: `Booking created for patient ${patientId}`,
       });
 
+      // Send booking confirmation notification
+      await this.notificationService.sendBookingConfirmation(bookingId);
+      logger.info({ msg: "📧 Booking confirmation sent", bookingId });
       await client.query('COMMIT');
 
       return { bookingId, bookingCode: code };
