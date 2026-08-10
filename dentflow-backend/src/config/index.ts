@@ -32,7 +32,16 @@ export const config = {
     url: process.env.DATABASE_URL,
   },
   redis: {
+  noShow: {
+    graceMinutes: parseInt(process.env.NO_SHOW_GRACE_MINUTES || "15", 10),
+  },
     url: process.env.REDIS_URL || 'redis://localhost:6379',
+  noShow: {
+    graceMinutes: parseInt(process.env.NO_SHOW_GRACE_MINUTES || "15", 10),
+  },
+  },
+  noShow: {
+    graceMinutes: parseInt(process.env.NO_SHOW_GRACE_MINUTES || "15", 10),
   },
   minio: {
     endpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9002',

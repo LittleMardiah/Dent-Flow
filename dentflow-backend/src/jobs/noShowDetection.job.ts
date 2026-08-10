@@ -1,5 +1,5 @@
+import { config } from "../config";
 import { Pool } from 'pg';
-import { config } from '../config';
 import { logger } from '../utils/logger';
 import { getErrorMessage, getErrorStack } from '../utils/error.util';
 import { NotificationService } from '../services/notification.service';
@@ -22,7 +22,7 @@ export const noShowDetectionJob = {
              no_show_at = NOW(), 
              updated_at = NOW()
          WHERE status = 'PAYMENT_CONFIRMED'
-           AND session_end < NOW() - INTERVAL '15 minutes'
+           AND session_end < NOW() - INTERVAL '${config.noShow.graceMinutes} minutes'
            AND checked_in_at IS NULL
          RETURNING id, patient_id, booking_code, session_start, session_end`
       );
