@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { checkinService } from '../services/checkin.service';
+import { broadcastQueueUpdated } from '../websocket';
 import { logger } from '../utils/logger';
 import { getErrorMessage, getErrorStack } from '../utils/error.util';
 
@@ -41,6 +42,12 @@ export const adminCheckin = async (req: Request, res: Response) => {
         message: `Pasien sudah check-in sebelumnya. Nomor antrian: ${result.queueNumber}`,
       });
     }
+
+    broadcastQueueUpdated({
+      branchId: branch_id,
+      doctorId: result.doctorId,
+      action: 'check-in',
+    });
 
     return res.status(200).json({
       success: true,

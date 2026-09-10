@@ -1,4 +1,25 @@
 import { z } from 'zod';
+import { Request, Response, NextFunction } from 'express';
+
+// Middleware helper: validasi req.body dengan schema zod.
+// Error -> 400 { success:false, message, errors:[{field, message}] }
+export const validateBody = (schema: z.ZodTypeAny) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validasi gagal',
+        errors: parsed.error.issues.map((issue) => ({
+          field: issue.path.join('.'),
+          message: issue.message,
+        })),
+      });
+    }
+    req.body = parsed.data;
+    next();
+  };
+};
 
 export const PatientRegisterSchema = z.object({
   email: z.string().email('Format email tidak valid'),

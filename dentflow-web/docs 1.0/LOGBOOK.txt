@@ -1,0 +1,18 @@
+
+Task 5.1.1 - Cypress E2E Headless (Admin / Doctor / Finance)
+Status: ✅ SELESAI
+Tanggal: 2026-09-05
+
+Apa yang dilakukan:
+1. Seed E2E idempotent dentflow-backend/scripts/seed-e2e.cjs dipanggil via cy.task('seedE2E')
+   (beforeEach tiap spec) - antrian WAITING + invoice UNPAID per hari jalan.
+2. Bypass constraint idx_bookings_unique_active_slot dengan slot seed 15:00-16:00 & 17:00-17:30.
+3. Fix SQL enum mentah di encounter.service.ts (42P01 'encounterstatus') + restart backend.
+
+Hasil Verifikasi:
+- ✅ npx cypress run --headless --browser electron -> 4/4 PASS (2x berturut-turut, no flaky).
+- ✅ Admin Check-in, Doctor Queue EMR, Finance Invoice, dan _debug_login: semua PASSING.
+
+Referensi: dentflow-web/cypress.config.ts, cypress/support/commands.ts,
+dentflow-backend/scripts/seed-e2e.cjs, src/services/encounter.service.ts.
+

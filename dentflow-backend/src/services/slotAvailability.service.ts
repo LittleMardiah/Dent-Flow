@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
-import { config } from '../config';
+
+import { pool } from '../config/database';
 
 export interface TimeSlot {
   start: string;
@@ -11,7 +12,7 @@ export class SlotAvailabilityService {
   private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
   }
 
   /**

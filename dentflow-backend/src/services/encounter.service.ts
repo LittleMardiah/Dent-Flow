@@ -1,11 +1,12 @@
 import { EncounterStatus } from '../models/encounter.model';
 import { Pool } from 'pg';
-import { config } from '../config';
+
 import { logger } from '../utils/logger';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
 import { InvoiceGenerationService } from './invoiceGeneration.service';
 import { getErrorMessage, getErrorStack } from '../utils/error.util';
+import { pool } from '../config/database';
 
 export interface EncounterData {
   id: string;
@@ -30,7 +31,7 @@ export class EncounterService {
   private invoiceService: InvoiceGenerationService;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
     this.invoiceService = new InvoiceGenerationService();
   }
 
@@ -57,7 +58,14 @@ export class EncounterService {
   async startEncounter(
     bookingId: string,
     doctorUserId: string,
-    branchId: string
+    branchId: string,
+    emrData?: {
+      complaint?: string;
+      diagnosis?: string;
+      treatment?: string;
+      prescription?: string;
+      notes?: string;
+    }
   ): Promise<EncounterData> {
     const client = await this.pool.connect();
     try {
@@ -78,13 +86,66 @@ export class EncounterService {
         throw new Error('BOOKING_NOT_READY_FOR_ENCOUNTER');
       }
 
+      const existingResult = await client.query(
+        `SELECT id FROM encounters WHERE booking_id = $1`,
+        [bookingId]
+      );
+
+      if (existingResult.rows.length > 0) {
+        // IDEMPOTENT: encounter sudah ada — update data EMR bila dikirim, lalu kembalikan
+        const existingId = existingResult.rows[0].id;
+        const updateResult = await client.query(
+          `UPDATE encounters SET
+             complaint = COALESCE($2, complaint),
+             chief_complaint = COALESCE($2, chief_complaint),
+             diagnosis = COALESCE($3, diagnosis),
+             treatment = COALESCE($4, treatment),
+             prescription = COALESCE($5, prescription),
+             notes = COALESCE($6, notes),
+             updated_at = NOW()
+           WHERE id = $1
+           RETURNING *`,
+          [
+            existingId,
+            emrData?.complaint ?? null,
+            emrData?.diagnosis ?? null,
+            emrData?.treatment ?? null,
+            emrData?.prescription ?? null,
+            emrData?.notes ?? null,
+          ]
+        );
+        await auditService.logEvent({
+          branchId,
+          userId: doctorUserId,
+          eventType: AuditEventType.EMR_UPDATED,
+          entityType: 'ENCOUNTER',
+          entityId: existingId,
+          description: `Encounter updated for booking ${bookingId}`,
+        });
+        await client.query('COMMIT');
+        return this.mapEncounter(updateResult.rows[0]);
+      }
+
       const result = await client.query(
         `INSERT INTO encounters (
-          id, branch_id, booking_id, doctor_id, patient_id, status, started_at
+          id, branch_id, booking_id, doctor_id, patient_id, status, started_at,
+          complaint, chief_complaint, diagnosis, treatment, prescription, notes
         ) VALUES (
-          gen_random_uuid(), $1, $2, $3, $4, EncounterStatus.ONGOING, NOW()
+          gen_random_uuid(), $1, $2, $3, $4, $10, NOW(),
+          $5, $5, $6, $7, $8, $9
         ) RETURNING *`,
-        [branchId, bookingId, booking.doctor_id, booking.patient_id]
+        [
+          branchId,
+          bookingId,
+          booking.doctor_id,
+          booking.patient_id,
+          emrData?.complaint ?? null,
+          emrData?.diagnosis ?? null,
+          emrData?.treatment ?? null,
+          emrData?.prescription ?? null,
+          emrData?.notes ?? null,
+          EncounterStatus.ONGOING,
+        ]
       );
       const encounter = result.rows[0];
 
@@ -337,10 +398,10 @@ export class EncounterService {
 
       const updateResult = await client.query(
         `UPDATE encounters 
-         SET status = EncounterStatus.COMPLETED, completed_at = NOW(), updated_at = NOW()
+         SET status = $2, completed_at = NOW(), updated_at = NOW()
          WHERE id = $1
          RETURNING *`,
-        [encounterId]
+        [encounterId, EncounterStatus.COMPLETED]
       );
       const updated = updateResult.rows[0];
 

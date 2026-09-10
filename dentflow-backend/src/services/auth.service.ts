@@ -1,16 +1,17 @@
 import { Pool } from 'pg';
-import { config } from '../config';
+
 import { logger } from '../utils/logger';
 import { JwtService } from '../utils/jwt.utils';
 import { PasswordService } from '../utils/password.utils';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
+import { pool } from '../config/database';
 
 export class AuthService {
   private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
   }
 
   async registerPatient(
@@ -98,6 +99,74 @@ export class AuthService {
     }
   }
 
+  async detectRoleAndLogin(loginId: string, password: string) {
+    const client = await this.pool.connect();
+    try {
+      const userResult = await client.query(
+        `SELECT id, email, username, password_hash, branch_id, role, is_active
+         FROM users
+         WHERE email = $1 OR username = $1`,
+        [loginId]
+      );
+      if (userResult.rows.length === 0) {
+        throw new Error('Invalid username or password');
+      }
+      const user = userResult.rows[0];
+      if (!user.is_active) {
+        throw new Error('Account is inactive');
+      }
+
+      const isPasswordValid = await PasswordService.comparePassword(password, user.password_hash);
+      if (!isPasswordValid) {
+        throw new Error('Invalid username or password');
+      }
+
+      const role = user.role as 'PATIENT' | 'ADMIN_BRANCH' | 'DOCTOR';
+      const token = JwtService.generateToken({
+        userId: user.id,
+        branchId: user.branch_id,
+        role,
+        email: user.email,
+      });
+      const refreshToken = JwtService.generateRefreshToken(user.id);
+
+      await auditService.logEvent({
+        branchId: user.branch_id,
+        userId: user.id,
+        eventType: AuditEventType.USER_LOGIN,
+        entityType: 'USER',
+        entityId: user.id,
+        description: `${role} login: ${user.username || user.email}`,
+      });
+
+      logger.info(`✅ ${role} login: ${user.username || user.email}`);
+
+      const redirectUrl =
+        role === 'ADMIN_BRANCH' ? '/admin/queue'
+        : role === 'DOCTOR' ? '/doctor/queue'
+        : '/patient/dashboard';
+
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          role,
+          branchId: user.branch_id,
+        },
+        role,
+        redirectUrl,
+        token,
+        refreshToken,
+      };
+    } catch (error: unknown) {
+      logger.error({ error }, 'Login error:');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async login(loginId: string, password: string, role: string) {
     const client = await this.pool.connect();
     try {
@@ -145,6 +214,7 @@ export class AuthService {
           email: user.email,
           username: user.username,
           role,
+          branchId: user.branch_id,
         },
         token,
         refreshToken,

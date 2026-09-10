@@ -1,10 +1,10 @@
-import { config } from "../config";
-import { Pool } from 'pg';
+
 import { logger } from '../utils/logger';
 import { getErrorMessage, getErrorStack } from '../utils/error.util';
 import { NotificationService } from '../services/notification.service';
+import { pool } from '../config/database';
+import { config } from '../config';
 
-const pool = new Pool({ connectionString: config.database.url });
 
 export const noShowDetectionJob = {
   name: 'no-show-detection',

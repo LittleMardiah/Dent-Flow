@@ -1,15 +1,16 @@
 import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
-import { config } from '../config';
+
 import { logger } from '../utils/logger';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
+import { pool } from '../config/database';
 
 export class InvoiceGenerationService {
   private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
   }
 
   /**

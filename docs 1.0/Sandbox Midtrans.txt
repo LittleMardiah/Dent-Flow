@@ -1,0 +1,102 @@
+================================================================
+ALASAN MEMILIH MIDTRANS SANDBOX UNTUK PROYEK DENTFLOW
+================================================================
+Tanggal   : 2026-07-30
+Versi     : 1.0
+Tujuan    : Dokumentasi keputusan teknis untuk portofolio
+
+----------------------------------------------------------------
+1. LATAR BELAKANG
+----------------------------------------------------------------
+Proyek DentFlow adalah sistem manajemen klinik gigi multi-cabang
+dengan fitur booking online dan pembayaran DP. Untuk keperluan
+demo dan portfolio, diperlukan payment gateway yang:
+
+- Gratis (tanpa biaya bulanan)
+- Mudah diintegrasikan dengan Node.js/Express
+- Mendukung simulasi pembayaran tanpa uang sungguhan
+- Memiliki dokumentasi yang jelas
+
+----------------------------------------------------------------
+2. KENAPA MIDTRANS?
+----------------------------------------------------------------
+Midtrans dipilih karena:
+
+a) Pemain utama di Indonesia – banyak digunakan oleh UMKM dan
+   perusahaan besar, sehingga kredibel untuk portfolio.
+b) Mendukung berbagai metode pembayaran (VA, QRIS, kartu kredit,
+   e-wallet) yang relevan dengan skenario klinik.
+c) Dokumentasi lengkap dan SDK resmi untuk Node.js.
+d) Lingkungan Sandbox gratis dan terisolasi – tidak perlu modal
+   untuk demo.
+
+----------------------------------------------------------------
+3. KENAPA SANDBOX, BUKAN PRODUCTION?
+----------------------------------------------------------------
+Keputusan menggunakan Sandbox (bukan Production) didasarkan pada:
+
+| Aspek          | Sandbox                         | Production                     |
+|----------------|----------------------------------|--------------------------------|
+| Biaya          | GRATIS (tidak ada biaya)        | Ada biaya per transaksi (~2-3%)|
+| Tujuan         | Development & Demo              | Transaksi sungguhan            |
+| Uang           | Menggunakan kartu uji coba      | Menggunakan uang asli          |
+| Risiko         | Nol (tidak ada uang hilang)     | Risiko finansial               |
+| Akun           | Bisa dibuat gratis tanpa verif  | Butuh verifikasi dokumen       |
+
+Karena proyek ini adalah portofolio, bukan aplikasi produksi yang
+melayani transaksi nyata, Sandbox adalah pilihan paling aman dan
+efisien.
+
+----------------------------------------------------------------
+4. KEUNTUNGAN MENGGUNAKAN MIDTRANS SANDBOX
+----------------------------------------------------------------
+- Testing end-to-end alur pembayaran (dari booking hingga
+  notifikasi webhook) tanpa uang sungguhan.
+
+- Simulasi berbagai skenario:
+  ✅ Pembayaran sukses (status settlement)
+  ✅ Pembayaran gagal (deny, cancel, expire)
+
+- Kartu uji coba resmi dari Midtrans, misalnya:
+  4242 4242 4242 4242 (Visa) → status sukses
+  4000 0000 0000 0002 (Visa) → status gagal
+
+- Webhook dapat diuji menggunakan ngrok tanpa perlu server publik.
+
+- Siap untuk di-upgrade ke Production kapan saja (tinggal ganti
+  API key dan environment variable).
+
+----------------------------------------------------------------
+5. IMPLEMENTASI DI DENTFLOW
+----------------------------------------------------------------
+Berikut langkah implementasi yang sudah dilakukan:
+
+1. Registrasi akun Midtrans (gratis).
+2. Ambil Server Key & Client Key dari dashboard.
+3. Buat modul payment dengan integrasi Snap API.
+4. Buat endpoint /payment/charge untuk memulai transaksi.
+5. Buat endpoint /payment/webhook untuk menerima notifikasi.
+6. Atur webhook URL di dashboard menggunakan ngrok.
+7. Testing dengan kartu uji coba.
+8. Setelah pembayaran sukses, status booking berubah menjadi
+   CONFIRMED dan kode 6 digit digenerate otomatis.
+
+----------------------------------------------------------------
+6. KESIMPULAN
+----------------------------------------------------------------
+Midtrans Sandbox adalah pilihan strategis untuk proyek portfolio
+karena:
+
+✅ Gratis – tidak ada biaya
+✅ Aman – tidak menggunakan uang sungguhan
+✅ Realistis – mirip dengan Production
+✅ Scalable – kode siap untuk Production
+✅ Portfolio value – menunjukkan kemampuan integrasi payment
+   gateway yang profesional
+
+Dengan pendekatan ini, DentFlow memiliki fitur pembayaran yang
+fungsional dan siap didemonstrasikan tanpa risiko finansial.
+
+================================================================
+END OF DOCUMENT
+================================================================

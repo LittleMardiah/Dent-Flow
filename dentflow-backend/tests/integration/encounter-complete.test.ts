@@ -114,8 +114,18 @@ describe('Encounter Complete -> Invoice Generation', () => {
     await pool.query('DELETE FROM doctors WHERE id = $1', [doctorId]);
     await pool.query('DELETE FROM users WHERE id IN ($1, $2)', [doctorUserId, patientUserId]);
     await pool.query('DELETE FROM users WHERE branch_id = $1', [branchId]);
-    await pool.query('DELETE FROM audit_logs WHERE branch_id = $1', [branchId]);
-    await pool.query('DELETE FROM branches WHERE id = $1', [branchId]);
+    // audit_logs IMMUTABLE (append-only): DELETE ditolak oleh trigger -> best-effort
+    try {
+      await pool.query('DELETE FROM audit_logs WHERE branch_id = $1', [branchId]);
+    } catch (error) {
+      console.error('Cleanup audit_logs skipped (immutable):', (error as Error).message);
+    }
+    // Branch tidak bisa dihapus selama masih direferensikan audit_logs (FK RESTRICT)
+    try {
+      await pool.query('DELETE FROM branches WHERE id = $1', [branchId]);
+    } catch (error) {
+      console.error('Cleanup branch skipped (audit FK RESTRICT):', (error as Error).message);
+    }
     await pool.end();
     console.log('✅ [afterAll] Cleanup complete.');
   });

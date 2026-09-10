@@ -1,0 +1,10 @@
+{
+  "admin": {
+    "email": "admin@clinic.com",
+    "password": "Admin123!"
+  },
+  "doctor": {
+    "email": "dr_bm_a@clinic.com",
+    "password": "Doctor123!"
+  }
+}

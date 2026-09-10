@@ -1,18 +1,19 @@
 import { Pool } from 'pg';
-import { config } from '../config';
+
 import { logger } from '../utils/logger';
 import crypto from 'crypto';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
 import { getErrorMessage, getErrorStack } from '../utils/error.util';
 import { PaymentWebhookRepository } from '../repositories/paymentWebhook.repository';
+import { pool } from '../config/database';
 
 export class PaymentWebhookService {
   private pool: Pool;
   private repository: PaymentWebhookRepository;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
     this.repository = new PaymentWebhookRepository();
   }
 
@@ -187,6 +188,7 @@ export class PaymentWebhookService {
       const successStatuses = ['capture', 'settlement'];
       const failureStatuses = ['deny', 'expire', 'failure'];
       const pendingStatuses = ['pending', 'authorize'];
+      const refundStatuses = ['refund', 'refunded'];
 
       try {
         if (successStatuses.includes(transactionStatus)) {
@@ -195,12 +197,15 @@ export class PaymentWebhookService {
           console.log(`✅ [TEST] Invoice ${invoice.invoice_number} paid successfully`);
           return { success: true, message: 'Webhook processed successfully' };
         } else if (failureStatuses.includes(transactionStatus)) {
-        } else if (refundStatuses.includes(transactionStatus)) {
-          await this.handleRefundPayment(invoice, orderId, transactionStatus, payload, webhookId);
           await this.handleFailedPayment(invoice, orderId, transactionStatus);
           await this.repository.updateStatus(webhookId, 'PROCESSED');
           console.log(`❌ [TEST] Payment failed for invoice ${invoice.invoice_number}`);
           return { success: true, message: `Payment ${transactionStatus} handled` };
+        } else if (refundStatuses.includes(transactionStatus)) {
+          await this.handleRefundPayment(invoice, orderId, transactionStatus, payload, webhookId);
+          await this.repository.updateStatus(webhookId, 'PROCESSED');
+          console.log(`✅ [TEST] Refund processed for invoice ${invoice.invoice_number}`);
+          return { success: true, message: `Refund ${transactionStatus} handled` };
         } else if (pendingStatuses.includes(transactionStatus)) {
           console.log(`⏳ [TEST] Payment pending for invoice ${invoice.invoice_number}`);
           await this.repository.updateStatus(webhookId, 'PROCESSED');
@@ -274,6 +279,39 @@ export class PaymentWebhookService {
       newValues: { payment_notes: `Payment ${status} via webhook`, transaction_status: status },
       oldValues: { payment_status: invoice.payment_status },
     });
+  }
+
+  private async handleRefundPayment(
+    invoice: any,
+    orderId: string,
+    status: string,
+    payload: any,
+    webhookId: string
+  ): Promise<void> {
+    try {
+      if (invoice.status !== 'PAID') {
+        throw new Error('Invoice is not paid, cannot refund');
+      }
+      await this.pool.query(
+        `UPDATE invoices SET status = 'REFUNDED', updated_at = NOW() WHERE id = $1`,
+        [invoice.id]
+      );
+      await this.repository.updateStatus(webhookId, 'PROCESSED');
+      await auditService.logEvent({
+        branchId: invoice.branch_id,
+        userId: undefined,
+        eventType: AuditEventType.PAYMENT_REFUNDED,
+        entityType: 'INVOICE',
+        entityId: invoice.id,
+        description: `Refund processed for invoice ${invoice.invoice_number}`,
+        newValues: { refund_status: status },
+        oldValues: { status: invoice.status },
+      });
+      logger.info({ msg: `✅ Refund processed for invoice ${invoice.invoice_number}`, webhookId });
+    } catch (error) {
+      logger.error({ error, webhookId }, 'Failed to handle refund');
+      throw error;
+    }
   }
 
   // Method lama dipertahankan untuk kompatibilitas

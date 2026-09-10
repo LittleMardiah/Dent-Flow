@@ -1,11 +1,12 @@
 import { Pool } from 'pg';
-import { config } from '../config';
+
+import { pool } from '../config/database';
 
 export class PaymentWebhookRepository {
   private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
   }
 
   async recordWebhook(
@@ -66,12 +67,14 @@ export class PaymentWebhookRepository {
     );
 
     if (exists.rows.length > 0) {
+      // 🔥 Fix (TD-PAY-023): jangan tambah retry_count di sini — penjadwalan ulang
+      // (incrementRetryCount) di retry job sudah mengakomodasi counter. Increment
+      // ganda di sini menyebabkan double-count: webhook jadi PERMANENTLY_FAILED
+      // setelah 2 retry job dan backoff 120/600 detik tidak pernah terpakai.
       await this.pool.query(
         `UPDATE payment_webhook_errors 
          SET last_error = $1, 
-             next_retry_at = $2, 
-             retry_count = retry_count + 1,
-             updated_at = NOW()
+             next_retry_at = $2
          WHERE webhook_id = $3`,
         [error, nextRetryAt, webhookId]
       );

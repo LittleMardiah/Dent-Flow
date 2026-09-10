@@ -5,7 +5,7 @@ import { AuthService } from '@/services/authService';
 
 interface AuthContextType {
   user: any | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<any>;
   logout: () => void;
   isLoading: boolean;
   isAuthenticated: boolean;
@@ -29,6 +29,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const data = await AuthService.login(email, password);
       setUser(data.user);
+      return data;
     } catch (error: any) {
       throw new Error(error.message || 'Login gagal');
     }

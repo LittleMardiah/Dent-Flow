@@ -1,9 +1,10 @@
 import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
-import { config } from '../config';
+
 import { logger } from '../utils/logger';
 import { auditService } from '../services/audit.service';
 import { AuditEventType } from '../models/audit.model';
+import { pool } from '../config/database';
 
 export interface PaymentWebhookPayload {
   provider: 'midtrans' | 'xendit';
@@ -19,7 +20,7 @@ export class PaymentWebhookService {
   private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
   }
 
   async processWebhook(payload: PaymentWebhookPayload) {

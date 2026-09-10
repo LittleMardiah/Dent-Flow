@@ -1,20 +1,19 @@
 import { Pool } from 'pg';
-import { config } from '../config';
+
+import redis from '../config/redis';
 import { logger } from '../utils/logger';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
-import { QueueService } from './queue.service';
 import { PasswordService } from '../utils/password.utils';
 import { JwtService } from '../utils/jwt.utils';
 import { CreateTemporaryPatientInput, TemporaryPatient } from '../models/temporaryPatient.model';
+import { pool } from '../config/database';
 
 export class WalkInService {
   private pool: Pool;
-  private queueService: QueueService;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
-    this.queueService = new QueueService();
+    this.pool = pool;
   }
 
   async createTemporaryProfile(input: CreateTemporaryPatientInput): Promise<TemporaryPatient> {
@@ -67,7 +66,7 @@ export class WalkInService {
 
       // 2. Cek dokter (user)
       const doctorResult = await client.query(
-        `SELECT * FROM users WHERE id = $1 AND role = 'DOCTOR' AND is_active = true AND deleted_at IS NULL`,
+        `SELECT * FROM users WHERE id = $1 AND role = 'DOCTOR' AND is_active = true`,
         [doctorId]
       );
       if (doctorResult.rows.length === 0) {
@@ -118,31 +117,31 @@ export class WalkInService {
       }
       // ========================================================
 
-      // 3. Generate queue number
-      const queueNumber = await this.queueService.getNextQueueNumber(
-        branchId,
-        doctorId,
-        bookingDate
-      );
+      // 3. Generate queue number — counter yang sama dengan online booking
+      //    (checkIn.service: queue:{branchId}:{doctorRecordId}) agar FIFO
+      //    dan nomor antrian unik antar walk-in & booking online.
+      const queueNumber = await redis.incr(`queue:${branchId}:${doctorRecordId}`);
 
       // 4. Generate booking code
       const bookingCode = this.generateBookingCode();
+      const bookingTime = schedule.session_start;
 
       // 5. Insert booking
       const bookingResult = await client.query(
         `INSERT INTO bookings (
-          branch_id, pasien_id, dokter_id, booking_date, session_start, session_end,
-          status, check_in_code, dp_amount, is_walk_in, temp_patient_id, queue_number
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          branch_id, patient_id, doctor_id, booking_date, booking_time, session_start, session_end,
+          status, booking_code, check_in_code, dp_amount, is_walk_in, temp_patient_id, queue_number
+        ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING *`,
         [
           branchId,
-          null,
-          doctorId,
+          doctorRecordId,
           bookingDate,
+          bookingTime,
           sessionStartTimestamp,
           `${dateStr} ${schedule.session_end}`,
           'PAYMENT_CONFIRMED',
+          bookingCode,
           bookingCode,
           0,
           true,
@@ -155,30 +154,26 @@ export class WalkInService {
       // 6. Insert queue.
       await client.query(
         `INSERT INTO queues (
-          branch_id, booking_id, dokter_id, patient_id, queue_number, queue_date, status, check_in_time
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          branch_id, booking_id, doctor_id, queue_number, status
+        ) VALUES ($1, $2, $3, $4, 'WAITING')`,
         [
           branchId,
           booking.id,
-          doctorId,
-          null,
+          doctorRecordId,
           queueNumber,
-          bookingDate,
-          'WAITING',
-          new Date(),
         ]
       );
 
-      // 7. Audit log
+      // 7. Audit log (userId null — temp patient belum punya akun users)
       await auditService.logEvent({
         branchId,
-        userId: tempPatient.id,
+        userId: undefined,
         eventType: AuditEventType.WALK_IN_ADDED,
         entityType: 'BOOKING',
         entityId: booking.id,
         description: `Walk-in appointment booked for ${tempPatient.full_name}`,
         newValues: { tempPatientId, doctorId, queueNumber },
-      });
+      }, client);
 
       await client.query('COMMIT');
       return { bookingId: booking.id, queueNumber };
@@ -224,42 +219,51 @@ export class WalkInService {
 
       const passwordHash = await PasswordService.hashPassword(password);
 
+      // Username unik dari email (sama seperti authService.registerPatient)
+      const baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '');
+      let username = baseUsername;
+      let collision = true;
+      let counter = 0;
+      while (collision) {
+        const check = await client.query(
+          `SELECT id FROM users WHERE username = $1`,
+          [username]
+        );
+        if (check.rows.length === 0) {
+          collision = false;
+        } else {
+          counter += 1;
+          username = `${baseUsername}${counter}`;
+        }
+      }
+
       const userResult = await client.query(
-        `INSERT INTO users (branch_id, role, email, password_hash, full_name, phone_number, patient_type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING *`,
+        `INSERT INTO users (branch_id, role, email, username, password_hash, is_active)
+         VALUES ($1, $2, $3, $4, $5, true)
+         RETURNING id`,
         [
           tempPatient.branch_id,
           'PATIENT',
           email,
+          username,
           passwordHash,
-          tempPatient.full_name,
-          tempPatient.phone,
-          'REGISTERED',
         ]
       );
       const newUser = userResult.rows[0];
 
-      await client.query(
-        `INSERT INTO patients (branch_id, user_id, full_name, phone)
-         VALUES ($1, $2, $3, $4)`,
-        [tempPatient.branch_id, newUser.id, tempPatient.full_name, tempPatient.phone]
+      const patientResult = await client.query(
+        `INSERT INTO patients (branch_id, user_id, full_name, phone, walk_in_profile_id)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [tempPatient.branch_id, newUser.id, tempPatient.full_name, tempPatient.phone, tempPatientId]
       );
+      const newPatientRecordId = patientResult.rows[0].id;
 
       await client.query(
         `UPDATE bookings 
-         SET pasien_id = $1, temp_patient_id = NULL, updated_at = NOW()
-         WHERE temp_patient_id = $2 AND deleted_at IS NULL`,
-        [newUser.id, tempPatientId]
-      );
-
-      await client.query(
-        `UPDATE queues 
-         SET patient_id = $1, updated_at = NOW()
-         WHERE booking_id IN (
-           SELECT id FROM bookings WHERE pasien_id = $1
-         ) AND deleted_at IS NULL`,
-        [newUser.id]
+         SET patient_id = $1, temp_patient_id = NULL, updated_at = NOW()
+         WHERE temp_patient_id = $2`,
+        [newPatientRecordId, tempPatientId]
       );
 
       await client.query(
@@ -278,7 +282,9 @@ export class WalkInService {
         description: `Temporary profile converted to full patient account for ${tempPatient.full_name}`,
         oldValues: { tempPatientId },
         newValues: { patientId: newUser.id, email },
-      });
+      }, client);
+
+      await client.query('COMMIT');
 
       const token = JwtService.generateToken({
         userId: newUser.id,

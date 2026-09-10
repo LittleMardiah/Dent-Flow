@@ -1,0 +1,1490 @@
+================================================================
+LOGIC FLOW DOCUMENTATION - DENTFLOW v10.0
+Alur Logika Sistem Manajemen Klinik Gigi Multi-Cabang
+================================================================
+
+DAFTAR ISI:
+1. Payment Gateway Flow (Midtrans)
+2. Booking & Check-in Flow
+3. Queue Management Flow
+4. EMR & Invoice Generation Flow
+5. TV Queue Display Flow
+6. Walk-in Management Flow
+7. Payment Reconciliation Flow
+
+================================================================
+1. PAYMENT GATEWAY FLOW (MIDTRANS SANDBOX)
+================================================================
+
+DIAGRAM SEQUENCE:
+
+Pasien         Mobile/Web      Backend         Midtrans        Admin
+  |               |              |              |               |
+  |--Booking----->|              |              |               |
+  |               |--Create----->|              |               |
+  |               | Booking      |              |               |
+  |               |<--Booking ID-|              |               |
+  |               |              |              |               |
+  |--Klik Bayar-->|              |              |               |
+  | Sekarang      |--Request---->|              |               |
+  |               |  Payment Page|              |               |
+  |               |              |--Redirect--->|               |
+  |               |              | to Midtrans  |               |
+  |               |<--Redirect---| Payment URL  |               |
+  |               |              |              |               |
+  |               |           [Midtrans Payment Page]           |
+  |               |           Pasien pilih metode              |
+  |               |           Pasien submit payment            |
+  |               |                            |               |
+  |               |                      [Webhook]             |
+  |               |<--Payment Confirmation-----|               |
+  |               |                            |               |
+  |               |--Verify Signature------->|               |
+  |               |  & Update Booking        |               |
+  |               |<--Success Response-------|               |
+  |               |                            |               |
+  |               |--Booking Confirmation---->|               |
+  | Show Booking  |   Page (Kode + Details)   |               |
+  |<--Display-----|                            |               |
+  |               |                            |               |
+  | See: Kode     |                            |               |
+  | Booking,      |                            |               |
+  | Dokter,       |                     Booking Status Update   |
+  | Spesialis,    |                     from PENDING_PAYMENT    |
+  | Jadwal        |                     to PAYMENT_CONFIRMED    |
+  |               |                            |               |
+  |               |                            |          Alert: New Payment
+  |               |                            |          Confirmed Booking
+  |               |                            |               |
+  | Read:         |                            |               |
+  | "Silakan      |                            |               |
+  | datang ke     |                            |               |
+  | Admin untuk   |                            |               |
+  | Check-in"     |                            |               |
+  |_______________|____________________________|_______________|
+
+
+DETAILED LOGIC:
+
+STEP 1: BOOKING CREATION
+┌─────────────────────────────────────────────────────────────┐
+│ Pasien Input:                                               │
+│ - Cabang, Spesialis, Tanggal, Sesi                          │
+│ - System validate: Jadwal exist? Slot available? (Max 4)    │
+│ - IF valid: Create booking record                           │
+│   Status: PENDING_PAYMENT                                   │
+│   DP Amount: Rp 50.000                                      │
+│   Check-in Code: Generate 6-digit (36^6 = 2.1B kombinasi)  │
+│ - Audit log: BOOKING_CREATED event                          │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 2: PAYMENT REDIRECT
+┌─────────────────────────────────────────────────────────────┐
+│ Pasien Click "Bayar Sekarang"                               │
+│ Request: POST /api/bookings/{id}/payment-redirect           │
+│ Backend Logic:                                              │
+│   1. GET booking by ID                                      │
+│   2. Validate: status == PENDING_PAYMENT?                   │
+│   3. Create Midtrans transaction request:                   │
+│      - transaction_id (unique)                              │
+│      - amount: 50000 (Rp)                                   │
+│      - customer_email: pasien.email                         │
+│      - item: "DP Booking Klinik Gigi"                       │
+│   4. Call Midtrans API: POST /v2/transactions               │
+│   5. Response: redirect_url from Midtrans                   │
+│   6. Save payment_gateway_id ke booking record              │
+│   7. Return redirect_url to frontend                        │
+│ Frontend: window.location = redirect_url (Midtrans page)   │
+│ - Audit log: PAYMENT_REDIRECT event                        │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 3: PAYMENT PROCESSING (SANDBOX)
+┌─────────────────────────────────────────────────────────────┐
+│ Pasien di Midtrans Payment Page:                            │
+│ 1. Select payment method (simulated, sandbox)               │
+│ 2. Enter details (fake data OK for sandbox)                 │
+│ 3. Click "Bayar/Process"                                    │
+│ Midtrans:                                                   │
+│ 4. Process payment (instant dalam sandbox)                  │
+│ 5. Generate transaction status: SETTLEMENT                  │
+│ 6. Send webhook to backend                                  │
+│    POST https://[ngrok-tunnel]/webhook/payment-confirmation │
+│    Body: {                                                  │
+│      transaction_id: "xxx",                                 │
+│      order_id: "booking_id",                                │
+│      status_code: "200",                                    │
+│      transaction_status: "settlement",                      │
+│      signature_key: "hash"                                  │
+│    }                                                        │
+│ - Audit log: PAYMENT_PROCESSED event (at Midtrans)         │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 4: WEBHOOK HANDLER (CRITICAL)
+┌─────────────────────────────────────────────────────────────┐
+│ Backend Webhook Endpoint:                                   │
+│ POST /webhook/payment-confirmation                          │
+│                                                             │
+│ VALIDATION PHASE:                                          │
+│ 1. Extract: order_id, transaction_status, signature_key    │
+│ 2. Generate expected_signature (using Midtrans server_key) │
+│ 3. IF signature_key != expected_signature:                  │
+│    REJECT webhook, log error, return 403 Forbidden         │
+│ 4. ELSE: Signature valid, proceed                          │
+│                                                             │
+│ UPDATE PHASE:                                              │
+│ 5. Fetch booking by order_id                               │
+│ 6. Check: booking.status == PENDING_PAYMENT?               │
+│    IF NOT: Duplicate webhook, skip update, return 200 OK   │
+│    (Idempotency: prevent duplicate status update)          │
+│ 7. IF status == SETTLEMENT or CAPTURE:                     │
+│    - Update booking.status → PAYMENT_CONFIRMED             │
+│    - Update booking.payment_status → PAYMENT_CONFIRMED     │
+│    - Set booking.payment_confirmed_at = NOW()              │
+│    - Save to database (atomic transaction)                 │
+│ 8. IF status == PENDING:                                   │
+│    - Keep booking.status PENDING_PAYMENT                   │
+│    - Continue polling (pasien will retry)                  │
+│ 9. IF status == DENY or EXPIRE:                           │
+│    - Update booking.status → PAYMENT_FAILED                │
+│    - Notify pasien: Payment gagal, coba lagi               │
+│                                                             │
+│ NOTIFICATION PHASE:                                        │
+│ 10. Send FCM push to pasien:                               │
+│     Title: "Pembayaran Berhasil"                           │
+│     Body: "Kode Booking: ABC123"                           │
+│ 11. Audit log: PAYMENT_CONFIRMED event                     │
+│ 12. Return 200 OK to Midtrans (webhook success)            │
+│                                                             │
+│ ERROR HANDLING:                                            │
+│ IF exception during update:                                │
+│ - Log error                                                │
+│ - Return 500 to Midtrans (trigger retry)                   │
+│ - Retry max 3x dengan exponential backoff                  │
+│ - IF persistent: Alert admin                               │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 5: CLIENT-SIDE POLLING (FALLBACK)
+┌─────────────────────────────────────────────────────────────┐
+│ Mobile/Web Frontend:                                        │
+│ 1. Pasien at Midtrans page                                 │
+│ 2. Frontend start polling: check booking status every 5s   │
+│ 3. GET /api/bookings/{id}/status                           │
+│    Return: {status, payment_status}                        │
+│ 4. IF status == PAYMENT_CONFIRMED:                         │
+│    - Stop polling                                          │
+│    - Redirect to booking confirmation page                 │
+│    - Display: Kode + Dokter + Spesialis + Jadwal          │
+│ 5. IF status == PAYMENT_FAILED:                            │
+│    - Show error: "Pembayaran gagal, silakan coba lagi"     │
+│    - Show retry button                                     │
+│ 6. IF still PENDING_PAYMENT after 5 menit:                │
+│    - Show warning: "Pembayaran belum dikonfirmasi"         │
+│    - Allow user to close & retry later (24 jam timeout)    │
+│                                                             │
+│ TIMEOUT HANDLING:                                          │
+│ - Cron job setiap jam:                                     │
+│   SELECT booking WHERE status = PENDING_PAYMENT            │
+│   AND DATE(created_at) < TODAY - 1 day                     │
+│   UPDATE booking.status = CANCELLED                        │
+│   Reason: Payment timeout                                  │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 6: CONFIRMATION PAGE DISPLAY
+┌─────────────────────────────────────────────────────────────┐
+│ Display setelah payment berhasil:                           │
+│                                                             │
+│ ┌─────────────────────────────────────────────────────┐   │
+│ │ PEMBAYARAN BERHASIL                                 │   │
+│ ├─────────────────────────────────────────────────────┤   │
+│ │                                                     │   │
+│ │ ✅ Pembayaran DP berhasil dikonfirmasi             │   │
+│ │                                                     │   │
+│ │ DETAIL BOOKING:                                     │   │
+│ │ Kode Booking: ABC123DEF                             │   │
+│ │ Nama Dokter: drg. Siti Nurhaliza                    │   │
+│ │ Spesialis: Sp.BM (Bedah Mulut)                     │   │
+│ │ Cabang: Cabang A                                    │   │
+│ │ Jadwal: Senin, 08-07-2026, 09:00-12:00            │   │
+│ │                                                     │   │
+│ │ INSTRUKSI:                                          │   │
+│ │ Silakan datang ke Admin untuk melakukan Check-in   │   │
+│ │ Bawa identitas dan asuransi (jika ada)             │   │
+│ │                                                     │   │
+│ │ [LIHAT BOOKING] [KEMBALI KE HOME]                 │   │
+│ └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│ Booking stored di system untuk check-in nanti             │
+└─────────────────────────────────────────────────────────────┘
+
+DATABASE STATE AFTER PAYMENT:
+┌─────────────────────────────────────────────────────────────┐
+│ bookings table:                                             │
+│ id | pasien_id | dokter_id | status              | ...     │
+│ 1  | 100       | 50        | PAYMENT_CONFIRMED   | ...     │
+│    |           |           | (was PENDING_PAYMENT)         │
+│    |           |           | payment_gateway_id: txn_123   │
+│    |           |           | payment_confirmed_at: NOW()   │
+│                                                             │
+│ audit_logs:                                                 │
+│ - PAYMENT_REDIRECT (booking_id=1)                          │
+│ - PAYMENT_PROCESSED (Midtrans)                             │
+│ - PAYMENT_CONFIRMED (booking_id=1, timestamp)              │
+│                                                             │
+│ admin sees:                                                 │
+│ - New confirmed booking ready for check-in                 │
+└─────────────────────────────────────────────────────────────┘
+
+ERROR SCENARIOS:
+
+Scenario A: WEBHOOK TIDAK SAMPAI
+├─ Webhook sent 3x oleh Midtrans (automatic retry)
+├─ Backend masih menerima, process normal
+└─ Result: Payment confirmed (even jika late)
+
+Scenario B: DUPLICATE WEBHOOK
+├─ Midtrans send webhook 2x (network retry)
+├─ Backend check: booking.status == PAYMENT_CONFIRMED?
+├─ IF YES: Skip update (idempotent), return 200 OK
+└─ Result: No duplicate status update
+
+Scenario C: SIGNATURE MISMATCH (SECURITY)
+├─ Webhook signature invalid (hijacked request?)
+├─ Backend: Log error, reject webhook, return 403
+├─ Alert: Admin notified tentang suspicious request
+└─ Result: Booking status NOT updated (safe)
+
+Scenario D: NETWORK ERROR DURING WEBHOOK
+├─ Backend exception saat update database
+├─ Return 500 to Midtrans (trigger automatic retry)
+├─ Retry up to 3x dengan exponential backoff
+├─ IF persistent: Admin alert + manual investigation
+└─ Result: Eventually consistent (event-driven recovery)
+
+Scenario E: PASIEN ABANDON PAYMENT
+├─ Pasien navigate away dari Midtrans page
+├─ Booking stay PENDING_PAYMENT (24 jam timeout)
+├─ Pasien can retry anytime dalam 24 jam
+├─ Cron job: Auto-cancel setelah 24 jam
+└─ Result: Slot released, dapat dibook ulang pasien lain
+
+================================================================
+2. BOOKING & CHECK-IN FLOW
+================================================================
+
+PART A: BOOKING SYSTEM
+
+Pasien selects cabang → spesialis → tanggal → sesi
+System validate availability (max 4 per sesi)
+Generate 6-digit kode booking
+Create booking record: status = PENDING_PAYMENT
+Pasien proceed to payment
+
+(After payment confirmed, booking.status = PAYMENT_CONFIRMED)
+
+PART B: CHECK-IN SYSTEM (MANDATORY ADMIN INPUT)
+
+Timeline:
+Day 0: Pasien booking + payment
+Day 1: Sesi hari ini (misal: 09:00-12:00)
+       09:00: Pasien datang ke klinik
+       Admin input kode booking
+
+DETAILED FLOW:
+
+STEP 1: PASIEN DATANG
+┌─────────────────────────────────────────────────────────────┐
+│ Pasien arrive at klinik                                     │
+│ Pasien approach admin desk:                                 │
+│   "Saya punya booking, nama saya Budi Santoso"             │
+│ Admin: "Baik, kode booking Anda berapa?"                   │
+│ Pasien: "ABC123DEF"                                        │
+│ Admin open admin panel check-in form                        │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 2: ADMIN INPUT KODE
+┌─────────────────────────────────────────────────────────────┐
+│ Admin UI:                                                   │
+│ ┌──────────────────────────────────┐                       │
+│ │ CHECK-IN PASIEN                  │                       │
+│ ├──────────────────────────────────┤                       │
+│ │ Masukkan Kode Booking:           │                       │
+│ │ [ABC123DEF____________]          │                       │
+│ │                                  │                       │
+│ │ [CARI] [ADD WALK-IN] [RESET]    │                       │
+│ └──────────────────────────────────┘                       │
+│                                                             │
+│ Admin type kode: ABC123DEF                                 │
+│ Admin click [CARI]                                         │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 3: BACKEND VALIDATION
+┌─────────────────────────────────────────────────────────────┐
+│ Request: POST /api/admin/check-in                           │
+│ Body: {check_in_code: "ABC123DEF", branch_id: "A"}         │
+│                                                             │
+│ VALIDATION LOGIC:                                          │
+│ 1. Query: SELECT booking WHERE check_in_code = "ABC123DEF" │
+│    IF not found: Return error "Kode tidak valid"           │
+│    STOP                                                    │
+│                                                             │
+│ 2. Check booking.status:                                   │
+│    IF != PAYMENT_CONFIRMED:                                │
+│    Return error "Pembayaran belum dikonfirmasi" OR          │
+│    "Booking sudah cancel/no-show"                          │
+│    STOP                                                    │
+│                                                             │
+│ 3. Check session validity:                                 │
+│    SELECT jadwal WHERE jadwal.id = booking.jadwal_id       │
+│    Calculate sesi_start & sesi_end dari jadwal             │
+│    IF NOW() < sesi_start OR NOW() > sesi_end:             │
+│    Return error "Sesi belum dimulai" OR "Sesi sudah selesai"│
+│    STOP                                                    │
+│                                                             │
+│ 4. Check if already checked-in today:                      │
+│    SELECT queue WHERE booking_id = booking.id              │
+│    IF queue_status IN (WAITING, BEING_CALLED):            │
+│    Return info "Anda sudah check-in, nomor: 05"            │
+│    STOP (prevent duplicate check-in)                       │
+│                                                             │
+│ 5. ALL VALIDATIONS PASSED:                                 │
+│    - Generate queue_number using Redis INCR atomic counter │
+│      Key: "queue:{branch_id}:{dokter_id}:{session_date}"   │
+│      Result: queue_number = 05                             │
+│                                                             │
+│    - Create queue record:                                  │
+│      {booking_id, dokter_id, queue_number: 05,            │
+│       queue_status: WAITING, check_in_time: NOW()}        │
+│                                                             │
+│    - Update booking:                                       │
+│      booking.status = CHECKED_IN                           │
+│      booking.queue_number = 05                             │
+│      booking.checked_in_at = NOW()                         │
+│                                                             │
+│    - Audit log: CHECK_IN_SUCCESS event                     │
+│      Details: {booking_id, pasien_name, dokter_name,       │
+│                queue_number, check_in_time}               │
+│                                                             │
+│    - Return success response:                              │
+│      {queue_number: 05, pasien_name: "Budi Santoso",      │
+│       dokter_name: "drg. Siti Nurhaliza",                  │
+│       specialist: "Sp.BM"}                                │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 4: DISPLAY QUEUE NUMBER
+┌─────────────────────────────────────────────────────────────┐
+│ Admin Panel Display:                                        │
+│                                                             │
+│ ┌────────────────────────────────────────┐                │
+│ │ ✅ CHECK-IN BERHASIL                   │                │
+│ ├────────────────────────────────────────┤                │
+│ │                                        │                │
+│ │ Nama: Budi Santoso                    │                │
+│ │ Spesialis: Sp.BM                      │                │
+│ │ Dokter: drg. Siti Nurhaliza            │                │
+│ │ Jadwal: 09:00-12:00                   │                │
+│ │                                        │                │
+│ │ ✅ NOMOR ANTRIAN: 05                  │                │
+│ │                                        │                │
+│ │ [SIMPAN] [RESET] [LIHAT ANTRIAN]     │                │
+│ └────────────────────────────────────────┘                │
+│                                                             │
+│ Admin dapat print struk (optional)                         │
+│ Admin give struk to pasien                                │
+│ Pasien see nomor 05 di struk                              │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 5: REAL-TIME UPDATES
+┌─────────────────────────────────────────────────────────────┐
+│ SIMULTANEOUS UPDATE CHANNELS:                               │
+│                                                             │
+│ a) ADMIN SCREEN (real-time):                               │
+│    Queue list updated immediately                          │
+│    Show: Nomor 05 in WAITING state                         │
+│                                                             │
+│ b) TV DISPLAY (real-time):                                 │
+│    WebSocket broadcast: queue-updated                      │
+│    Event: {doctor_id: 50, now_number: null,                │
+│             queue_numbers: [05, 06, 07, 08]}              │
+│    TV display: QUEUE: 05 06 07 08                          │
+│                                                             │
+│ c) PASIEN MOBILE APP (real-time):                          │
+│    FCM push notification:                                  │
+│    Title: "Nomor Antrian Anda Siap"                        │
+│    Body: "Nomor Antrian: 05. Silakan tunggu di ruang.."   │
+│                                                             │
+│    Mobile app display queue position:                      │
+│    "Nomor Anda: 05"                                        │
+│    "Posisi antrian: 1st in queue"                          │
+│                                                             │
+│ d) DATABASE STATE:                                         │
+│    bookings.status = CHECKED_IN                            │
+│    bookings.queue_number = 05                              │
+│    queues.queue_status = WAITING                           │
+│    queues.check_in_time = NOW()                            │
+└─────────────────────────────────────────────────────────────┘
+
+VALIDATION ERROR SCENARIOS:
+
+Error 1: KODE TIDAK VALID
+├─ Scenario: Pasien input salah kode (typo)
+├─ Response: "Kode booking tidak ditemukan"
+├─ Action: Admin ask pasien ulang input kode
+└─ Audit: CHECK_IN_FAILED - INVALID_CODE
+
+Error 2: KODE SUDAH DIPAKAI
+├─ Scenario: Pasien input kode yang sudah check-in
+├─ Response: "Anda sudah check-in, nomor: 05"
+├─ Action: Show nomor antrian yang sudah ada
+└─ Audit: CHECK_IN_DUPLICATE - ALREADY_CHECKED_IN
+
+Error 3: PEMBAYARAN BELUM DIKONFIRMASI
+├─ Scenario: Booking status masih PENDING_PAYMENT
+├─ Response: "Pembayaran belum dikonfirmasi"
+├─ Action: Admin ask pasien konfirmasi pembayaran dulu
+└─ Audit: CHECK_IN_FAILED - PAYMENT_NOT_CONFIRMED
+
+Error 4: SESI SUDAH BERAKHIR
+├─ Scenario: Pasien datang setelah jam 12:00 (sesi 09:00-12:00)
+├─ Response: "Sesi sudah berakhir"
+├─ Action: Offer next available session / walk-in booking
+└─ Audit: CHECK_IN_FAILED - SESSION_EXPIRED
+
+Error 5: SESI BELUM DIMULAI
+├─ Scenario: Pasien datang sebelum jam 09:00
+├─ Response: "Sesi belum dimulai, silakan datang nanti"
+├─ Action: Ask pasien tunggu / datang nanti
+└─ Audit: CHECK_IN_FAILED - SESSION_NOT_STARTED
+
+================================================================
+3. QUEUE MANAGEMENT FLOW
+================================================================
+
+STATE MACHINE:
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│  [CHECK-IN]                                                 │
+│      ↓                                                      │
+│  WAITING ←─ Pasien nomor 05 menunggu di ruang tunggu       │
+│      ↓                                                      │
+│  [Dokter panggil nomor 05]                                 │
+│      ↓                                                      │
+│  BEING_CALLED ←─ Nomor 05 sedang dilayani dokter           │
+│      ↓                                                      │
+│  [Dokter selesai treatment + EMR]                           │
+│      ↓                                                      │
+│  COMPLETED ←─ Nomor 05 selesai, tidak tampil di TV lagi   │
+│      ↓                                                      │
+│  [DELETE dari display]                                      │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+
+DETAILED FLOW:
+
+STEP 1: QUEUE INITIALIZATION
+┌─────────────────────────────────────────────────────────────┐
+│ Morning (09:00):                                            │
+│ Sistem auto-load sesi dokter untuk hari ini:              │
+│                                                             │
+│ SELECT jadwal WHERE                                         │
+│   branch_id = "A"                                           │
+│   AND DATE(session_start) = TODAY                          │
+│   AND dokter.is_active = true                              │
+│                                                             │
+│ Result: 8 dokter dengan session times                       │
+│ Initialize Redis counter for each:                          │
+│ Key: "queue:A:50:20260708" → 0                             │
+│ Key: "queue:A:51:20260708" → 0                             │
+│ ...                                                        │
+│ (50, 51, ... = dokter_id)                                 │
+│                                                             │
+│ Status: READY untuk check-in                               │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 2: CHECK-IN & QUEUE ASSIGNMENT
+┌─────────────────────────────────────────────────────────────┐
+│ Pasien 1 (Budi) check-in @ 09:05                            │
+│ Admin input kode → validate → REDIS INCR counter            │
+│ Result: queue_number = 01 (first)                           │
+│ Store: queue {booking_id: 1, queue_number: 01,             │
+│         queue_status: WAITING, check_in_time: 09:05}      │
+│                                                             │
+│ Pasien 2 (Siti) check-in @ 09:15                            │
+│ REDIS INCR counter again                                    │
+│ Result: queue_number = 02                                  │
+│ Store: queue {booking_id: 2, queue_number: 02,             │
+│         queue_status: WAITING, check_in_time: 09:15}      │
+│                                                             │
+│ Pasien 3 (Ahmad) check-in @ 09:25                           │
+│ Result: queue_number = 03                                  │
+│                                                             │
+│ CURRENT STATE (09:30):                                      │
+│ Dokter Sp.BM queue:                                        │
+│ - 01: WAITING (since 09:05)                                │
+│ - 02: WAITING (since 09:15)                                │
+│ - 03: WAITING (since 09:25)                                │
+│                                                             │
+│ TV DISPLAY:                                                │
+│ drg. Siti Nurhaliza | Sp.BM | 09:00-12:00                  │
+│ NOW: -- (nobody being served yet)                          │
+│ QUEUE: 01 02 03                                            │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 3: DOKTER PANGGIL PASIEN
+┌─────────────────────────────────────────────────────────────┐
+│ @ 09:35:                                                    │
+│ Dokter klik "Panggil Pasien Berikutnya"                    │
+│                                                             │
+│ Dokter UI:                                                 │
+│ ┌──────────────────────────────────────────┐              │
+│ │ QUEUE MANAGEMENT                         │              │
+│ ├──────────────────────────────────────────┤              │
+│ │ Antrian Sp.BM:                           │              │
+│ │ ☑ 01 - WAITING                           │              │
+│ │ ☐ 02 - WAITING                           │              │
+│ │ ☐ 03 - WAITING                           │              │
+│ │                                          │              │
+│ │ [PANGGIL PASIEN BERIKUTNYA]              │              │
+│ │ [PANGGIL NOMOR TERTENTU]                 │              │
+│ │ [SELESAI]                                │              │
+│ └──────────────────────────────────────────┘              │
+│                                                             │
+│ Backend Logic (Request):                                   │
+│ POST /api/queue/{queue_id}/call                            │
+│ Body: {queue_id: 1, dokter_id: 50}                        │
+│                                                             │
+│ Validation:                                                │
+│ 1. Verify queue exists & status == WAITING                │
+│ 2. Verify dokter matches queue.dokter_id                  │
+│ 3. Update queue:                                           │
+│    queue.queue_status = BEING_CALLED                      │
+│    queue.called_time = NOW()                              │
+│ 4. Audit log: QUEUE_CALLED event                          │
+│                                                             │
+│ Response: Success                                          │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 4: REAL-TIME UPDATES (DOKTER PANGGIL)
+┌─────────────────────────────────────────────────────────────┐
+│ BROADCAST to all clients:                                   │
+│                                                             │
+│ a) ADMIN SCREEN:                                            │
+│    Queue display update:                                   │
+│    - 01: BEING_CALLED (highlight/badge)                    │
+│    - 02: WAITING                                           │
+│    - 03: WAITING                                           │
+│                                                             │
+│ b) DOKTER SCREEN:                                           │
+│    Queue display update:                                   │
+│    - 01: BEING_CALLED (highlight, show pasien name)        │
+│    - 02: WAITING                                           │
+│    - 03: WAITING                                           │
+│                                                             │
+│ c) TV DISPLAY:                                              │
+│    Update real-time:                                       │
+│    drg. Siti Nurhaliza | Sp.BM | 09:00-12:00              │
+│    NOW: 01 [highlight/merah]                               │
+│    QUEUE: 02 03                                            │
+│                                                             │
+│ d) PASIEN MOBILE (nomor 01):                                │
+│    FCM Push Notification:                                  │
+│    Title: "Giliran Anda!"                                  │
+│    Body: "Nomor 01 sedang dipanggil ke ruang dokter"      │
+│    Sound: Yes, Vibration: Yes                              │
+│                                                             │
+│    Mobile app display:                                     │
+│    "Status Antrian: DIPANGGIL"                             │
+│    "Silakan masuk ke ruang dokter"                         │
+│                                                             │
+│ e) PASIEN MOBILE (nomor 02, 03):                            │
+│    Mobile app display update:                              │
+│    Nomor 02: "Posisi antrian: 1st (sedang dipanggil)"     │
+│    Nomor 03: "Posisi antrian: 2nd"                        │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 5: TREATMENT & EMR CREATION
+┌─────────────────────────────────────────────────────────────┐
+│ @ 09:35-09:55 (20 menit treatment):                        │
+│ Dokter treat pasien nomor 01                               │
+│ Pasien di ruang treatment (nomor 01 masih BEING_CALLED)   │
+│                                                             │
+│ @ 09:55:                                                    │
+│ Dokter selesai treatment                                   │
+│ Dokter click "Selesai" atau "Buat EMR"                     │
+│                                                             │
+│ EMR Form open dengan pre-filled:                           │
+│ - Pasien name: Budi Santoso                                │
+│ - Booking ID: 1                                            │
+│ - Dokter: drg. Siti Nurhaliza                              │
+│ - Date: 08-07-2026                                         │
+│ - Session: 09:00-12:00                                     │
+│                                                             │
+│ Dokter input:                                              │
+│ - Keluhan: "Sakit gigi"                                    │
+│ - Tindakan: "Scaling & polishing" + notes                 │
+│ - Resep: "Paracetamol 500mg 3x sehari"                    │
+│ - Stok material (optional): "Gunakan 1x scaling kit"      │
+│ - Diagnosa (internal): "Tartar buildup"                   │
+│                                                             │
+│ Dokter click "Simpan & Selesai"                            │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 6: AUTO-TRIGGER INVOICE & QUEUE COMPLETION
+┌─────────────────────────────────────────────────────────────┐
+│ After EMR submitted:                                        │
+│                                                             │
+│ TRIGGER 1: Mark queue COMPLETED                            │
+│ queue.queue_status = COMPLETED                             │
+│ queue.completed_time = NOW()                               │
+│ Audit log: QUEUE_COMPLETED event                           │
+│                                                             │
+│ TRIGGER 2: Auto-generate invoice                           │
+│ Create invoice record:                                     │
+│ - invoice_id: auto                                         │
+│ - booking_id: 1                                            │
+│ - emr_id: (from EMR just created)                         │
+│ - invoice_number: INV-A-20260708-001 (sequence)           │
+│ - dp_amount: 50000 (Rp)                                    │
+│ - treatment_cost: 150000 (Rp, default atau dari tabel)    │
+│ - total_amount: 200000 (Rp)                                │
+│ - status: UNPAID                                           │
+│ Audit log: INVOICE_GENERATED event                         │
+│                                                             │
+│ TRIGGER 3: Broadcast completion to all                     │
+│ Admin: Queue updated, nomor 01 removed                     │
+│ Dokter: Queue updated, nomor 02 now first                  │
+│ TV Display: Nomor 01 auto-deleted, NOW: 02, QUEUE: 03   │
+│ Pasien 01: FCM "Treatment selesai, invoice siap bayar"    │
+│ Pasien 02: FCM "Giliran Anda!" (promote dari 2nd ke 1st)  │
+│                                                             │
+│ TRIGGER 4: Auto-generate struk (optional)                  │
+│ Struk receipt untuk pasien (hapus setelah sesi OK)        │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 7: FINAL QUEUE STATE
+┌─────────────────────────────────────────────────────────────┐
+│ @ 10:00 (after pasien 01 selesai):                         │
+│                                                             │
+│ DATABASE STATE:                                            │
+│ Queue:                                                     │
+│ - 01: COMPLETED (nomor 01 tidak tampil lagi)               │
+│ - 02: BEING_CALLED (nomor 02 being called)                │
+│ - 03: WAITING                                              │
+│                                                             │
+│ TV DISPLAY:                                                │
+│ drg. Siti Nurhaliza | Sp.BM | 09:00-12:00                  │
+│ NOW: 02                                                    │
+│ QUEUE: 03                                                  │
+│ (nomor 01 completely removed dari display)                │
+│                                                             │
+│ ADMIN SCREEN:                                              │
+│ Antrian:                                                   │
+│ - 02: BEING_CALLED                                         │
+│ - 03: WAITING                                              │
+│ Invoice generated: INV-A-20260708-001 (pasien 01, UNPAID) │
+│                                                             │
+│ PASIEN 01 (completed):                                     │
+│ Mobile app: "Treatment selesai"                            │
+│ Invoice: Lihat detail invoice di history                  │
+│ Status: Menunggu pembayaran                                │
+│                                                             │
+│ PASIEN 02 (being called):                                  │
+│ Mobile app: Status BEING_CALLED, go to treatment room    │
+│                                                             │
+│ PASIEN 03:                                                 │
+│ Mobile app: "Posisi antrian: 1st (behind 02)"            │
+└─────────────────────────────────────────────────────────────┘
+
+WALK-IN SUPPORT:
+
+Walk-in flow similar, dengan exception:
+1. No pre-booking (no PENDING_PAYMENT status)
+2. Admin input: Nama, Spesialis, Auto-generate kode
+3. System assign ke dokter's queue
+4. Queue status: WAITING → BEING_CALLED → COMPLETED
+5. Audit log: WALK_IN_ADDED event
+6. No payment beforehand (pay after treatment, same as booking)
+
+Walk-in priority: FIFO sama dengan online booking
+(Fair system: first come first served, regardless online/walk-in)
+
+================================================================
+4. EMR & INVOICE GENERATION FLOW
+================================================================
+
+TRIGGER POINT: Dokter click "Simpan & Selesai" pada EMR form
+
+STEP 1: EMR VALIDATION & STORAGE
+┌─────────────────────────────────────────────────────────────┐
+│ Request: POST /api/emrs                                     │
+│ Body: {                                                     │
+│   booking_id: 1,                                            │
+│   pasien_id: 100,                                           │
+│   dokter_id: 50,                                            │
+│   keluhan: "Sakit gigi geraham kanan",                      │
+│   tindakan: "Penambalan gigi (filling)",                    │
+│   resep_anjuran: "Paracetamol 500mg 3x sehari selama 3hr",│
+│   diagnosa: "Karies gigi superfisial (internal only)",      │
+│   stok_material_notes: "Gunakan 1x filling kit (resin)",   │
+│ }                                                           │
+│                                                             │
+│ VALIDATION:                                                 │
+│ 1. Validate required fields: keluhan, tindakan (required)  │
+│    Validate optional fields: resep, diagnosa, stok_notes  │
+│ 2. Check booking_id exists & status == CHECKED_IN          │
+│ 3. Check dokter_id matches booking.dokter_id               │
+│ 4. Check duplicate EMR (prevent re-entry):                 │
+│    SELECT COUNT emrs WHERE booking_id = 1 AND status = COMPLETED │
+│    IF > 0: Return error "EMR sudah dibuat untuk sesi ini"  │
+│                                                             │
+│ STORAGE:                                                    │
+│ 5. Create EMR record:                                       │
+│    emr {                                                    │
+│      id: auto,                                              │
+│      booking_id: 1,                                         │
+│      pasien_id: 100,                                        │
+│      dokter_id: 50,                                         │
+│      encounter_date: NOW(),                                 │
+│      keluhan, tindakan, resep_anjuran, diagnosa,           │
+│      stok_material_notes,                                   │
+│      status: COMPLETED,                                     │
+│      created_at: NOW(),                                     │
+│    }                                                        │
+│ 6. Audit log: EMR_CREATED event                            │
+│    Details: {emr_id, booking_id, dokter_name, pasien_name}│
+│                                                             │
+│ Response: EMR created successfully + emr_id               │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 2: AUTO-TRIGGER INVOICE GENERATION
+┌─────────────────────────────────────────────────────────────┐
+│ TRIGGER: EMR status = COMPLETED (from Step 1)              │
+│                                                             │
+│ AUTOMATIC PROCESS (no manual step):                         │
+│ 1. Call async function: generate_invoice(emr_id)           │
+│ 2. Fetch EMR details:                                       │
+│    emr_id, booking_id, pasien_id, dokter_id, branch_id   │
+│ 3. Fetch booking for DP amount:                            │
+│    dp_amount = 50000 (Rp)                                  │
+│ 4. Calculate treatment cost:                               │
+│    - Option A: Hardcoded by specialist (Sp.BM = 150k)     │
+│    - Option B: From tindakan table (lookup by code)       │
+│    - Option C: Admin input post-treatment (future)         │
+│    treatment_cost = 150000 (Rp)                            │
+│ 5. Calculate total:                                         │
+│    total = dp_amount + treatment_cost = 200000 (Rp)        │
+│ 6. Generate unique invoice number:                         │
+│    - Format: INV-[BRANCH]-[YYYYMMDD]-[SEQ]                 │
+│    - Example: INV-A-20260708-001                           │
+│    - Query: SELECT COUNT(*) FROM invoices                  │
+│             WHERE branch_id = "A" AND DATE = TODAY         │
+│    - SEQ = count + 1 (padded 3 digit: 001, 002, 003...)   │
+│ 7. Create invoice record:                                  │
+│    invoice {                                               │
+│      id: auto,                                              │
+│      booking_id: 1,                                         │
+│      emr_id: (from EMR),                                   │
+│      pasien_id: 100,                                        │
+│      branch_id: "A",                                        │
+│      invoice_number: "INV-A-20260708-001",                 │
+│      dp_amount: 50000,                                      │
+│      treatment_cost: 150000,                                │
+│      total_amount: 200000,                                  │
+│      status: UNPAID (default),                              │
+│      payment_method: null,                                  │
+│      payment_date: null,                                    │
+│      paid_at: null,                                         │
+│      created_at: NOW(),                                     │
+│    }                                                        │
+│ 8. Audit log: INVOICE_GENERATED event                      │
+│    Details: {invoice_number, total_amount, pasien_name}   │
+│ 9. Notify admin:                                            │
+│    Email / Dashboard alert: "Invoices ready for payment"   │
+│                                                             │
+│ PERFORMANCE NOTE:                                          │
+│ - Make this async (don't block EMR creation)               │
+│ - Use background job queue (RabbitMQ job)                  │
+│ - If job fail: Log error, retry 3x, alert admin           │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 3: MARK QUEUE COMPLETED (SIMULTANEOUS)
+┌─────────────────────────────────────────────────────────────┐
+│ Simultaneous dengan invoice generation:                     │
+│                                                             │
+│ Update queue:                                               │
+│ queue.queue_status = COMPLETED                             │
+│ queue.completed_time = NOW()                               │
+│ Audit log: QUEUE_COMPLETED                                 │
+│                                                             │
+│ Broadcast updates (WebSocket):                              │
+│ - Admin screen: Nomor selesai, auto-remove dari display    │
+│ - Dokter screen: Queue list updated                        │
+│ - TV display: Auto-delete nomor selesai                    │
+│ - Pasien 1 (completed): FCM "Treatment selesai"            │
+│ - Pasien 2,3 (waiting): Promote position di queue          │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 4: INVOICE DISPLAY (ADMIN PANEL)
+┌─────────────────────────────────────────────────────────────┐
+│ Admin dashboard updated real-time:                          │
+│                                                             │
+│ INVOICE MANAGEMENT SECTION:                                │
+│ ┌─────────────────────────────────────────────────┐        │
+│ │ INVOICE MANAGEMENT                              │        │
+│ ├─────────────────────────────────────────────────┤        │
+│ │ Unpaid Invoices: 1 NEW                          │        │
+│ │                                                 │        │
+│ │ INV# | Pasien | Tindakan | Total | Status     │        │
+│ │──────────────────────────────────────────────── │        │
+│ │ 001  | Budi S | Filling  | 200k  | UNPAID     │        │
+│ │      |        |          |       | [MARK PAID]│        │
+│ │ ... (previous invoices)                        │        │
+│ │                                                 │        │
+│ │ [EXPORT CSV] [PRINT ALL] [FILTER]              │        │
+│ └─────────────────────────────────────────────────┘        │
+│                                                             │
+│ Invoice visible di list (sorted by created_at descending)  │
+│ Admin can click [MARK PAID] untuk input pembayaran        │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 5: PAYMENT INPUT (ADMIN)
+┌─────────────────────────────────────────────────────────────┐
+│ Pasien datang bayar ke admin (cash atau bukti transfer)    │
+│ Admin click [MARK PAID] di invoice                         │
+│                                                             │
+│ Payment Input Form:                                         │
+│ ┌────────────────────────────────────┐                    │
+│ │ MARK INVOICE AS PAID               │                    │
+│ ├────────────────────────────────────┤                    │
+│ │ Invoice: INV-A-20260708-001        │                    │
+│ │ Total: Rp 200.000                  │                    │
+│ │                                    │                    │
+│ │ Nominal yang diterima:             │                    │
+│ │ [200000_____________]              │                    │
+│ │                                    │                    │
+│ │ Metode Pembayaran:                 │                    │
+│ │ ☑ Cash  ☐ Transfer                │                    │
+│ │                                    │                    │
+│ │ Catatan (optional):                │                    │
+│ │ [________________]                 │                    │
+│ │                                    │                    │
+│ │ [SIMPAN] [CANCEL]                  │                    │
+│ └────────────────────────────────────┘                    │
+│                                                             │
+│ Request: PUT /api/payments/mark-paid                       │
+│ Body: {                                                     │
+│   invoice_id: 1,                                            │
+│   nominal: 200000,                                          │
+│   method: "CASH",                                           │
+│   notes: "Terima cash dari pasien"                          │
+│ }                                                           │
+│                                                             │
+│ Backend Logic:                                              │
+│ 1. Fetch invoice by ID                                     │
+│ 2. Validate: status == UNPAID?                             │
+│ 3. Check nominal >= invoice.total_amount (full payment)    │
+│ 4. Create payment record:                                  │
+│    payment {                                               │
+│      invoice_id: 1,                                         │
+│      nominal: 200000,                                       │
+│      method: "CASH",                                        │
+│      input_date: NOW(),                                     │
+│      input_by: admin_id,                                    │
+│      notes: "Terima cash dari pasien",                      │
+│    }                                                        │
+│ 5. Update invoice:                                         │
+│    invoice.status = PAID                                   │
+│    invoice.payment_method = "CASH"                          │
+│    invoice.payment_date = NOW()                             │
+│    invoice.paid_at = NOW()                                 │
+│ 6. Audit log: PAYMENT_INPUT event                          │
+│    Details: {invoice_number, nominal, method, admin_name}  │
+│ 7. Response: Success, invoice marked paid                  │
+│                                                             │
+│ After Payment:                                              │
+│ - Invoice disappear dari "Unpaid" list                      │
+│ - Move ke "Paid" history                                    │
+│ - Pasien notification: "Pembayaran diterima"               │
+│ - Audit trail: Complete payment record                     │
+└─────────────────────────────────────────────────────────────┘
+
+COMPLETE EMR → INVOICE → PAYMENT FLOW:
+
+Time | Event                | Database State | Display
+─────┼──────────────────────┼────────────────┼─────────────────
+10:00| Dokter submit EMR    | EMR.status=COMPLETED | Invoice appear
+     |                      | Queue.status=COMPLETED | in admin list
+     |                      | Invoice.status=UNPAID |
+     |                      |                | TV auto-delete
+     |                      |                | nomor
+─────┼──────────────────────┼────────────────┼─────────────────
+10:15| Pasien datang bayar  | No change yet  | Invoice selected
+     |                      |                | Payment form open
+─────┼──────────────────────┼────────────────┼─────────────────
+10:20| Admin input pembayaran| Invoice.status=PAID | Invoice move
+     |                      | Payment.created| to paid history
+     |                      |                | Pasien notified
+─────┼──────────────────────┼────────────────┼─────────────────
+
+COMPLETE STATE:
+- Pasien treatment selesai ✓
+- EMR created ✓
+- Invoice generated ✓
+- Payment received ✓
+- Audit trail complete ✓
+
+================================================================
+5. TV QUEUE DISPLAY FLOW
+================================================================
+
+OVERVIEW:
+Real-time antrian display di TV ruang tunggu. Update setiap kali
+ada perubahan queue status (check-in, panggil, selesai).
+
+INITIALIZATION:
+┌─────────────────────────────────────────────────────────────┐
+│ @ 09:00 (sesi mulai):                                       │
+│ TV app (Chromium browser di Raspberry Pi):                  │
+│ - Load page: /tv-display?branch=A                           │
+│ - Connect WebSocket: ws://backend/queue-display             │
+│ - Initial state: Empty queue (no pasien check-in yet)       │
+│                                                             │
+│ Display template ready with 8 spesialis slots:              │
+│ [drg. Siti | Sp.BM | 09:00-12:00]                           │
+│ [drg. Budi | Sp.KG | 09:00-12:00]                           │
+│ ... (8 dokter)                                              │
+│                                                             │
+│ Each slot:                                                  │
+│ NOW: --                                                     │
+│ QUEUE: (empty)                                              │
+└─────────────────────────────────────────────────────────────┘
+
+REAL-TIME EVENT 1: PASIEN CHECK-IN
+┌─────────────────────────────────────────────────────────────┐
+│ @ 09:05: Pasien 1 (Sp.BM, nomor 01) check-in               │
+│                                                             │
+│ Backend broadcast WebSocket event:                          │
+│ {                                                           │
+│   event: "queue-updated",                                   │
+│   doctor_id: 50,                                            │
+│   specialist: "Sp.BM",                                      │
+│   doctor_name: "drg. Siti Nurhaliza",                        │
+│   now_number: null (still empty),                           │
+│   queue_numbers: [01],                                      │
+│   timestamp: "09:05:23"                                     │
+│ }                                                           │
+│                                                             │
+│ TV Display update (real-time, < 100ms):                     │
+│ drg. Siti Nurhaliza | Sp.BM (Bedah Mulut) | 09:00-12:00    │
+│ NOW: --                                                     │
+│ QUEUE: 01                                                   │
+│                                                             │
+│ @ 09:15: Pasien 2 (Sp.BM, nomor 02) check-in               │
+│ Event broadcast: queue_numbers: [01, 02]                   │
+│ Display update:                                             │
+│ drg. Siti Nurhaliza | Sp.BM (Bedah Mulut) | 09:00-12:00    │
+│ NOW: --                                                     │
+│ QUEUE: 01 02                                                │
+│                                                             │
+│ @ 09:25: Pasien 3 (Sp.BM, nomor 03) check-in               │
+│ Display update:                                             │
+│ QUEUE: 01 02 03                                             │
+│                                                             │
+│ (Simultaneously, other specialists also updating)           │
+│ Final display @ 09:30:                                      │
+│ ┌────────────────────────────────────────────────┐        │
+│ │ TV QUEUE DISPLAY - ANTRIAN HARI INI            │        │
+│ ├────────────────────────────────────────────────┤        │
+│ │                                                │        │
+│ │ drg. Siti Nurhaliza | Sp.BM | 09:00-12:00     │        │
+│ │ NOW: --    QUEUE: 01 02 03                     │        │
+│ │                                                │        │
+│ │ drg. Budi Santoso | Sp.KG | 09:00-12:00       │        │
+│ │ NOW: --    QUEUE: 01 02                        │        │
+│ │                                                │        │
+│ │ drg. Rina Wijaya | Sp.KGA | 13:00-16:00       │        │
+│ │ NOW: --    QUEUE: (empty)                      │        │
+│ │                                                │        │
+│ │ [... specialists 4-8 ...]                     │        │
+│ │                                                │        │
+│ └────────────────────────────────────────────────┘        │
+└─────────────────────────────────────────────────────────────┘
+
+REAL-TIME EVENT 2: DOKTER PANGGIL PASIEN
+┌─────────────────────────────────────────────────────────────┐
+│ @ 09:35: Dokter Siti panggil nomor 01                       │
+│                                                             │
+│ Dokter click "PANGGIL PASIEN" button                        │
+│ Request: PUT /api/queue/{queue_id}/call                     │
+│ Backend update: queue_status = BEING_CALLED                 │
+│                                                             │
+│ Broadcast WebSocket event:                                  │
+│ {                                                           │
+│   event: "queue-called",                                    │
+│   doctor_id: 50,                                            │
+│   now_number: 01,                                           │
+│   queue_numbers: [02, 03],                                  │
+│   timestamp: "09:35:15"                                     │
+│ }                                                           │
+│                                                             │
+│ TV Display update (real-time):                              │
+│ drg. Siti Nurhaliza | Sp.BM (Bedah Mulut) | 09:00-12:00    │
+│ NOW: 01 [MERAH/HIGHLIGHT]                                  │
+│ QUEUE: 02 03                                                │
+│                                                             │
+│ Color coding:                                               │
+│ NOW: 01 (merah/bold untuk visibility)                       │
+│ QUEUE: 02 03 (biru/normal)                                  │
+│                                                             │
+│ (Simultaneously updates di admin & dokter screen)          │
+└─────────────────────────────────────────────────────────────┘
+
+REAL-TIME EVENT 3: DOKTER SELESAI (CRITICAL FOR TV AUTO-DELETE)
+┌─────────────────────────────────────────────────────────────┐
+│ @ 09:55: Dokter selesai treatment nomor 01                  │
+│ Dokter submit EMR, system auto-trigger:                     │
+│                                                             │
+│ 1. Update queue: queue_status = COMPLETED                   │
+│ 2. Update invoice: created                                  │
+│ 3. Broadcast WebSocket event:                              │
+│    {                                                        │
+│      event: "queue-completed",                              │
+│      doctor_id: 50,                                         │
+│      completed_number: 01,                                  │
+│      now_number: null (nobody being served yet),           │
+│      queue_numbers: [02, 03],                               │
+│      timestamp: "09:55:30"                                  │
+│    }                                                        │
+│                                                             │
+│ TV Display update (AUTO-DELETE NOMOR 01):                   │
+│                                                             │
+│ BEFORE (09:55:29):                                          │
+│ drg. Siti Nurhaliza | Sp.BM (Bedah Mulut) | 09:00-12:00    │
+│ NOW: 01 [MERAH]                                             │
+│ QUEUE: 02 03                                                │
+│                                                             │
+│ AFTER (09:55:30):                                           │
+│ drg. Siti Nurhaliza | Sp.BM (Bedah Mulut) | 09:00-12:00    │
+│ NOW: --                                                     │
+│ QUEUE: 02 03                                                │
+│ [nomor 01 COMPLETELY REMOVED, tidak tampil sama sekali]   │
+│                                                             │
+│ KEY FEATURE: Nomor yang sudah selesai otomatis hilang      │
+│              dari display (clean & uncluttered)            │
+│                                                             │
+│ @ 10:00: Dokter panggil nomor 02                           │
+│ Event: queue-called, now_number: 02                        │
+│ Display update:                                             │
+│ drg. Siti Nurhaliza | Sp.BM (Bedah Mulut) | 09:00-12:00    │
+│ NOW: 02 [MERAH]                                             │
+│ QUEUE: 03                                                   │
+│ [nomor 01 still removed, only 02-03 visible]              │
+└─────────────────────────────────────────────────────────────┘
+
+MULTI-SPESIALIS LAYOUT (8 DOKTER BERSAMAAN):
+┌─────────────────────────────────────────────────────────────┐
+│ TV Screen Resolution: 1920x1080 (landscape)                 │
+│ Layout: 2-column grid (4 dokter per kolom)                  │
+│                                                             │
+│ ┌──────────────────────────────────────────────────────┐   │
+│ │ TV QUEUE DISPLAY - ANTRIAN HARI INI               │   │
+│ ├──────────────────────────────────────────────────────┤   │
+│ │                                                     │   │
+│ │ KOLOM 1                    │ KOLOM 2               │   │
+│ ├────────────────────────────┼──────────────────────┤   │
+│ │                            │                      │   │
+│ │ drg. Siti | Sp.BM | 09-12   │ drg. Rina | Sp.KGA | 13-16│
+│ │ NOW: 02 QUEUE: 03 04       │ NOW: -- QUEUE: 01 02│   │
+│ │                            │                      │   │
+│ │ drg. Budi | Sp.KG | 09-12   │ drg. Ahmad | Sp.PM | 13-16│
+│ │ NOW: 01 QUEUE: 02          │ NOW: 01 QUEUE: 02 03│   │
+│ │                            │                      │   │
+│ │ drg. Ayu | Sp.Ort | 09-12   │ drg. Citra | Sp.Perio | 09-12│
+│ │ NOW: -- QUEUE: (empty)     │ NOW: 03 QUEUE: 04 05│   │
+│ │                            │                      │   │
+│ │ drg. Hendra | Sp.Pros | 13-16│drg. Eka | Sp.RKG | 09-12│
+│ │ NOW: 01 QUEUE: 02 03 04    │ NOW: -- QUEUE: 01  │   │
+│ │                            │                      │   │
+│ └────────────────────────────┴──────────────────────┘   │
+│                                                         │   │
+│ Auto-responsive: If screen 4:3, layout 3-column atau 2-row│
+└─────────────────────────────────────────────────────────────┘
+
+SESSION MANAGEMENT:
+┌─────────────────────────────────────────────────────────────┐
+│ SESSION TIMES:                                              │
+│ Morning: 09:00-12:00                                        │
+│ Afternoon: 13:00-16:00                                      │
+│                                                             │
+│ @ 09:00: Load morning sessions                              │
+│ Display: 8 dokter dengan session 09:00-12:00                │
+│ OR 13:00-16:00 (sesuai jadwal)                              │
+│                                                             │
+│ @ 11:50 (10 menit sebelum sesi berakhir):                   │
+│ Display: Tetap show session, maybe fade warning             │
+│                                                             │
+│ @ 12:00 (sesi berakhir):                                    │
+│ Action 1: Grey out dokter yang session-nya berakhir         │
+│ Action 2: OR completely hide dari display                  │
+│ Action 3: Auto-mark pasien yang belum check-in as NO_SHOW  │
+│                                                             │
+│ @ 13:00 (afternoon session):                                │
+│ Display: Update untuk afternoon dokter (13:00-16:00)       │
+│                                                             │
+│ @ 16:00 (selesai hari):                                     │
+│ Display: Empty (show "Klinik tutup" atau standby message)  │
+└─────────────────────────────────────────────────────────────┘
+
+FALLBACK & ERROR HANDLING:
+┌─────────────────────────────────────────────────────────────┐
+│ Scenario 1: WebSocket CONNECTION DOWN                       │
+│ - TV display: Fallback to HTTP polling every 2-3 detik     │
+│ - GET /api/branches/{branch}/queue-display                  │
+│ - Delay: ~3 detik (acceptable for TV display)              │
+│ - UI: Show "Offline mode" indicator (optional)             │
+│ - Auto-reconnect: Try WebSocket every 10 detik             │
+│                                                             │
+│ Scenario 2: TV POWER LOSS                                  │
+│ - Fallback: Paper queue board (manual)                     │
+│ - Admin write nomor antrean di whiteboard                  │
+│ - Once power back: TV auto-reconnect & sync latest state  │
+│                                                             │
+│ Scenario 3: BACKEND API DOWN                               │
+│ - TV display: Show cached last-known state                │
+│ - Show warning: "Data mungkin tidak update"                │
+│ - Once backend online: Force refresh display               │
+│                                                             │
+│ Scenario 4: DUPLICATE EVENT (race condition)                │
+│ - Multiple dokter click "selesai" simultaneously            │
+│ - Backend: Ensure idempotency (check status before update) │
+│ - TV: Display eventually consistent (no data corruption)   │
+└─────────────────────────────────────────────────────────────┘
+
+COMPLETE TV DISPLAY LIFECYCLE (09:00-12:00 SESSION):
+
+Time  | Event              | Display
+──────┼────────────────────┼──────────────────────────────────
+09:00 | Session start      | 8 dokter, all empty
+09:05 | Pasien 1 check-in  | Sp.BM: QUEUE: 01
+09:15 | Pasien 2 check-in  | Sp.BM: QUEUE: 01 02
+09:25 | Pasien 3 check-in  | Sp.BM: QUEUE: 01 02 03
+09:35 | Dokter panggil 01  | Sp.BM: NOW: 01 QUEUE: 02 03
+09:55 | Dokter selesai 01  | Sp.BM: NOW: -- QUEUE: 02 03
+      |                    | (nomor 01 auto-delete)
+10:00 | Dokter panggil 02  | Sp.BM: NOW: 02 QUEUE: 03
+10:20 | Dokter selesai 02  | Sp.BM: NOW: -- QUEUE: 03
+10:25 | Dokter panggil 03  | Sp.BM: NOW: 03 QUEUE: --
+10:45 | Dokter selesai 03  | Sp.BM: NOW: -- QUEUE: --
+──────┼────────────────────┼──────────────────────────────────
+11:50 | No more check-in   | (sesi hampir berakhir)
+12:00 | Session end        | Sp.BM: Grey out / hide
+
+================================================================
+6. WALK-IN MANAGEMENT FLOW
+================================================================
+
+WALK-IN SCENARIO:
+Pasien datang tanpa booking sebelumnya. Admin langsung input
+ke sistem, assign ke dokter's queue.
+
+STEP 1: ADMIN ADD WALK-IN
+┌─────────────────────────────────────────────────────────────┐
+│ @ 09:30:                                                    │
+│ Pasien (Anto) datang ke admin: "Saya mau berobat gigi"     │
+│ Admin: "Baik, nama Anda siapa? Sakit gigi mana?"           │
+│ Pasien: "Anto, sakit geraham kanan"                         │
+│ Admin: "Baik, itu ke Sp.BM (Bedah Mulut). Silakan tunggu"  │
+│                                                             │
+│ Admin click [ADD WALK-IN] button di admin panel             │
+│                                                             │
+│ Walk-in Form:                                               │
+│ ┌──────────────────────────────────┐                       │
+│ │ ADD WALK-IN PASIEN               │                       │
+│ ├──────────────────────────────────┤                       │
+│ │ Nama Pasien:                     │                       │
+│ │ [Anto________________]            │                       │
+│ │                                  │                       │
+│ │ Pilih Spesialis:                 │                       │
+│ │ [Sp.BM (Bedah Mulut) ▼]         │                       │
+│ │                                  │                       │
+│ │ Keluhan (optional):              │                       │
+│ │ [Sakit geraham kanan__________]  │                       │
+│ │                                  │                       │
+│ │ [TAMBAH] [CANCEL]                │                       │
+│ └──────────────────────────────────┘                       │
+│                                                             │
+│ Admin fill form & click [TAMBAH]                           │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 2: BACKEND PROCESS
+┌─────────────────────────────────────────────────────────────┐
+│ Request: POST /api/queue/add-walk-in                        │
+│ Body: {                                                     │
+│   branch_id: "A",                                           │
+│   pasien_name: "Anto",                                      │
+│   specialist: "Sp.BM",                                      │
+│   keluhan: "Sakit geraham kanan",                           │
+│   input_by: admin_id                                        │
+│ }                                                           │
+│                                                             │
+│ LOGIC:                                                      │
+│ 1. Find dokter based on specialist & branch:                │
+│    SELECT dokter WHERE specialist = Sp.BM                  │
+│    AND branch_id = "A"                                     │
+│    AND is_active = true                                    │
+│    Result: dokter_id = 50 (drg. Siti Nurhaliza)             │
+│                                                             │
+│ 2. Validate session active (current time in session):      │
+│    SELECT jadwal WHERE dokter_id = 50                       │
+│    Check if NOW() within session_start-end                 │
+│    If not in any active session: Error "Tidak ada sesi aktif│
+│    Result: Session 09:00-12:00 VALID                       │
+│                                                             │
+│ 3. Generate unique 6-digit kode:                            │
+│    Random string: A7K2M9 (alphanumeric)                    │
+│    Check uniqueness (unlikely collision but validate)      │
+│                                                             │
+│ 4. Generate queue_number:                                  │
+│    REDIS INCR "queue:A:50:20260708"                        │
+│    Result: queue_number = 04 (next in queue)               │
+│                                                             │
+│ 5. Create booking record (special walk-in flag):           │
+│    booking {                                               │
+│      pasien_id: null (walk-in, no pre-registration),       │
+│      pasien_name: "Anto" (stored directly),                │
+│      branch_id: "A",                                        │
+│      dokter_id: 50,                                         │
+│      status: WALK_IN (not PAYMENT_CONFIRMED),              │
+│      check_in_code: "A7K2M9",                              │
+│      queue_number: 04,                                      │
+│      checked_in_at: NOW(),                                  │
+│      is_walk_in: true,                                      │
+│    }                                                        │
+│                                                             │
+│ 6. Create queue record:                                     │
+│    queue {                                                  │
+│      booking_id: (walk-in booking),                         │
+│      dokter_id: 50,                                         │
+│      queue_number: 04,                                      │
+│      queue_status: WAITING,                                 │
+│      check_in_time: NOW(),                                  │
+│    }                                                        │
+│                                                             │
+│ 7. Audit log: WALK_IN_ADDED event                          │
+│    Details: {pasien_name, specialist, queue_number, input_by}│
+│                                                             │
+│ 8. Response: Success, walk-in added                        │
+│    Display: {queue_number: 04, kode: "A7K2M9"}             │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 3: DISPLAY & QUEUE UPDATE
+┌─────────────────────────────────────────────────────────────┐
+│ Admin Panel:                                                │
+│ ┌──────────────────────────────────────┐                  │
+│ │ ✅ WALK-IN DITAMBAHKAN               │                  │
+│ ├──────────────────────────────────────┤                  │
+│ │ Nama: Anto                           │                  │
+│ │ Spesialis: Sp.BM                     │                  │
+│ │ Dokter: drg. Siti Nurhaliza           │                  │
+│ │ Nomor Antrian: 04                    │                  │
+│ │ Kode: A7K2M9 (untuk referensi)       │                  │
+│ │                                      │                  │
+│ │ [PRINT STRUK] [OK]                   │                  │
+│ └──────────────────────────────────────┘                  │
+│                                                             │
+│ Admin give struk to walk-in pasien (nomor 04)             │
+│                                                             │
+│ TV Display real-time update:                                │
+│ drg. Siti Nurhaliza | Sp.BM | 09:00-12:00                  │
+│ NOW: 02 (still being served)                               │
+│ QUEUE: 03 04 (nomor 04 WALK-IN added)                      │
+│                                                             │
+│ FIFO Fair System:                                           │
+│ Walk-in (nomor 04) sama prioritas dengan online booking    │
+│ (nomor 03). First-come-first-serve (check-in time order)  │
+│                                                             │
+│ No special treatment for walk-in (fair system)             │
+└─────────────────────────────────────────────────────────────┘
+
+WALK-IN PAYMENT:
+After walk-in treatment completed:
+- EMR created
+- Invoice auto-generated (same as online booking)
+- Walk-in pay cash to admin (no pre-payment)
+- Admin mark invoice paid (same process)
+
+No difference di payment flow: walk-in = booking treatment
+walk-in just skip pre-booking + payment gateway step.
+
+================================================================
+7. PAYMENT RECONCILIATION FLOW
+================================================================
+
+GOAL:
+Admin reconcile klinik's physical cash dengan invoice records
+di sistem untuk detect discrepancies.
+
+STEP 1: DAILY END-OF-DAY ADMIN TASK
+┌─────────────────────────────────────────────────────────────┐
+│ @ 16:30 (end of business day):                              │
+│ Admin: "Mari kita lihat berapa banyak yang masuk hari ini"  │
+│ Admin click [RECONCILIATION] menu di admin panel            │
+│                                                             │
+│ Reconciliation Dashboard:                                   │
+│ ┌────────────────────────────────────────────────┐         │
+│ │ PAYMENT RECONCILIATION - 08-07-2026            │         │
+│ ├────────────────────────────────────────────────┤         │
+│ │                                                │         │
+│ │ Total Invoices Today: 5                        │         │
+│ │ Total Paid (Cash): Rp 600.000                  │         │
+│ │ Total Paid (Transfer): Rp 200.000              │         │
+│ │ Total Paid: Rp 800.000                         │         │
+│ │ Total Unpaid: Rp 200.000                       │         │
+│ │                                                │         │
+│ │ Paid Invoices:                                 │         │
+│ │ INV-A-20260708-001 | 200k | CASH | 10:20     │         │
+│ │ INV-A-20260708-002 | 300k | CASH | 11:00     │         │
+│ │ INV-A-20260708-003 | 150k | CASH | 12:30     │         │
+│ │ INV-A-20260708-004 | 150k | TRANSFER | 14:00│         │
+│ │ INV-A-20260708-005 | 200k | (unpaid)         │         │
+│ │                                                │         │
+│ │ [EXPORT CSV] [PRINT REPORT]                   │         │
+│ └────────────────────────────────────────────────┘         │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 2: EXPORT DATA
+┌─────────────────────────────────────────────────────────────┐
+│ Admin click [EXPORT CSV]                                    │
+│                                                             │
+│ Generated CSV:                                              │
+│ "Payment Report - Branch A - 08-07-2026.csv"               │
+│                                                             │
+│ Content:                                                    │
+│ Invoice#,Pasien,Tindakan,Total,Method,PaidAt,ReconcileBy  │
+│ INV-A-20260708-001,Budi S,Scaling,200000,CASH,10:20,Admin │
+│ INV-A-20260708-002,Siti R,Filling,300000,CASH,11:00,Admin │
+│ INV-A-20260708-003,Ahmad W,Crown,150000,CASH,12:30,Admin │
+│ INV-A-20260708-004,Rina P,Perawatan,150000,TRANSFER,14:00,Admin
+│ INV-A-20260708-005,Ani J,Scaling,200000,(unpaid),--,--    │
+│                                                             │
+│ Summary:                                                    │
+│ Total Cash: 650000                                          │
+│ Total Transfer: 150000                                      │
+│ Total: 800000                                               │
+│ Unpaid: 200000                                              │
+│                                                             │
+│ Admin download CSV untuk manual reconciliation di Excel    │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 3: MANUAL RECONCILIATION
+┌─────────────────────────────────────────────────────────────┐
+│ Admin @ home atau di klinik:                                │
+│ 1. Count physical cash dari cash box: Rp 650.000            │
+│ 2. Check bank account untuk transfer: Rp 150.000 received   │
+│ 3. Open CSV export dari sistem                              │
+│ 4. Compare:                                                 │
+│                                                             │
+│    System says:                                             │
+│    Cash: Rp 650.000 ✓ (match)                               │
+│    Transfer: Rp 150.000 ✓ (match)                           │
+│    Total: Rp 800.000 ✓ (match)                              │
+│                                                             │
+│    Result: RECONCILED ✓ (no discrepancy)                    │
+│                                                             │
+│ 5. Note: Unpaid invoice INV-A-20260708-005 (200k)          │
+│    Action: Follow-up dengan pasien (remind for payment)   │
+└─────────────────────────────────────────────────────────────┘
+
+SCENARIO: DISCREPANCY DETECTED
+┌─────────────────────────────────────────────────────────────┐
+│ Physical cash count: Rp 630.000                             │
+│ System cash recorded: Rp 650.000                            │
+│ Difference: -Rp 20.000 (shortage)                           │
+│                                                             │
+│ TROUBLESHOOTING:                                            │
+│ 1. Check if all cash inputs recorded di sistem              │
+│ 2. Review audit log untuk cash transactions hari ini        │
+│ 3. Possible causes:                                         │
+│    - Admin input error (typo nominally)                     │
+│    - Cash lost/stolen (serious)                             │
+│    - System bug (unlikely with atomic transactions)         │
+│ 4. Action:                                                  │
+│    - Contact admin input yang melakukan pencatatan         │
+│    - Check CCT untuk details & timing                       │
+│    - If theft suspected: Report to management              │
+│    - Document discrepancy untuk audit trail               │
+│                                                             │
+│ PREVENTION:                                                │
+│ - Multiple admin approve sebelum mark paid (future)        │
+│ - Camera di cash box (security measure)                    │
+│ - Daily reconciliation (tidak tunggu bulanan)             │
+└─────────────────────────────────────────────────────────────┘
+
+AUDIT TRAIL FOR RECONCILIATION:
+┌─────────────────────────────────────────────────────────────┐
+│ Admin click [VIEW AUDIT LOG] untuk payment history         │
+│                                                             │
+│ Audit Log Events:                                           │
+│ - PAYMENT_INPUT event per transaksi                        │
+│ - Timestamp, admin_name, nominal, method, notes            │
+│ - Invoice reference                                        │
+│                                                             │
+│ Example log:                                                │
+│ 2026-07-08 10:20:15 | Admin: Budi | PAYMENT_INPUT         │
+│   Invoice: INV-A-20260708-001 | Nominal: 200000            │
+│   Method: CASH | Notes: "Terima dari Budi Santoso"         │
+│                                                             │
+│ This creates immutable record untuk reconciliation          │
+│ & compliance purposes (audit-proof system)                 │
+└─────────────────────────────────────────────────────────────┘
+
+MONTHLY RECONCILIATION (AGGREGATE):
+┌─────────────────────────────────────────────────────────────┐
+│ @ Month-end:                                                │
+│ Admin export full month CSV                                 │
+│ Compare dengan bank statement & cash register balance      │
+│ Identify trends atau patterns (fraud detection)            │
+│                                                             │
+│ Report admin buat:                                          │
+│ - Total revenue per cabang                                 │
+│ - Revenue per specialist                                   │
+│ - Cash vs Transfer breakdown                               │
+│ - Unpaid invoice aging (how long outstanding)             │
+│ - NO_SHOW impact (lost revenue)                            │
+└─────────────────────────────────────────────────────────────┘
+
+================================================================
+END OF LOGIC FLOW DOCUMENTATION
+================================================================
+
+SUMMARY:
+
+1. PAYMENT GATEWAY FLOW:
+   Midtrans webhook → backend validate → booking confirmed → pasien see kode
+
+2. CHECK-IN FLOW:
+   Pasien datang → admin input kode → validate → generate queue number
+
+3. QUEUE MANAGEMENT:
+   Check-in (WAITING) → Panggil (BEING_CALLED) → Selesai (COMPLETED, auto-delete)
+
+4. EMR & INVOICE:
+   EMR COMPLETED → Auto-generate invoice → Admin input payment
+
+5. TV DISPLAY:
+   Real-time queue per dokter, auto-delete nomor selesai, privacy-safe (no names)
+
+6. WALK-IN:
+   Admin add walk-in → Generate kode & queue → Same as booking process
+
+7. RECONCILIATION:
+   Daily/monthly: Compare physical cash + transfer dengan invoice records
+
+All flows are designed untuk:
+✓ Automation (no manual bottlenecks)
+✓ Real-time updates (WebSocket + fallback polling)
+✓ Data integrity (atomic transactions, audit logs)
+✓ Privacy & security (no patient names in public displays)
+✓ Operational efficiency (clear role separation)
+✓ Compliance & auditability (immutable records)
+
+================================================================

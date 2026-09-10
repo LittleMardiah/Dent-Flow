@@ -1,8 +1,7 @@
-import { Pool } from 'pg';
-import { config } from '../config';
-import { logger } from '../utils/logger';
 
-const pool = new Pool({ connectionString: config.database.url });
+import { logger } from '../utils/logger';
+import { pool } from '../config/database';
+
 
 /**
  * Cleanup Temporary Patients Job

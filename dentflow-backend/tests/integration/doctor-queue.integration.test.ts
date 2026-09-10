@@ -259,8 +259,18 @@ describe('Doctor Queue Integration Tests', () => {
     await pool.query('DELETE FROM doctors WHERE user_id = $1', [doctorUserId]);
     await pool.query('DELETE FROM doctor_schedules WHERE dokter_id = $1', [doctorUserId]);
     await pool.query('DELETE FROM users WHERE id IN ($1, $2, $3)', [adminUserUuid, patientUserUuid, doctorUserUuid]);
-    await pool.query('DELETE FROM audit_logs WHERE branch_id = $1', [branchId]);
-    await pool.query('DELETE FROM branches WHERE id = $1', [branchId]);
+    // audit_logs IMMUTABLE (append-only): DELETE ditolak oleh trigger -> best-effort
+    try {
+      await pool.query('DELETE FROM audit_logs WHERE branch_id = $1', [branchId]);
+    } catch (error) {
+      console.error('Cleanup audit_logs skipped (immutable):', (error as Error).message);
+    }
+    // Branch tidak bisa dihapus selama masih direferensikan audit_logs (FK RESTRICT)
+    try {
+      await pool.query('DELETE FROM branches WHERE id = $1', [branchId]);
+    } catch (error) {
+      console.error('Cleanup branch skipped (audit FK RESTRICT):', (error as Error).message);
+    }
     await redis.quit();
     await pool.end();
   });

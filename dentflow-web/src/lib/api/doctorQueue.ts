@@ -2,6 +2,7 @@ import apiClient from '../axios';
 
 export interface QueuePatient {
   id: string;
+  bookingId: string;
   queueNumber: number;
   patientId: string;
   patientName: string;
@@ -9,6 +10,7 @@ export interface QueuePatient {
   status: 'WAITING' | 'BEING_CALLED' | 'IN_SERVICE' | 'COMPLETED';
   waitTimeMinutes: number;
   reason?: string;
+  isWalkIn?: boolean;
 }
 
 export interface PatientQuickView {

@@ -1,17 +1,9 @@
 import { getErrorMessage, getErrorStack } from "../utils/error.util";
-﻿import { Pool } from 'pg';
-import { config } from '../config';
+import { pool } from '../config/database';
 import { logger } from './logger';
 
-// Buat pool dengan konfigurasi yang sudah terbukti berhasil di docker exec
-// Kita tetap pakai pool, tapi dengan connection string yang sudah diverifikasi
-export const pool = new Pool({
-  connectionString: config.database.url,
-  // Tambahkan parameter agar lebih stabil di Windows
-  connectionTimeoutMillis: 5000,
-  idleTimeoutMillis: 30000,
-  max: 10,
-});
+// Consistent with config/database.ts: ONE shared pool untuk seluruh aplikasi.
+export { pool };
 
 // Test koneksi saat startup
 export const testDatabaseConnection = async (): Promise<boolean> => {

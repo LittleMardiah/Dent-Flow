@@ -4,6 +4,8 @@ import {
   getDoctorQueue,
   checkInPatient,
   getQueueStats,
+  getDoctorQueueToday,
+  readyNextDoctor,
 } from '../handlers/doctorQueue.handler';
 import { getQueueStatus } from '../handlers/queue.handler';
 
@@ -16,6 +18,20 @@ router.get(
   '/doctors/:id/queue',
   roleMiddleware(['DOCTOR', 'ADMIN_BRANCH']),
   getDoctorQueue
+);
+
+// Web doctor queue board (today's active queue)
+router.get(
+  '/doctors/:id/queue-today',
+  roleMiddleware(['DOCTOR', 'ADMIN_BRANCH']),
+  getDoctorQueueToday
+);
+
+// Doctor calls the next waiting patient
+router.post(
+  '/doctors/:id/ready-next',
+  roleMiddleware(['DOCTOR']),
+  readyNextDoctor
 );
 
 // DOCTOR & ADMIN can view queue stats

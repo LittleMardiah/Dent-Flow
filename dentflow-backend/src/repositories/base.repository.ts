@@ -1,12 +1,13 @@
 import { Pool, QueryResult, QueryResultRow } from 'pg';
-import { config } from '../config';
+
 import { logger } from '../utils/logger';
+import { pool } from '../config/database';
 
 export class BaseRepository {
   protected pool: Pool;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
   }
 
   protected async query<T extends QueryResultRow = any>(

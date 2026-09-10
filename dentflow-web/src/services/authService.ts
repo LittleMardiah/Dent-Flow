@@ -1,14 +1,19 @@
 import axios from 'axios';
 
 interface LoginResponse {
-  token: string;
-  refreshToken: string;
-  user: {
-    id: string;
-    name: string;
-    email: string;
+  success: boolean;
+  data: {
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+      branchId?: string;
+    };
+    token: string;
+    refreshToken: string;
     role: string;
-    branchId?: string;
+    redirectUrl: string;
   };
 }
 
@@ -17,17 +22,18 @@ export class AuthService {
   private static REFRESH_TOKEN_KEY = 'dentflow_refresh_token';
   private static USER_KEY = 'dentflow_user';
 
-  static async login(email: string, password: string): Promise<LoginResponse> {
+  static async login(email: string, password: string): Promise<LoginResponse['data']> {
     try {
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_API_URL}/auth/login`,
         { email, password }
       );
-      if (response.data.token) {
-        this.setTokens(response.data.token, response.data.refreshToken);
-        this.setUser(response.data.user);
+      const data = response.data?.data ?? response.data;
+      if (data.token) {
+        this.setTokens(data.token, data.refreshToken);
+        this.setUser({ ...data.user, role: data.role });
       }
-      return response.data;
+      return data;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || 'Login gagal');
     }

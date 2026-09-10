@@ -1,13 +1,14 @@
 import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
-import { config } from '../config';
+
 import { logger } from '../utils/logger';
+import { pool } from '../config/database';
 
 export class NotificationService {
   private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
   }
 
   /**
@@ -90,7 +91,6 @@ export class NotificationService {
     sessionStart: Date,
     sessionEnd: Date
   ): Promise<void> {
-    // 1. Dapatkan user_id dari patients berdasarkan patient_id
     const patientRes = await this.pool.query(
       `SELECT user_id, full_name FROM patients WHERE id = $1`,
       [patientId]
@@ -101,11 +101,9 @@ export class NotificationService {
     const userId = patientRes.rows[0].user_id;
     const patientName = patientRes.rows[0].full_name || 'Pasien';
 
-    // 2. Notifikasi untuk pasien
     const patientContent = `Anda terdaftar sebagai NO-SHOW untuk booking ${bookingCode} pada sesi ${sessionStart} - ${sessionEnd}. Silakan hubungi klinik untuk informasi lebih lanjut.`;
     await this.logNotification(bookingId, userId, 'CANCELLATION', patientContent);
 
-    // 3. Notifikasi untuk admin cabang
     const branchRes = await this.pool.query(
       `SELECT branch_id FROM bookings WHERE id = $1`,
       [bookingId]
@@ -123,4 +121,50 @@ export class NotificationService {
       }
     }
   }
+
+  /**
+   * Send webhook failure alert to admin (simplified version)
+   */
+  async sendWebhookFailureAlert(
+    webhookId: string,
+    orderId: string,
+    retryCount: number,
+    lastError: string,
+    branchId?: string,
+    invoiceId?: string,
+    bookingId?: string
+  ): Promise<void> {
+    const content = `Webhook permanently failed: ${webhookId}, Order: ${orderId}, Retry: ${retryCount}/3, Error: ${lastError}, Branch: ${branchId || "N/A"}, Invoice: ${invoiceId || "N/A"}, Booking: ${bookingId || "N/A"}`;
+
+    // Log to console
+    logger.error({
+      msg: '🚨 Webhook permanent failure alert',
+      webhookId,
+      orderId,
+      retryCount,
+      lastError,
+      branchId,
+      invoiceId,
+      bookingId,
+    });
+
+    // Send Slack if configured (simple)
+    const slackUrl = process.env.SLACK_WEBHOOK_URL;
+    if (slackUrl) {
+      try {
+        await fetch(slackUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: `🚨 Webhook Permanently Failed\nWebhook: ${webhookId}\nOrder: ${orderId}\nRetry: ${retryCount}/3\nError: ${lastError}`,
+          }),
+        });
+        logger.info({ msg: '✅ Slack alert sent for webhook failure' });
+      } catch (error) {
+        logger.error({ error: getErrorMessage(error) }, 'Failed to send Slack alert');
+      }
+    }
+  }
 }
+
+export const notificationService = new NotificationService();

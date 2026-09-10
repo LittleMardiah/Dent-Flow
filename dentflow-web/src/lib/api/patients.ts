@@ -34,6 +34,12 @@ export interface AuditTrailEntry {
 }
 
 export const patientsApi = {
+  // Get branches accessible to the current user (own + granted)
+  getAccessibleBranches: async (): Promise<{ id: string; name: string }[]> => {
+    const response = await apiClient.get('/patients/branches');
+    return response.data?.data || [];
+  },
+
   // Get patients with pagination & search
   getPatients: async (
     branchId: string,

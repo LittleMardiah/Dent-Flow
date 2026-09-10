@@ -1,6 +1,7 @@
-import { Pool } from 'pg';
-import { config } from '../config';
+import { Pool, PoolClient } from 'pg';
+
 import { logger } from '../utils/logger';
+import { pool } from '../config/database';
 
 export interface AuditLogPayload {
   branchId: string;
@@ -63,20 +64,25 @@ export class AuditService {
   };
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
   }
 
   static getEventLabel(eventType: string): string {
     return this.eventLabels[eventType] || eventType;
   }
 
-  async logEvent(payload: AuditLogPayload): Promise<void> {
-    // In test environment, bypass FK constraint by using a valid system user
+  async logEvent(payload: AuditLogPayload, client?: PoolClient): Promise<void> {
+    // If a transaction client is provided, run on the SAME transaction so that
+    // FK references to rows created inside that transaction (e.g. a brand new
+    // user) are visible. Running on a separate connection would block on the
+    // FK wait (READ COMMITTED) and deadlock the caller's own transaction.
     try {
       const label = AuditService.getEventLabel(payload.eventType);
       const description = payload.description || label;
 
-      await this.pool.query(
+      const executor = client ?? this.pool;
+
+      await executor.query(
         `INSERT INTO audit_logs 
          (branch_id, user_id, event_type, entity_type, entity_id, action, 
           old_values, new_values, description, ip_address, created_at)

@@ -1,7 +1,8 @@
 import { Pool } from 'pg';
-import { config } from '../config';
+
 import { logger } from '../utils/logger';
 import { getErrorMessage, getErrorStack } from '../utils/error.util';
+import { pool } from '../config/database';
 
 export interface EncounterHistory {
   id: string;
@@ -25,7 +26,7 @@ export class PatientHistoryService {
   private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
   }
 
   async getPatientHistory(

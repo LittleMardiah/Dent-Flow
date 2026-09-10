@@ -1,0 +1,266 @@
+================================================================
+ROADMAP TAMBAHAN - DENTFLOW v1.0
+Rencana Full: Dari Sekarang Sampai Live Demo / Deploy
+================================================================
+Tanggal Dibuat : 2026-09-10
+Status         : ACTIVE
+Target Akhir   : Vercel + Supabase ONLY (Full Serverless)
+Target Deploy  : GRATIS (Zero CC / Zero Cost)
+================================================================
+
+## 🎯 VISI AKHIR
+
+Portfolio high-end dengan arsitektur FULL SERVERLESS:
+
+┌─────────────────────────────────────────┐
+│ VERCEL                                  │
+│ ├── Landing Page (Next.js)             │
+│ ├── Web Admin/Doctor (Next.js)         │
+│ └── API Routes (Serverless Functions)   │
+└─────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────┐
+│ SUPABASE                                │
+│ ├── PostgreSQL (DB)                     │
+│ ├── Realtime (WebSocket replacement)    │
+│ ├── Storage (File uploads)              │
+│ ├── Auth (Optional)                     │
+│ └── pg_cron (Scheduled jobs)            │
+└─────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────┐
+│ MOBILE (Flutter)                        │
+│ └── Hits Vercel API Routes              │
+└─────────────────────────────────────────┘
+
+YANG DIHAPUS:
+- Express.js (diganti Vercel API Routes)
+- Redis (diganti Postgres Sequences)
+- Socket.IO (diganti Supabase Realtime)
+- MinIO (diganti Supabase Storage)
+- node-cron (diganti Supabase pg_cron)
+- mcp-server/ (tooling lama, udah diganti OpenCode)
+
+================================================================
+## 📋 PHASE PLAN
+================================================================
+
+┌──────────────────────────────────────────────────────────────┐
+│ PHASE 0: BERSIH-BERSIH (1-2 hari)                            │
+├──────────────────────────────────────────────────────────────┤
+│ Tujuan: Working tree clean, siap refactor                    │
+│                                                              │
+│ Task 0.1: Hapus dentflow-web/src/app/patient/*               │
+│ Task 0.2: Hapus root node_modules/                           │
+│ Task 0.3: Hapus mcp-server/                                  │
+│ Task 0.4: Update .gitignore                                  │
+│ Task 0.5: Commit rapi (5-10 commit terpisah)                 │
+│ Task 0.6: Update LOGBOOK                                     │
+│                                                              │
+│ Deliverable: Git history rapi, working tree bersih           │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ PHASE 1: MIGRASI BASELINE SUPABASE + VERCEL (3-5 hari)      │
+├──────────────────────────────────────────────────────────────┤
+│ Tujuan: Demo jalan di Vercel + Supabase                      │
+│                                                              │
+│ HARI 1-2: Setup Supabase                                     │
+│ Task 1.1: Bikin akun Supabase (no CC)                        │
+│ Task 1.2: Setup project + region                             │
+│ Task 1.3: Migrasi 30+ migrations ke Supabase SQL Editor      │
+│ Task 1.4: Seed data (branch A/B/C, doctors, patients)        │
+│ Task 1.5: Test koneksi dari local backend Express            │
+│                                                              │
+│ HARI 3-4: Setup Vercel + Supabase Connection                 │
+│ Task 1.6: Deploy dentflow-web ke Vercel                      │
+│ Task 1.7: Connect ke Supabase (env vars)                     │
+│ Task 1.8: Test baca/tulis DB dari web                        │
+│                                                              │
+│ HARI 5: Deploy Backend Express ke Vercel (Temporary)         │
+│ Task 1.9: Pake @vercel/node wrapper                          │
+│ Task 1.10: Test semua endpoint                               │
+│                                                              │
+│ Deliverable: Demo jalan, frontend + backend di Vercel        │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ PHASE 2: REFACTOR SERVERLESS (2-3 minggu)                    │
+├──────────────────────────────────────────────────────────────┤
+│ Tujuan: Full serverless, Express + Redis + Socket.IO dihapus │
+│                                                              │
+│ MINGGU 1: Refactor Backend                                   │
+│ Task 2.1: Express Router → app/api/*/route.ts                │
+│ Task 2.2: Middleware → helper functions                      │
+│ Task 2.3: Repository pattern → Supabase client queries       │
+│ Task 2.4: Error handling → per-endpoint try/catch            │
+│ Task 2.5: Test coverage tetap dijaga (>70%)                  │
+│                                                              │
+│ MINGGU 2: Refactor Real-time & Background                    │
+│ Task 2.6: Socket.IO → Supabase Realtime                      │
+│ Task 2.7: Redis INCR → Postgres sequences                    │
+│ Task 2.8: node-cron → Supabase pg_cron                       │
+│ Task 2.9: Midtrans webhook → Vercel Edge Function            │
+│ Task 2.10: File upload → Supabase Storage                    │
+│                                                              │
+│ MINGGU 3: Polish & Testing                                   │
+│ Task 2.11: Full E2E test (Cypress + Jest)                    │
+│ Task 2.12: Load test (k6)                                    │
+│ Task 2.13: Tech Inspector Mode (fetch wrapper + Zustand)     │
+│ Task 2.14: Final polish + cleanup                            │
+│                                                              │
+│ Deliverable: Full serverless, no Express, no Redis           │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ PHASE 3: LANDING PAGE MARKETING (1-2 minggu)                 │
+├──────────────────────────────────────────────────────────────┤
+│ Tujuan: Marketing site dengan real business value            │
+│                                                              │
+│ SPRINT 1 (3 hari): Foundation                                │
+│ Task 3.1: Setup dentflow-landing/ (Next.js)                  │
+│ Task 3.2: Layout + Design System                             │
+│ Task 3.3: SEO setup (sitemap, robots, JSON-LD, OG image)     │
+│ Task 3.4: Analytics (PostHog free tier)                      │
+│ Task 3.5: Deploy Vercel + custom domain                      │
+│                                                              │
+│ SPRINT 2 (3 hari): Standard Sections                         │
+│ Task 3.6: Hero + Services (8 spesialis)                      │
+│ Task 3.7: Branches (3 cabang + map)                          │
+│ Task 3.8: FAQ + Testimonials + Footer                        │
+│ Task 3.9: Responsive + Lighthouse >95                        │
+│                                                              │
+│ SPRINT 3 (4 hari): Killer Features                           │
+│ Task 3.10: Tech Inspector Mode (fetch wrapper + Zustand) ⭐  │
+│ Task 3.11: Interactive Demo Sandbox (mock fallback) ⭐       │
+│ Task 3.12: Live Statistics (SSE, real-time) ⭐               │
+│ Task 3.13: Real Doctor Availability ⭐                       │
+│ Task 3.14: ROI Calculator ⭐                                 │
+│                                                              │
+│ SPRINT 4 (2 hari): Queue Simulator                           │
+│ Task 3.15: Live Queue Simulator (SSE)                        │
+│ Task 3.16: AI Symptom Checker (OPTIONAL)                     │
+│                                                              │
+│ Deliverable: Landing page live, siap demo                    │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ PHASE 4: DEPLOY & DEMO (3-5 hari)                            │
+├──────────────────────────────────────────────────────────────┤
+│ Tujuan: Production-ready, portfolio siap apply kerja         │
+│                                                              │
+│ Task 4.1: Rekam video walkthrough (5 menit)                  │
+│ Task 4.2: Presentation deck (15 slide)                       │
+│ Task 4.3: GitHub repo polish (README, screenshots, badges)   │
+│ Task 4.4: Documentation finalization (12 files)              │
+│ Task 4.5: LinkedIn update + post                             │
+│ Task 4.6: Resume update                                      │
+│ Task 4.7: Apply kerja (5-10 posisi)                          │
+│                                                              │
+│ Deliverable: Portfolio siap, apply kerja                     │
+└──────────────────────────────────────────────────────────────┘
+
+================================================================
+## ⏱️ TIMELINE TOTAL
+================================================================
+
+Phase 0 (Bersih-bersih)        : 1-2 hari
+Phase 1 (Baseline Supabase)    : 3-5 hari
+Phase 2 (Refactor Serverless)  : 2-3 minggu
+Phase 3 (Landing Page)         : 1-2 minggu
+Phase 4 (Deploy & Demo)        : 3-5 hari
+
+TOTAL: ~6-8 minggu (santai)
+
+================================================================
+## 🔥 TECH STACK FINAL
+================================================================
+
+FRONTEND:
+- Next.js 14 (App Router)
+- React 18
+- TypeScript
+- Tailwind CSS v3
+- React Query (@tanstack/react-query)
+- Zustand (Tech Inspector Mode)
+- Axios
+
+BACKEND (Serverless):
+- Vercel API Routes (Node.js runtime)
+- TypeScript
+- Supabase Client (@supabase/supabase-js)
+- Zod (validation)
+
+DATABASE:
+- Supabase PostgreSQL 15
+- Supabase Realtime
+- Supabase Storage
+- Supabase pg_cron
+
+MOBILE:
+- Flutter (existing)
+- Hits Vercel API Routes
+
+DEPLOYMENT:
+- Vercel (frontend + backend)
+- Supabase (database + realtime + storage)
+- Firebase (mobile APK distribution)
+
+MONITORING:
+- Sentry (error tracking)
+- Vercel Analytics
+- PostHog (landing page analytics)
+
+================================================================
+## 📊 PROGRESS TRACKING
+================================================================
+
+| Phase | Status | Start | End | Notes |
+|-------|--------|-------|-----|-------|
+| Phase 0: Bersih-bersih | 🔴 Belum | - | - | - |
+| Phase 1: Baseline | 🔴 Belum | - | - | - |
+| Phase 2: Serverless | 🔴 Belum | - | - | - |
+| Phase 3: Landing | 🔴 Belum | - | - | - |
+| Phase 4: Demo | 🔴 Belum | - | - | - |
+
+Legend: 🔴 Belum | 🟡 In Progress | ✅ Selesai
+
+================================================================
+## 🎯 MILESTONE
+================================================================
+
+MILESTONE 1: Working Tree Clean (Phase 0)
+MILESTONE 2: Demo Baseline Jalan (Phase 1)
+MILESTONE 3: Full Serverless (Phase 2)
+MILESTONE 4: Landing Page Live (Phase 3)
+MILESTONE 5: Portfolio Siap (Phase 4)
+
+================================================================
+## 🔴 KNOWN RISKS & MITIGATION
+================================================================
+
+RISK 1: Refactor Serverless gagal
+- MITIGATION: Baseline Phase 1 tetap jalan → fallback
+
+RISK 2: Supabase free tier limit (500MB)
+- MITIGATION: Optimasi query + cleanup data lama
+
+RISK 3: Vercel timeout 10s
+- MITIGATION: Optimasi query, caching, streaming
+
+RISK 4: Cold start lambat
+- MITIGATION: UptimeRobot warming (ping tiap 5 menit)
+
+================================================================
+## 📌 NOTES
+================================================================
+
+1. Project ini SANTAI, ga ada deadline
+2. Prioritas: KUALITAS > KECEPATAN
+3. Setiap phase harus SELESAI & STABIL sebelum lanjut
+4. Update LOGBOOK & TECHNICAL DEBT tiap task
+5. Kalau stuck, tanya Gemini/OpenCode/DeepSeek
+
+================================================================
+END OF ROADMAP TAMBAHAN
+================================================================

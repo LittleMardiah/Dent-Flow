@@ -67,10 +67,14 @@ function TVDisplayContent() {
         </div>
         <div className="text-right">
           <div className="flex items-center gap-3 justify-end">
-            <span className={`text-sm font-medium ${statusInfo.className}`}>
+            <span
+              data-testid="connection-status"
+              data-status={status}
+              className={`text-sm font-medium ${statusInfo.className}`}
+            >
               ● {statusInfo.label}
             </span>
-            <span className="text-gray-500 text-sm">
+            <span className="text-gray-500 text-sm" data-testid="total-waiting">
               Antrian: {totalWaiting}
             </span>
           </div>
@@ -88,7 +92,10 @@ function TVDisplayContent() {
           <p className="text-gray-400 text-2xl uppercase tracking-widest mb-2">Sekarang Melayani</p>
           {nowServing ? (
             <div className="animate-pulse">
-              <p className="text-8xl md:text-9xl font-bold text-primary">
+              <p
+                data-testid="now-serving-number"
+                className="text-8xl md:text-9xl font-bold text-primary"
+              >
                 #{nowServing.queueNumber}
               </p>
               <p className="text-4xl md:text-5xl font-semibold text-white mt-4">
@@ -96,7 +103,9 @@ function TVDisplayContent() {
               </p>
             </div>
           ) : (
-            <p className="text-4xl text-gray-500">Belum ada pasien</p>
+            <p className="text-4xl text-gray-500" data-testid="no-patient">
+              Belum ada pasien
+            </p>
           )}
         </div>
 
@@ -108,6 +117,7 @@ function TVDisplayContent() {
               nextPatients.map((patient, index) => (
                 <div
                   key={patient.id}
+                  data-testid="queue-card"
                   className="bg-gray-800 rounded-xl p-4 text-center border border-gray-700"
                 >
                   <p className="text-3xl font-bold text-gray-300">

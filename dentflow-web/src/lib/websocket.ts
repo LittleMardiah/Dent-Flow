@@ -18,7 +18,7 @@ class WebSocketService {
   private socket: any = null;
   private isConnected = false;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
+  private maxReconnectAttempts = Infinity;
   private reconnectDelay = 1000;
   private eventHandlers: Map<string, EventCallback[]> = new Map();
   private queryClient: QueryClient | null = null;
@@ -29,23 +29,25 @@ class WebSocketService {
     }
   }
 
-  connect(token: string): void {
+  connect(token?: string): void {
     if (this.socket?.connected) {
       console.log('🔌 WebSocket already connected');
       return;
     }
 
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 
-                  process.env.NEXT_PUBLIC_API_URL?.replace('http', 'ws') || 
+                  process.env.NEXT_PUBLIC_API_URL?.replace('http', 'ws').replace('/api', '') || 
                   'ws://localhost:3001';
 
     console.log(`🔌 Connecting to WebSocket: ${wsUrl}`);
 
     this.socket = io(wsUrl, {
-      auth: { token },
+      auth: token ? { token } : undefined,
       reconnection: true,
       reconnectionDelay: this.reconnectDelay,
+      reconnectionDelayMax: 5000,
       reconnectionAttempts: this.maxReconnectAttempts,
+      randomizationFactor: 0.3,
       transports: ['websocket', 'polling'],
       timeout: 10000,
     });
@@ -181,6 +183,10 @@ let webSocketService: WebSocketService | null = null;
 export const getWebSocketService = (queryClient?: QueryClient): WebSocketService => {
   if (!webSocketService) {
     webSocketService = new WebSocketService(queryClient);
+    // Expose untuk E2E testing (cypress): window.__ws.disconnect(), dll
+    if (typeof window !== 'undefined') {
+      (window as any).__ws = webSocketService;
+    }
   }
   return webSocketService;
 };

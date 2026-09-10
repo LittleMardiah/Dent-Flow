@@ -1,15 +1,16 @@
 import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
-import { config } from '../config';
+
 import { logger } from '../utils/logger';
 import { InvoicePaymentService } from './invoicePayment.service';
+import { pool } from '../config/database';
 
 export class PaymentInputService {
   private pool: Pool;
   private invoicePaymentService: InvoicePaymentService;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
     this.invoicePaymentService = new InvoicePaymentService();
   }
 

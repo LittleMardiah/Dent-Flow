@@ -4,11 +4,19 @@ import {
   getPatientHistory,
   getMedicalRecords,
 } from '../handlers/patientHistory.handler';
+import { getPatientQuickView } from '../handlers/patientQuickView.handler';
 
 const router = Router();
 
 // Semua endpoint membutuhkan authentication
 router.use(authMiddleware);
+
+// Patient quick view for doctor queue board
+router.get(
+  '/patients/:id/quick-view',
+  roleMiddleware(['PATIENT', 'DOCTOR', 'ADMIN_BRANCH']),
+  getPatientQuickView
+);
 
 // GET /patients/:id/history - patient history (patient, doctor, admin)
 router.get(

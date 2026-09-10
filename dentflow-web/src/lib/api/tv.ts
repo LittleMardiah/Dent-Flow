@@ -22,7 +22,7 @@ export const tvApi = {
     const params = new URLSearchParams();
     params.append('branch_id', branchId);
     if (doctorId) params.append('doctor_id', doctorId);
-    const response = await apiClient.get(`/api/queue/status?${params.toString()}`);
+    const response = await apiClient.get(`/queue/status?${params.toString()}`);
     return response.data.data;
   },
 };

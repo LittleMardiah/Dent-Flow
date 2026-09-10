@@ -88,7 +88,7 @@ export default function DoctorQueuePage() {
     }
 
     // Find bookingId from queue (current patient)
-    const bookingId = currentPatient?.id || queue.find(q => q.patientId === selectedPatient.id)?.id;
+    const bookingId = currentPatient?.bookingId || queue.find(q => q.patientId === selectedPatient.id)?.bookingId;
     if (!bookingId) {
       alert('Pasien tidak ditemukan dalam antrian');
       return;
@@ -189,6 +189,11 @@ export default function DoctorQueuePage() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                {currentPatient.isWalkIn && (
+                  <span className="px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 ring-1 ring-amber-300">
+                    WALK-IN
+                  </span>
+                )}
                 <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
                   Sedang Dilayani
                 </span>
@@ -247,6 +252,11 @@ export default function DoctorQueuePage() {
                     <div>
                       <p className="text-lg font-bold text-gray-700">#{patient.queueNumber}</p>
                       <p className="font-medium text-gray-800">{patient.patientName}</p>
+                      {patient.isWalkIn && (
+                        <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 ring-1 ring-amber-300">
+                          WALK-IN
+                        </span>
+                      )}
                       <p className="text-xs text-gray-400">
                         {patient.waitTimeMinutes} menit menunggu
                       </p>
@@ -309,6 +319,11 @@ export default function DoctorQueuePage() {
                           {new Date(patient.checkInTime).toLocaleTimeString('id-ID')}
                         </td>
                         <td className="px-4 py-3">
+                          {patient.isWalkIn && (
+                            <span className="inline-block mr-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 ring-1 ring-amber-300">
+                              WALK-IN
+                            </span>
+                          )}
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                             patient.status === 'WAITING' ? 'bg-yellow-100 text-yellow-800' :
                             patient.status === 'BEING_CALLED' ? 'bg-blue-100 text-blue-800' :

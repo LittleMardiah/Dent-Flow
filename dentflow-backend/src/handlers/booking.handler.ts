@@ -62,10 +62,12 @@ export const getPatientBookings = async (req: Request, res: Response, _next: Nex
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
     const result = await pool.query(
-      `SELECT id, booking_code, status, session_start, session_end, created_at
-       FROM bookings
-       WHERE patient_id = (SELECT id FROM patients WHERE user_id = $1)
-       ORDER BY created_at DESC`,
+      `SELECT b.id, b.booking_code, b.status, b.session_start, b.session_end, b.created_at,
+        d.full_name AS doctor_name
+       FROM bookings b
+       LEFT JOIN doctors d ON b.doctor_id = d.id
+       WHERE b.patient_id = (SELECT id FROM patients WHERE user_id = $1)
+       ORDER BY b.created_at DESC`,
       [patientId]
     );
     res.status(200).json({ success: true, data: { bookings: result.rows } });

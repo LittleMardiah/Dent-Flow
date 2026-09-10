@@ -1,17 +1,18 @@
 import { getErrorMessage } from "../utils/error.util";
 import { getCurrentTime } from "../utils/time";
 import { Pool } from 'pg';
-import { config } from '../config';
+
 import { logger } from '../utils/logger';
 import redis from '../config/redis';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
+import { pool } from '../config/database';
 
 export class CheckinService {
   private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
   }
 
   async checkinPatient(checkInCode: string, branchId: string, adminId: string) {

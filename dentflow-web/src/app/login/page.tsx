@@ -18,8 +18,8 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await login(email, password);
-      router.push('/admin/queue');
+      const data = await login(email, password);
+      router.push(data.redirectUrl || '/patient/dashboard');
     } catch (err: any) {
       setError(err.message || 'Login gagal');
     } finally {

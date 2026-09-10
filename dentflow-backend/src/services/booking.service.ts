@@ -1,17 +1,19 @@
 import { getErrorMessage, getErrorStack } from "../utils/error.util";
 import { Pool } from 'pg';
 import { NotificationService } from "./notification.service";
-import { config } from '../config';
+
 import { logger } from '../utils/logger';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
 import { slotAvailabilityService } from './slotAvailability.service';
+import { pool } from '../config/database';
 
 export class BookingService {
+  private notificationService: NotificationService;
   private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
     this.notificationService = new NotificationService();
   }
 

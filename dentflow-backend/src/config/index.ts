@@ -32,16 +32,7 @@ export const config = {
     url: process.env.DATABASE_URL,
   },
   redis: {
-  noShow: {
-    graceMinutes: parseInt(process.env.NO_SHOW_GRACE_MINUTES || "15", 10),
-  },
     url: process.env.REDIS_URL || 'redis://localhost:6379',
-  noShow: {
-    graceMinutes: parseInt(process.env.NO_SHOW_GRACE_MINUTES || "15", 10),
-  },
-  },
-  noShow: {
-    graceMinutes: parseInt(process.env.NO_SHOW_GRACE_MINUTES || "15", 10),
   },
   minio: {
     endpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9002',
@@ -57,9 +48,7 @@ export const config = {
   logging: {
     level: process.env.LOG_LEVEL || 'info',
   },
+  noShow: {
+    graceMinutes: parseInt(process.env.NO_SHOW_GRACE_MINUTES || "15", 10),
+  },
 };
-
-console.log('✅ Config loaded successfully!');
-console.log(`   - Database: ${config.database.url}`);
-console.log(`   - Redis: ${config.redis.url}`);
-console.log(`   - MinIO: ${config.minio.endpoint}`);

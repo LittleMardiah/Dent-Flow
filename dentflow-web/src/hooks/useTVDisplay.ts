@@ -119,6 +119,10 @@ export function useTVDisplay({
 
   // Initial fetch
   useEffect(() => {
+    // Reset flag sebelum memulai fetch (penting utk React StrictMode / double-mount:
+    // cleanup di bawah men-set mountedRef=false, harus di-reset true saat mount ulang).
+    mountedRef.current = true;
+
     if (branchId) {
       fetchData();
       // Start polling anyway (fallback)

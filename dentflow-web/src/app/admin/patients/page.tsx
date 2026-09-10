@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { useAuth } from '@/context/AuthContext';
 import { usePatients } from '@/hooks/usePatients';
+import { patientsApi } from '@/lib/api/patients';
 import { PatientDetailModal } from '@/components/admin/PatientDetailModal';
 import { PatientEditModal } from '@/components/admin/PatientEditModal';
 import { Button } from '@/components/ui/Button';
@@ -24,7 +25,10 @@ export default function PatientsPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
 
-  const branchId = user?.branchId || 'A';
+  const [accessibleBranches, setAccessibleBranches] = useState<{ id: string; name: string }[]>([]);
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
+
+  const branchId = activeBranchId || user?.branchId || 'A';
   const [searchQuery, setSearchQuery] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
@@ -57,6 +61,20 @@ export default function PatientsPage() {
       router.push('/login');
     }
   }, [authLoading, isAuthenticated, router]);
+
+  // Muat daftar branch yang boleh diakses (own + granted)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    patientsApi
+      .getAccessibleBranches()
+      .then((branches) => {
+        setAccessibleBranches(branches);
+        setActiveBranchId((prev) => prev || branches[0]?.id || null);
+      })
+      .catch((err: any) => {
+        console.error('Gagal memuat cabang:', err?.message || err);
+      });
+  }, [isAuthenticated]);
 
   // Handle search
   const handleSearch = () => {
@@ -103,6 +121,20 @@ export default function PatientsPage() {
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-bold">Manajemen Pasien</h2>
           <span className="text-sm text-gray-500">{total} pasien</span>
+          {accessibleBranches.length > 1 && (
+            <select
+              data-testid="branch-switcher"
+              value={activeBranchId || branchId}
+              onChange={(e) => setActiveBranchId(e.target.value)}
+              className="px-3 py-1.5 border border-neutral rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary outline-none"
+            >
+              {accessibleBranches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <div className="flex gap-2">
           <Button variant="primary" size="sm">

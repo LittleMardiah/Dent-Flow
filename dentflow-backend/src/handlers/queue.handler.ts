@@ -1,8 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { queueService } from '../services/queue.service';
 import { doctorQueueService } from '../services/doctorQueue.service';
+import { QueueManagementService } from '../services/queueManagement.service';
+import { broadcastQueueUpdated } from '../websocket';
 import { logger } from '../utils/logger';
 import { getErrorMessage, getErrorStack } from '../utils/error.util';
+
+const queueManagementService = new QueueManagementService();
 
 export const getQueueStatus = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -16,7 +20,7 @@ export const getQueueStatus = async (req: Request, res: Response, next: NextFunc
     }
 
     // doctor_id bisa undefined, service handle dengan optional parameter
-    const result = await queueService.getQueueStats(
+    const result = await queueManagementService.getTvDisplay(
       branch_id as string,
       doctor_id as string | undefined
     );
@@ -87,6 +91,20 @@ export const completePatient = async (req: Request, res: Response, next: NextFun
 
     // queue_id bisa string atau string[], cast ke string
     const result = await doctorQueueService.completePatient(queue_id as string, doctorId);
+
+    if (result?.branch_id) {
+      broadcastQueueUpdated({
+        branchId: result.branch_id,
+        doctorId: result.doctor_id,
+        action: 'complete',
+      });
+    } else if (result?.branchId) {
+      broadcastQueueUpdated({
+        branchId: result.branchId,
+        doctorId: result.doctorId,
+        action: 'complete',
+      });
+    }
 
     res.status(200).json({
       success: true,

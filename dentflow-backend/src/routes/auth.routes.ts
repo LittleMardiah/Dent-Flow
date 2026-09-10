@@ -40,6 +40,46 @@ router.post('/patient/register', async (req: Request, res: Response) => {
   }
 });
 
+// =============== AUTO-DETECT LOGIN ===============
+router.post('/login', async (req: Request, res: Response) => {
+  try {
+    const { email, username, password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password wajib diisi',
+      });
+    }
+
+    const loginId = username || email;
+    if (!loginId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email atau username wajib diisi',
+      });
+    }
+
+    const result = await authService.detectRoleAndLogin(loginId, password);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        user: result.user,
+        token: result.token,
+        refreshToken: result.refreshToken,
+        role: result.role,
+        redirectUrl: result.redirectUrl,
+      },
+    });
+  } catch (error: unknown) {
+    res.status(401).json({
+      success: false,
+      message: getErrorMessage(error) || 'Login gagal',
+    });
+  }
+});
+
 // =============== PATIENT LOGIN ===============
 router.post('/patient/login', async (req: Request, res: Response) => {
   try {

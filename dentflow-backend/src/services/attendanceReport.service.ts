@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
-import { config } from '../config';
+
 import { logger } from '../utils/logger';
+import { pool } from '../config/database';
 
 export interface PatientAttendance {
   patientId: string;
@@ -25,7 +26,7 @@ export class AttendanceReportService {
   private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({ connectionString: config.database.url });
+    this.pool = pool;
   }
 
   /**
@@ -46,7 +47,6 @@ export class AttendanceReportService {
             COUNT(*) FILTER (WHERE status = 'CANCELLED') as cancellations
           FROM bookings
           WHERE temp_patient_id = $1
-            AND deleted_at IS NULL
         `;
         params = [patientId];
       } else {
@@ -57,8 +57,7 @@ export class AttendanceReportService {
             COUNT(*) FILTER (WHERE status = 'NO_SHOW') as no_shows,
             COUNT(*) FILTER (WHERE status = 'CANCELLED') as cancellations
           FROM bookings
-          WHERE pasien_id = $1
-            AND deleted_at IS NULL
+          WHERE patient_id = $1
         `;
         params = [patientId];
       }
@@ -98,20 +97,19 @@ export class AttendanceReportService {
       // Query untuk regular patients (dari users)
       const regularQuery = `
         SELECT 
-          u.id as patient_id,
-          u.full_name as patient_name,
-          u.phone_number as phone,
+          p.id as patient_id,
+          p.full_name as patient_name,
+          p.phone as phone,
           COUNT(*) FILTER (WHERE b.status = 'NO_SHOW') as no_show_count,
           MAX(b.no_show_at) as last_no_show_date,
           COUNT(*) as total_bookings,
           false as is_walk_in
         FROM users u
-        JOIN bookings b ON u.id = b.pasien_id
+        JOIN patients p ON p.user_id = u.id
+        JOIN bookings b ON b.patient_id = p.id
         WHERE u.branch_id = $1
           AND u.role = 'PATIENT'
-          AND b.deleted_at IS NULL
-          AND u.deleted_at IS NULL
-        GROUP BY u.id, u.full_name, u.phone_number
+        GROUP BY p.id, p.full_name, p.phone
         HAVING COUNT(*) FILTER (WHERE b.status = 'NO_SHOW') > 0
       `;
 
@@ -128,7 +126,6 @@ export class AttendanceReportService {
         FROM temporary_patients tp
         JOIN bookings b ON tp.id = b.temp_patient_id
         WHERE tp.branch_id = $1
-          AND b.deleted_at IS NULL
           AND tp.deleted_at IS NULL
           AND tp.converted_to_patient_id IS NULL
         GROUP BY tp.id, tp.full_name, tp.phone
@@ -157,6 +154,39 @@ export class AttendanceReportService {
       const err = error as Error;
       logger.error({ error: err.message, stack: err.stack }, 'Error fetching no-show summary');
       throw new Error('Failed to fetch no-show summary');
+    }
+  }
+
+  /**
+   * Get attendance trend for a patient (last 3 months)
+   */
+  async getPatientTrend(patientId: string): Promise<any[]> {
+    try {
+      const query = `
+        SELECT 
+          DATE_TRUNC('month', booking_date) as month,
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE status = 'COMPLETED') as completed,
+          COUNT(*) FILTER (WHERE status = 'NO_SHOW') as no_shows,
+          COUNT(*) FILTER (WHERE status = 'CANCELLED') as cancellations
+        FROM bookings
+        WHERE patient_id = $1
+          AND booking_date >= CURRENT_DATE - INTERVAL '3 months'
+        GROUP BY DATE_TRUNC('month', booking_date)
+        ORDER BY month DESC
+      `;
+      const result = await this.pool.query(query, [patientId]);
+      return result.rows.map(row => ({
+        month: row.month,
+        total: parseInt(row.total),
+        completed: parseInt(row.completed),
+        noShows: parseInt(row.no_shows),
+        cancellations: parseInt(row.cancellations),
+      }));
+    } catch (error: unknown) {
+      const err = error as Error;
+      logger.error({ error: err.message, stack: err.stack }, 'Error fetching patient trend');
+      throw new Error('Failed to fetch patient trend');
     }
   }
 }

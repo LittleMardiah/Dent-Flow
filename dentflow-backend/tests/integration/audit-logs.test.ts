@@ -46,16 +46,23 @@ describe('Audit Logs Integration Tests', () => {
   });
 
   afterAll(async () => {
-    // Hapus semua user yang dibuat (termasuk di test filter)
-    if (filterPatientUserId) {
-      await pool.query('DELETE FROM users WHERE id = $1', [filterPatientUserId]);
+    // audit_logs sekarang IMMUTABLE (append-only) — UPDATE/DELETE ditolak.
+    // User masih bisa dihapus (FK audit_logs.user_id = ON DELETE SET NULL).
+    // Branch tidak bisa dihapus selama masih direferensikan audit_logs (FK RESTRICT),
+    // jadi penghapusannya di-best-effort (ignore error).
+    try {
+      if (filterPatientUserId) {
+        await pool.query('DELETE FROM users WHERE id = $1', [filterPatientUserId]);
+      }
+      if (filterDoctorUserId) {
+        await pool.query('DELETE FROM users WHERE id = $1', [filterDoctorUserId]);
+      }
+      await pool.query('DELETE FROM users WHERE id = $1', [testAdminUserId]);
+    } catch (error) {
+      console.error('Cleanup users failed:', (error as Error).message);
     }
-    if (filterDoctorUserId) {
-      await pool.query('DELETE FROM users WHERE id = $1', [filterDoctorUserId]);
-    }
-    await pool.query('DELETE FROM audit_logs WHERE branch_id = $1', [branchId]);
-    await pool.query('DELETE FROM users WHERE id = $1', [testAdminUserId]);
-    await pool.query('DELETE FROM branches WHERE id = $1', [branchId]);
+
+    // Audit log & branch: biarkan tetap ada (immutable, FK RESTRICT).
     await pool.end();
   });
 

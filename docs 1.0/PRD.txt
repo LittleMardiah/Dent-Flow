@@ -1,0 +1,1320 @@
+================================================================
+PRD (PRODUCT REQUIREMENT DOCUMENT) - DENTFLOW v10.0 FINAL (MODULITH)
+Sistem Manajemen Klinik Gigi Multi-Cabang (Modular Monolith)
+================================================================
+
+1. HEADER & IDENTITAS
+   Nama Proyek      : DentFlow
+   Versi Dokumen    : 10.0 (Final, MVP dengan Payment Gateway + Auto-Invoice)
+   Tanggal          : 2026-07-07
+   Penulis          : Solo Developer / Product Manager
+   Status           : ✅ Approved for Development
+   Target Rating    : 9-9.5/10 untuk Portfolio Recruiter Internasional
+   
+   CHANGELOG v9.0 → v10.0:
+   ✅ Payment Gateway Midtrans (Sandbox + Ngrok) - Automated DP confirmation
+   ✅ Mandatory Admin Check-in - Kodebooking input by admin (no self-service)
+   ✅ TV Queue Display - Real-time antrian dengan auto-delete nomor selesai
+   ✅ Auto-Invoice - Invoice otomatis saat EMR completed
+   ✅ Role-based Menu - Hilangkan Stok menu di Dokter (tetap di Admin)
+
+2. RINGKASAN EKSEKUTIF
+   
+   LATAR BELAKANG:
+   Klinik gigi 3 cabang (A,B,C) dengan 8 dokter spesialis per cabang (total 24 dokter) 
+   mengalami:
+   - Antrean manual dan tidak terkelola real-time
+   - Rekam medis (EMR) tidak terpusat antar cabang
+   - Pembayaran & booking masih manual/cash-based
+   - Audit trail tidak terdokumentasikan
+   - Check-in process tidak kondusif (self-service chaos)
+   - Admin involvement di payment bottleneck
+
+   SOLUSI PRODUK:
+   Sistem modular monolith (Modulith) berbasis Node.js/Express dengan:
+   - Backend: Node.js + Express (event-driven dengan RabbitMQ opsional)
+   - Database: PostgreSQL (1 instance, multi-tenant dengan branch_id)
+   - Cache: Redis (queue management, atomic counters)
+   - Storage: MinIO (file uploads)
+   - Payment: Midtrans Sandbox (webhook untuk DP confirmation)
+   - Frontend Web: Next.js (admin + dokter)
+   - Mobile: Flutter Android (optional V1, live demo via APK)
+   - Landing Page: Next.js (public, dengan AI chat support)
+   - TV Display: Real-time queue display per cabang
+   
+   USER & ROLE:
+   - Pasien: Booking online (mobile app/web), payment via Midtrans, check-in via admin, lihat history EMR
+   - Admin Cabang: Manage queue, input kode booking check-in, view invoice, lihat EMR (read-only), backup, audit log, manage stok
+   - Dokter: Input EMR, call pasien dari queue, input tindakan & resep, lihat invoice (read-only)
+
+   VALUE PROPOSITION:
+   ✅ Booking online dengan DP Rp 50.000 via Payment Gateway (automated confirmation)
+   ✅ Check-in mandatory dengan admin input kode (operasional control, mencegah chaos)
+   ✅ Real-time queue management (FIFO, fair system)
+   ✅ TV Queue Display - Antrian real-time per dokter (no patient names, privacy-safe)
+   ✅ EMR terpusat (dokter input 1x, pasien lihat filtered fields)
+   ✅ Auto-Invoice saat EMR completed (eliminate admin invoice creation burden)
+   ✅ Multi-tenant isolation (3 cabang, data completely separate)
+   ✅ Audit log immutable (Bahasa Indonesia, 15+ event types)
+   ✅ Smart appointment suggestion via AI chat (landing page)
+   ✅ Simple payment tracking + export CSV (untuk manual reconciliation)
+   ✅ NO SHOW penalty (DP hangus jika tidak check-in)
+   ✅ Walk-in fair system (FIFO dengan online booking)
+   ✅ Daily backup PostgreSQL (local + Supabase auto-backup)
+   ✅ Role-based menu (Stok hanya untuk Admin, bukan Dokter)
+
+3. TUJUAN PRODUK
+
+   PRIMARY GOAL:
+   - Build portfolio project untuk Remote Software Engineer / AI Engineer position
+   - Target: Rating 9-9.5/10 dari international recruiters
+   - Showcase: Modulith architecture, full-stack development, testing discipline, AI integration, Payment Gateway integration
+   
+   SECONDARY GOALS:
+   - Demonstrate system design thinking (multi-tenant, event-driven, audit trail, payment flows)
+   - Show shipping mindset (MVP scope clarity, trade-off decisions)
+   - Professional documentation (TDD, HALAMAN, test coverage, deployment guide)
+   - Production-ready code quality (>70% test coverage, clean architecture)
+
+4. RUANG LINGKUP (SCOPE V1.0)
+
+IN SCOPE (MVP - WAJIB IMPLEMENTASIKAN):
+
+INFRASTRUKTUR & ARCHITECTURE:
+✅ Modular Monolith (Node.js/Express)
+✅ PostgreSQL (1 instance, multi-tenant dengan branch_id)
+✅ Redis (queue management, session cache)
+✅ MinIO (file storage untuk dokumentasi)
+✅ RabbitMQ (event-driven internal, opsional tapi recommended)
+✅ Docker Compose (orchestration)
+
+MULTI-TENANT (3 CABANG):
+✅ Cabang A, B, C dengan data completely separated
+✅ Admin cabang hanya lihat data cabang sendiri (row-level security)
+✅ Branch_id di setiap table (WHERE branch_id filter)
+
+USER & AUTHENTICATION:
+✅ Pasien: Register/login via email + password, lupa password via email reset
+✅ Admin Cabang: Username/password login
+✅ Dokter: Username/password login (format: dr_spesialisasi_cabang)
+✅ Security: bcrypt password, JWT tokens (httpOnly), rate limiting
+
+BOOKING SYSTEM:
+✅ Pasien pilih: Cabang → Spesialis → Tanggal → Sesi
+✅ Hanya hari dengan jadwal yang tersedia (dari tabel jadwal dokter)
+✅ Max 4 pasien online per sesi
+✅ DP Rp 50.000 (non-refundable, bold warning modal)
+✅ Pasien bisa cancel booking tapi DP tidak kembali
+✅ Status booking: PENDING_PAYMENT → PAYMENT_CONFIRMED → CHECKED_IN → COMPLETED
+
+PAYMENT GATEWAY (MIDTRANS SANDBOX):
+✅ Pasien klik "Bayar Sekarang" → Redirect ke Midtrans payment page
+✅ Midtrans Sandbox dengan Ngrok (no real money)
+✅ Simulate successful payment flow (sandbox environment)
+✅ Webhook endpoint: POST /webhook/payment-confirmation
+✅ Webhook handler: Update booking status → PAYMENT_CONFIRMED
+✅ Response pasien: Kode Booking + Nama Dokter + Spesialis + Cabang + Jadwal Sesi (Hari & Tanggal)
+✅ Admin TIDAK terlibat payment confirmation (system automated)
+✅ Pasien tidak perlu waiting untuk admin confirmation
+
+CHECK-IN SYSTEM (MANDATORY ADMIN INPUT):
+✅ Pasien datang → Admin input kode booking (6-digit alphanumerik)
+✅ Admin scan/input kode ke admin panel
+✅ Validation: Kode valid? Waktu dalam sesi? Kode belum dipakai? Pasien sudah bayar?
+✅ Success: Generate nomor antrean via Redis atomic counter
+✅ Display: Nomor antrean muncul di TV Antrian + Mobile app pasien (real-time)
+✅ Self-service check-in DIHILANGKAN (agar flow tetap kondusif)
+✅ NO SHOW: Jika tidak check-in hingga akhir sesi → status NO_SHOW, DP hangus
+
+QUEUE MANAGEMENT:
+✅ Real-time queue per dokter (WebSocket or polling)
+✅ FIFO ordering: berdasarkan waktu check-in (online + walk-in mixed fair)
+✅ Dokter dapat "panggil" pasien dari queue
+✅ Admin dapat input walk-in pasien (tanpa kode, langsung ke queue)
+✅ FCM push notification saat dokter panggil
+✅ Queue state: WAITING → BEING_CALLED → COMPLETED (auto-delete dari display)
+
+TV QUEUE DISPLAY (NEW FEATURE - v10):
+✅ Lokasi: Ruang tunggu per cabang
+✅ Menampilkan: Semua 8 spesialis dengan antrian real-time
+✅ Format per dokter:
+   [Nama Dokter] | [Spesialis] | [Sesi]
+   NOW: [Nomor yang sedang dipanggil]
+   QUEUE: [Nomor-nomor menunggu]
+✅ Real-time update: Setiap pasien check-in, dokter panggil, atau selesai
+✅ Auto-delete: Nomor yang selesai otomatis hilang dari display
+✅ Color coding: NOW (merah highlight), QUEUE (biru normal)
+✅ Privacy: Hanya nomor urut (TIDAK tampilkan nama pasien)
+✅ Fallback: Polling 2-3 detik jika WebSocket down
+
+EMR (ELECTRONIC MEDICAL RECORD):
+✅ Dokter dapat create EMR SETELAH treatment selesai
+✅ EMR fields: Keluhan, Tindakan (dropdown + text), Resep/Anjuran
+✅ Optional fields: Stok/material yang digunakan (notes saja, tidak deduct otomatis)
+✅ Dokter bebas edit kapan saja (setiap edit tercatat audit log)
+✅ Admin: Read-only access ke EMR (tidak bisa edit)
+✅ Pasien view: Filtered fields hanya (Keluhan, Tindakan, Resep - Diagnosa hidden)
+✅ Pasien lihat di mobile app history/riwayat (read-only)
+✅ EMR history per pasien: daftar semua encounter + detail
+✅ EMR status: DRAFT → COMPLETED (trigger invoice generation)
+
+AUTO-INVOICE (NEW FEATURE - v10):
+✅ Trigger: Saat dokter COMPLETED EMR
+✅ Invoice auto-generate dengan:
+   - Nomor invoice unik (format: INV-[CABANG]-[YYYYMMDD]-[SEQUENCE])
+   - Nama pasien, kode booking, tanggal treatment
+   - Dokter, spesialis, cabang
+   - Breakdown cost: DP (Rp 50.000), Biaya treatment, Total
+   - Status: UNPAID (default)
+✅ Invoice dikirim ke Admin panel (list unpaid invoices)
+✅ Dokter bisa view invoice (read-only, informational)
+✅ Payment method: Cash atau Transfer (ditandai di admin saat input)
+✅ Admin mark paid: Timestamp + nominal + method + notes
+✅ Invoice history: Audit trail untuk reconciliation
+
+PAYMENT TRACKING:
+✅ Admin input pembayaran (nominal, metode: cash/transfer, timestamp)
+✅ Invoice status: UNPAID → PAID
+✅ Payment status tracking per pasien per sesi
+✅ Export CSV: Payment report per cabang per hari
+✅ Manual reconciliation: Admin export CSV, compare dengan uang fisik
+✅ Aging report: Daftar invoice belum dibayar (optional V1)
+
+JADWAL DOKTER:
+✅ 8 dokter spesialis per cabang (hardcoded di V1):
+   - Senin, Rabu, Jumat: Sp.BM, Sp.KG, Sp.KGA, Sp.PM
+   - Selasa, Kamis, Sabtu: Sp.Ort, Sp.Perio, Sp.Pros, Sp.RKG
+✅ Admin dapat override jadwal (tercatat di audit log)
+
+AUDIT LOG:
+✅ Immutable, append-only (no UPDATE/DELETE)
+✅ 15+ event types: Login, Booking, Payment Confirmation, DP Paid, Check-in, EMR Create/Edit, 
+   Invoice Generated, Payment Input, Override Jadwal, NO_SHOW, Export CSV, Backup, etc.
+✅ Readable dalam Bahasa Indonesia
+✅ Fields: Timestamp, User, Action, Entity, Details, Branch_ID
+✅ Filterable & exportable (CSV)
+
+BACKUP & DISASTER RECOVERY:
+✅ Daily PostgreSQL dump (cron job, 23:00 WIB)
+✅ Local storage: /backups/dentflow-{date}.sql (keep last 7 backups)
+✅ Cloud backup: Supabase auto-backup (included free tier)
+✅ Restore: Manual by developer (no UI, no self-service)
+✅ Procedure: Developer restore dari .sql file via psql CLI
+
+FRONTEND - WEB ADMIN/DOKTER (Next.js):
+✅ Admin dashboard: Queue real-time, pasien list, invoice management, payment input, EMR view, audit log, stok/inventaris
+✅ Dokter portal: Queue, EMR input & creation, pasien list, call pasien button, invoice view (read-only)
+✅ Landing page (public): Info klinik, smart AI chat (appointment suggestion + FAQ)
+✅ Settings page: Change password, backup trigger, audit log export
+
+ADMIN EXCLUSIVE FEATURES:
+✅ Check-in management: Input kode booking pasien
+✅ Walk-in management: Add walk-in pasien langsung ke queue
+✅ Stok/Inventaris: Add item, view stok, manual deduct, update qty
+✅ Payment input & reconciliation
+✅ Invoice management (view, mark paid)
+✅ Queue override (jika perlu adjustment)
+
+DOKTER EXCLUSIVE FEATURES:
+✅ Call pasien dari queue
+✅ EMR creation SETELAH treatment
+✅ Queue management (view queue, mark selesai)
+✅ Invoice view (informational, read-only)
+
+FRONTEND - MOBILE APP (Flutter Android, Optional V1):
+✅ Pasien registration/login
+✅ Booking flow (pilih cabang → spesialis → tanggal → sesi → Midtrans payment)
+✅ Booking confirmation: Kode booking + dokter + spesialis + cabang + jadwal
+✅ Check-in screen: Instruksi untuk datang ke admin (no self-service)
+✅ Queue position real-time (WebSocket polling)
+✅ Queue number notification: Muncul setelah admin input kode
+✅ EMR history view (filtered fields: Keluhan, Tindakan, Resep)
+✅ Push notification (FCM) saat nomor antrian ready/dipanggil
+✅ Live demo: Firebase App Distribution (gratis APK download)
+
+AI FEATURES:
+✅ SMART CHAT SUPPORT (Landing page public)
+   - Hardcoded FAQ (20-30 questions)
+   - Gemini API enhancement (personalize FAQ answers)
+   - Appointment suggestion based on keluhan pasien
+   - Route ke spesialist yang tepat
+   - Link langsung ke booking page
+   - Escalate ke admin jika needed
+   - Cost: Free (Gemini free tier)
+   - Implementation: 6-8 hours
+
+TESTING:
+✅ Unit tests (Vitest): API business logic
+✅ Integration tests: API + Database
+✅ E2E tests (Playwright): Web admin + mobile (if app exists)
+✅ Target: >70% code coverage
+
+DEPLOYMENT:
+✅ Backend: Vercel (Node.js) OR Render.com (free tier)
+✅ Database: Supabase (PostgreSQL, free 2GB)
+✅ Frontend: Vercel (Next.js static)
+✅ Storage: MinIO (Docker, or S3 compatible)
+✅ Cost: Rp 0 (all free tier)
+
+---
+
+OUT OF SCOPE (V2 / TIDAK IMPLEMENTASIKAN):
+
+INVENTORY & STOCK MANAGEMENT (Auto-deduction):
+❌ Auto-deduct stok dari EMR entry
+❌ Stock deduction workflow dengan audit
+❌ Opname & physical count
+❌ Low stock alerts (basic manual tracking OK)
+Reason: Over-engineer for fake project. Manual input by admin sufficient.
+
+REAL-TIME RECONCILIATION:
+❌ Automated discrepancy detection
+❌ Approval workflow untuk reconciliation
+❌ Real-time reconciliation UI
+Reason: Manual export + spreadsheet sufficient, simpler
+
+TV QUEUE DISPLAY - ADVANCED:
+❌ Queue history/archive per hari
+❌ Performance analytics (avg wait time)
+❌ Sound/beep notification di TV saat panggil
+Reason: V2 feature, not critical for MVP
+
+PAYMENT GATEWAY - ADVANCED:
+❌ Multiple payment methods (installment, credit card, etc)
+❌ Automatic refund process
+❌ Payment failure recovery workflow
+Reason: DP only (non-refundable), single payment, V2 enhancement
+
+DOCTOR PERFORMANCE:
+❌ Doctor rating system (patient feedback)
+❌ Doctor performance metrics
+❌ Appointment duration tracking
+Reason: Out of scope, not core MVP
+
+PATIENT ENGAGEMENT:
+❌ SMS/WhatsApp reminder sebelum appointment
+❌ Post-appointment feedback survey
+❌ Loyalty points / rewards program
+Reason: Out of scope V1, enhancement for V2
+
+---
+
+5. DETAILED FEATURE SPECIFICATIONS
+
+5.1 PAYMENT GATEWAY FLOW (NEW - v10)
+   
+   ARCHITECTURE:
+   - Provider: Midtrans (Sandbox environment)
+   - Tunnel: Ngrok (local → public HTTPS)
+   - Flow Type: Redirect flow (server-to-server webhook confirmation)
+   - Payment Status: Pending → Settlement (DP Rp 50.000)
+   
+   USER FLOW:
+   1. Pasien selesai booking, klik "Bayar Sekarang"
+   2. System redirect ke Midtrans payment page
+   3. Pasien select payment method (simulated, no real money)
+   4. Pasien complete payment (instant, sandbox mode)
+   5. Midtrans send webhook → /webhook/payment-confirmation
+   6. Backend update booking status: PENDING_PAYMENT → PAYMENT_CONFIRMED
+   7. System return to mobile/web: Booking confirmation page
+   8. Display: Kode Booking + Nama Dokter + Spesialis + Cabang + Jadwal (Hari & Tanggal)
+   9. Pasien see "Silakan datang ke Admin untuk Check-in"
+   
+   API ENDPOINTS:
+   POST /api/bookings/{id}/payment-redirect
+   - Request: booking_id, email, nominal (Rp 50.000)
+   - Response: Redirect URL ke Midtrans payment
+   - Headers: Authorization (JWT)
+   
+   POST /webhook/payment-confirmation
+   - Request: (from Midtrans) transaction_id, status, booking_id
+   - Logic: Verify signature → Update booking → FCM notification
+   - Response: 200 OK (Midtrans requirement)
+   
+   DATABASE CHANGES:
+   - bookings table: ADD COLUMN payment_gateway_id (varchar, Midtrans transaction ID)
+   - bookings table: ADD COLUMN payment_status (PENDING_PAYMENT | PAYMENT_CONFIRMED | FAILED)
+   - bookings table: ADD COLUMN payment_confirmed_at (timestamp)
+   - audit_logs: ADD event type PAYMENT_CONFIRMED_BY_GATEWAY
+   
+   ERROR HANDLING:
+   - Payment timeout: Booking stay PENDING_PAYMENT (can retry 24 jam)
+   - Webhook failure: Retry logic 3x dengan exponential backoff
+   - Signature mismatch: Log & alert, do not update booking
+   - Network error: Fallback polling (client check status setiap 5 detik)
+   
+   TESTING:
+   - Simulate successful payment via Midtrans simulator
+   - Simulate payment failure (insufficient balance)
+   - Test webhook signature verification
+   - Test idempotency (duplicate webhook doesn't duplicate booking)
+
+5.2 MANDATORY ADMIN CHECK-IN (NEW - v10)
+   
+   RATIONALE:
+   - Prevent check-in chaos (self-service problematic di Indonesian market)
+   - Operasional control: Admin verify pasien benar-benar datang
+   - Fair queue assignment: Prevent fraud/code sharing
+   - Clinical workflow: Admin greet pasien, coordinate dengan dokter
+   
+   PROCESS:
+   1. Pasien tiba di klinik (sudah bayar DP via Midtrans)
+   2. Pasien approach admin desk
+   3. Admin ask: "Kode booking Anda berapa?"
+   4. Admin input kode booking ke admin panel (6-digit field)
+   5. System validate:
+      - Kode valid (exist di database)?
+      - Booking status = PAYMENT_CONFIRMED?
+      - Waktu saat ini dalam sesi dokter (check jadwal)?
+      - Kode belum pernah di-check-in sebelumnya?
+   6. Validation success: Generate nomor antrean (Redis atomic counter)
+   7. Update booking: status = CHECKED_IN, queue_number = X, checked_in_at = NOW
+   8. Display nomor di admin screen (immediate)
+   9. Push FCM: "Nomor antrian Anda: 05. Silakan menunggu di ruang tunggu"
+   10. TV display: Update real-time (add nomor 05 ke QUEUE list)
+   
+   VALIDATION LOGIC:
+   ```
+   if (kode.valid && booking.status == PAYMENT_CONFIRMED 
+       && NOW within booking.sesi_waktu 
+       && !kode.checked_in_before) {
+       generate_queue_number()
+   } else {
+       return error dengan detail reason
+   }
+   ```
+   
+   ERROR MESSAGES:
+   - "Kode booking tidak ditemukan"
+   - "Kode sudah digunakan sebelumnya"
+   - "Sesi sudah berakhir"
+   - "Pembayaran belum dikonfirmasi"
+   - "Booking belum dibuat"
+   
+   PREVENT RE-CHECK-IN:
+   - If kode already checked-in today, show: "Anda sudah check-in, nomor antrian: 05"
+   - Do not generate duplicate queue number
+   
+   WALK-IN SUPPORT:
+   - Admin can add walk-in pasien tanpa kode (skip validation)
+   - Input: Nama pasien, pilih spesialis, auto-generate kode & queue number
+   - Walk-in status: WALK_IN (untuk audit log tracking)
+   - Queue priority: Mixed FIFO dengan online bookings (fair system)
+   
+   UI MOCKUP (ADMIN PANEL):
+   ```
+   ┌──────────────────────────────┐
+   │ CHECK-IN PASIEN              │
+   ├──────────────────────────────┤
+   │ Masukkan Kode Booking:       │
+   │ [_____________________]      │
+   │                              │
+   │ [CARI PASIEN] [ADD WALK-IN]  │
+   │                              │
+   ├──────────────────────────────┤
+   │ HASIL:                       │
+   │ Nama: Budi Santoso           │
+   │ Spesialis: Sp.BM             │
+   │ Dokter: Dr. Siti Nurhaliza   │
+   │ Jadwal: 09:00-12:00          │
+   │ ✅ Nomor Antrian: 05         │
+   │                              │
+   │ [SIMPAN] [CANCEL]            │
+   └──────────────────────────────┘
+   ```
+
+5.3 TV QUEUE DISPLAY (NEW - v10)
+
+   OVERVIEW:
+   Real-time antrian display untuk pasien di ruang tunggu. Menampilkan semua 8 spesialis
+   dengan nomor yang sedang dipanggil dan daftar menunggu. Auto-refresh dan privacy-safe.
+   
+   LOCATION: Ruang tunggu per cabang (1 TV untuk semua spesialis per cabang)
+   
+   DISPLAY LAYOUT:
+   Nama Dokter | Spesialis | Sesi
+   NOW: [Nomor sedang dipanggil - merah highlight]
+   QUEUE: [Daftar nomor menunggu - biru normal]
+   [Spacer]
+   [repeat untuk 8 dokter]
+   
+   EXAMPLE:
+   ```
+   ┌─────────────────────────────────────────────────────────┐
+   │  TV QUEUE DISPLAY - ANTRIAN HARI INI                    │
+   ├─────────────────────────────────────────────────────────┤
+   │                                                           │
+   │  Dr. Siti Nurhaliza | Sp.BM (Bedah Mulut)| 09:00-12:00 │
+   │  NOW: 05  QUEUE: 06  07  08  09                          │
+   │                                                           │
+   │  Dr. Budi Santoso | Sp.KG (Konservasi) | 09:00-12:00    │
+   │  NOW: 03  QUEUE: 04  05                                  │
+   │                                                           │
+   │  Dr. Rina Wijaya | Sp.KGA (Anak) | 13:00-16:00          │
+   │  NOW: 02  QUEUE: 03  04  05  06                          │
+   │                                                           │
+   │  Dr. Ahmad Hidayat | Sp.PM (Penyakit Mulut) | 13:00-16:00│
+   │  NOW: --  QUEUE: 01  02  03                              │
+   │                                                           │
+   │  [Spesialis 5-8 ...similar format...]                    │
+   │                                                           │
+   └─────────────────────────────────────────────────────────┘
+   ```
+   
+   REAL-TIME UPDATES:
+   - Trigger: Setiap state change (check-in, panggil, selesai)
+   - Method: WebSocket push ke TV display client
+   - Fallback: Polling setiap 2-3 detik (HTTP GET)
+   - Refresh rate: < 1 detik (WebSocket), <= 3 detik (polling)
+   
+   STATE MACHINE:
+   ```
+   [Check-in] → WAITING → [Dokter panggil] → BEING_CALLED → [Selesai] → COMPLETED [delete dari display]
+   ```
+   
+   AUTO-DELETE BEHAVIOR:
+   - Saat dokter klik "Selesai" untuk nomor 05
+   - Status update: BEING_CALLED → COMPLETED
+   - TV display otomatis delete nomor 05 (tidak show sama sekali)
+   - Nomor 06 promote ke "NOW" position
+   - Rest: 07, 08, 09 tetap di QUEUE
+   
+   COLOR CODING:
+   - NOW (merah/highlight): Nomor yang sedang dilayani
+   - QUEUE (biru/normal): Nomor yang menunggu
+   
+   PRIVACY:
+   - ONLY display nomor urut (queue_number)
+   - JANGAN display nama pasien
+   - JANGAN display detail pasien apapun
+   - Compliance: Privasi data pasien terjaga
+   
+   MULTI-SPESIALIS LAYOUT:
+   - Cabang dengan 8 spesialis: 2-column grid atau 3-column (responsive)
+   - Each spesialis: dedicated box dengan layout NOW/QUEUE
+   - If session not active: grey out atau hidden
+   
+   SESSION TIMING:
+   - Display: Nama dokter, Spesialis, Sesi (09:00-12:00)
+   - End-of-session: Otomatis hide setelah sesi berakhir
+   - Next session: Otomatis show ketika session dimulai
+   
+   API ENDPOINT (TV DISPLAY):
+   GET /api/branches/{branch_id}/queue-display
+   - Return: {
+       sessions: [
+         {
+           doctor_id, doctor_name, specialist, session_time_start, session_time_end,
+           now_queue_number (atau null),
+           waiting_queue_numbers: [06, 07, 08, 09]
+         }
+       ]
+     }
+   - No auth required (public display)
+   - Cache: 3 detik (atau real-time WebSocket)
+   
+   WEBSOCKET (RECOMMENDED):
+   - Namespace: /queue-display
+   - Events:
+     - queue-updated: {doctor_id, now_number, queue_numbers}
+     - queue-completed: {doctor_id, completed_number}
+   - Broadcast: To all TV display clients per cabang
+   
+   EDGE CASES:
+   - No queue nomor (sesi baru): Show "Menunggu pasien pertama..."
+   - Doctor tidak ada (hari libur): Hide session
+   - Multiple sesi 1 dokter: Show upcoming session preview (opsional V2)
+   
+   HARDWARE SETUP (Optional):
+   - TV size: 43" atau 55" (landscape orientation)
+   - Resolution: 1920x1080 (HD) minimal
+   - Device: Raspberry Pi atau Android TV Box
+   - Connection: Ethernet (recommended) atau WiFi
+   - Browser: Chromium/Chrome kiosk mode
+
+5.4 AUTO-INVOICE GENERATION (NEW - v10)
+
+   TRIGGER:
+   Saat dokter mengklik "COMPLETED" pada EMR form
+   
+   PROCESS:
+   1. Dokter finish enter EMR details (Keluhan, Tindakan, Resep)
+   2. Dokter click "Simpan & Selesai"
+   3. System validate EMR data
+   4. EMR status: DRAFT → COMPLETED
+   5. AUTO-TRIGGER: Generate invoice
+   6. Invoice record created: (booking_id, nominal, status)
+   7. Audit log: EVENT_INVOICE_GENERATED
+   8. Admin notification: New invoice available
+   
+   INVOICE STRUCTURE:
+   ```
+   INV-CABANGA-20260707-001
+   
+   INVOICE DETAIL
+   Tanggal: 07-07-2026
+   Nama Pasien: Budi Santoso
+   Kode Booking: ABC123
+   Dokter: Dr. Siti Nurhaliza
+   Spesialis: Sp.BM (Bedah Mulut)
+   Cabang: Cabang A
+   
+   BREAKDOWN:
+   Down Payment (DP):           Rp 50.000
+   Biaya Tindakan/Treatment:    Rp 150.000
+   ────────────────────────────────────────
+   TOTAL:                       Rp 200.000
+   
+   STATUS: UNPAID
+   METODE PEMBAYARAN: Cash / Transfer
+   ```
+   
+   DATABASE:
+   invoices table:
+   - id (PK)
+   - booking_id (FK)
+   - pasien_id (FK)
+   - branch_id
+   - invoice_number (unique, format: INV-[CABANG]-[YYYYMMDD]-[SEQ])
+   - dp_amount (Rp 50.000)
+   - treatment_cost (Rp X)
+   - total_amount (Rp X)
+   - status (UNPAID | PAID)
+   - payment_method (CASH | TRANSFER | null)
+   - payment_date (timestamp, nullable)
+   - created_at (timestamp)
+   - paid_at (timestamp, nullable)
+   - notes (text, optional)
+   
+   INVOICE FLOW:
+   1. Invoice auto-generated saat EMR COMPLETED
+   2. Status: UNPAID (default)
+   3. Admin panel: List unpaid invoices (prioritize aging)
+   4. Pasien datang bayar → Admin input payment
+   5. Admin field: Nominal, Metode (Cash/Transfer), Notes
+   6. Invoice status: UNPAID → PAID
+   7. Timestamp recorded: paid_at
+   
+   ADMIN UI:
+   ```
+   ┌──────────────────────────────────────────────────────────┐
+   │ INVOICE MANAGEMENT                                       │
+   ├──────────────────────────────────────────────────────────┤
+   │ Unpaid Invoices: 8                                       │
+   │                                                           │
+   │ INV# | Pasien         | Tindakan      | Total     | Aksi │
+   │───────────────────────────────────────────────────────── │
+   │ 001  | Budi Santoso   | Sp.BM Bedah   | 200.000   | View │
+   │ 002  | Siti Ramadhan  | Sp.KG Filling | 150.000   | View │
+   │ 003  | Ahmad Wijaya   | Sp.Perio Scale| 200.000   | View │
+   │ ... (aging order)                                        │
+   │                                                          │
+   │ [MARK PAID] [PRINT] [EXPORT CSV]                        │
+   └──────────────────────────────────────────────────────────┘
+   ```
+   
+   DOCTOR VIEW (READ-ONLY):
+   - Doctor bisa view generated invoice (informational)
+   - Tidak bisa edit atau delete
+   - Show: Nomor invoice, pasien, total, status
+   
+   PASIEN VIEW (OPTIONAL V1):
+   - Mobile app: History invoices
+   - Show: Invoice number, tanggal, total, payment status
+   - Tidak bisa download (admin privilege)
+
+5.5 ROLE-BASED MENU (REVISED - v10)
+
+   ADMIN MENU:
+   ✅ Dashboard (queue, stats)
+   ✅ Check-in Management (input kode booking, walk-in)
+   ✅ Queue Management (view, override if needed)
+   ✅ Invoice Management (view unpaid, mark paid)
+   ✅ Payment Tracking (input cash/transfer, reconciliation)
+   ✅ Stok/Inventaris (add item, view stok, manual deduct, update qty)
+   ✅ EMR View (read-only, informational)
+   ✅ Jadwal Dokter (view, override if needed)
+   ✅ Audit Log (view, filter, export CSV)
+   ✅ Settings (change password, backup, user management)
+   
+   DOKTER MENU:
+   ✅ Dashboard (queue, assigned pasien)
+   ✅ Queue Management (view, call pasien, mark selesai)
+   ✅ EMR Management (create NEW after treatment, edit existing)
+   ✅ Invoice View (read-only, informational only)
+   ✅ Pasien List (history)
+   ✅ Settings (change password)
+   
+   ❌ REMOVED - Dokter TIDAK punya menu Stok/Inventaris
+   Reason: Admin-only responsibility. Dokter fokus patient care, tidak inventory management.
+   
+   PASIEN MENU (MOBILE):
+   ✅ Booking (new appointment)
+   ✅ Pembayaran (redirect ke Midtrans)
+   ✅ Check-in Info (instruction to go to admin)
+   ✅ Queue Position (real-time)
+   ✅ Riwayat EMR (history, read-only filtered fields)
+   ✅ Settings (profile, change password)
+
+5.6 EMR WORKFLOW (REVISED - v10)
+
+   TIMING:
+   EMR dibuat SETELAH dokter selesai treatment, bukan sebelum.
+   
+   SEQUENCE:
+   1. Pasien check-in → nomor antrian generated
+   2. Dokter panggil pasien → queue status BEING_CALLED
+   3. Dokter treatment/konsultasi
+   4. Dokter selesai → Click "Selesai" atau "Buat EMR"
+   5. EMR form open (pre-filled: pasien name, tanggal, dokter, session time)
+   6. Dokter input: Keluhan, Tindakan (dropdown + notes), Resep/Anjuran
+   7. Optional field: Stok/material digunakan (notes saja, bukan deduct)
+   8. Dokter click "Simpan & Selesai"
+   9. EMR status: DRAFT → COMPLETED
+   10. AUTO-TRIGGER: Invoice generation
+   11. Queue status: BEING_CALLED → COMPLETED
+   12. TV display: Auto-delete nomor
+   13. Pasien notification: "Sesi selesai, invoice siap bayar"
+   
+   EMR FIELDS:
+   - Keluhan (text, required) - apa yang dikeluhkan pasien
+   - Tindakan (dropdown + text, required) - apa yang dilakukan dokter
+   - Resep/Anjuran (text, optional) - medication atau follow-up instruction
+   - Stok/Material (text notes, optional) - apa aja material digunakan (informational)
+   - Diagnosa (text, optional) - untuk dokter internal only (hidden dari pasien)
+   
+   PASIEN VIEW (FILTERED):
+   - Tanggal, Dokter, Spesialis
+   - Keluhan, Tindakan, Resep
+   - HIDDEN: Diagnosa (internal only)
+
+---
+
+6. USER STORIES & ACCEPTANCE CRITERIA
+
+6.1 PAYMENT GATEWAY
+
+USER STORY: Pasien membayar DP via Payment Gateway
+AS A Pasien
+I WANT TO pay DP Rp 50.000 via Midtrans payment gateway
+SO THAT sistem otomatis confirm booking tanpa admin waiting time
+
+ACCEPTANCE CRITERIA:
+- Given pasien completed booking, When pasien click "Bayar Sekarang", Then pasien redirect ke Midtrans payment page
+- Given pasien di Midtrans page, When pasien select payment method dan submit, Then payment simulated (sandbox)
+- Given payment submitted, When Midtrans send webhook confirmation, Then booking status update to PAYMENT_CONFIRMED
+- Given payment confirmed, When system process webhook, Then pasien see booking confirmation page (kode + dokter + spesialis + jadwal)
+- Given pasien confirm, When pasien click "Mengerti", Then pasien redirect to booking history (payment completed)
+- Given webhook failed, When system retry 3x, Then admin alert jika failed persistent
+- Given pasien abandon payment, When 24 jam timeout, Then booking auto-cancel (PENDING_PAYMENT status)
+
+6.2 MANDATORY CHECK-IN
+
+USER STORY: Admin input kode booking untuk check-in pasien
+AS AN Admin
+I WANT TO input kode booking untuk check-in pasien
+SO THAT antrian terjaga kondusif dan pasien tercatat dengan jelas
+
+ACCEPTANCE CRITERIA:
+- Given pasien datang ke klinik, When pasien beri kode booking ke admin, Then admin input kode di admin panel
+- Given admin input kode, When system validate kode, Then nomor antrian auto-generated (jika valid)
+- Given nomor generated, When system process, Then nomor appear di admin screen & TV display & pasien mobile (real-time)
+- Given kode sudah check-in sebelumnya, When admin input lagi, Then system show "Sudah check-in, nomor: 05"
+- Given kode invalid/expired, When system validate, Then show error dengan detail reason
+- Given walk-in pasien, When admin click "Add Walk-in", Then admin input nama & spesialis (auto-generate kode & queue)
+- Given queue number generated, When FCM push, Then pasien receive notification "Nomor antrian: 05"
+
+6.3 TV QUEUE DISPLAY
+
+USER STORY: Pasien lihat antrian real-time di TV ruang tunggu
+AS A Pasien
+I WANT TO see antrian real-time per spesialis di TV ruang tunggu
+SO THAT saya tahu posisi antrian saya dan estimasi waktu tunggu
+
+ACCEPTANCE CRITERIA:
+- Given TV display active, When sesi dokter mulai, Then display show semua dokter dengan format: Nama | Spesialis | Sesi
+- Given pasien check-in, When nomor antrian generated, Then nomor appear di TV display (QUEUE section)
+- Given dokter panggil nomor 05, When dokter click "Panggil", Then TV display update: NOW: 05, QUEUE: 06 07 08
+- Given dokter selesai treatment nomor 05, When dokter click "Selesai", Then nomor 05 auto-delete dari display
+- Given nomor deleted, When display refresh, Then nomor 06 promote ke NOW, rest stay QUEUE
+- Given WebSocket down, When TV polling active, Then display update setiap 2-3 detik (fallback)
+- Given sesi selesai, When waktu > 12:00, Then sesi auto-hide atau grey out
+- Given pasien view display, When pasien see nomor, Then ONLY nomor displayed (no names, privacy safe)
+
+6.4 AUTO-INVOICE
+
+USER STORY: Invoice otomatis generate saat EMR completed
+AS AN Admin/Dokter
+I WANT TO invoice auto-generated saat EMR selesai
+SO THAT admin tidak perlu manual create invoice, dan payment tracking jelas
+
+ACCEPTANCE CRITERIA:
+- Given dokter selesai isi EMR, When dokter click "Simpan & Selesai", Then invoice auto-generated
+- Given invoice generated, When system process, Then invoice appear di admin panel (list unpaid)
+- Given invoice created, When invoice status check, Then status = UNPAID (default)
+- Given admin view invoice, When admin open detail, Then show breakdown: DP + Treatment cost + Total
+- Given pasien bayar, When admin input payment (nominal + metode), Then invoice status → PAID
+- Given invoice paid, When timestamp record, Then paid_at recorded (audit trail)
+- Given dokter view invoice, When dokter open portal, Then invoice show (read-only, informational)
+
+6.5 ROLE-BASED MENU
+
+USER STORY: Dokter tidak punya akses menu Stok/Inventaris
+AS A Dokter
+I WANT TO fokus pada patient care tanpa inventory responsibility
+SO THAT workflow lean dan tidak overburden dengan administrative tasks
+
+ACCEPTANCE CRITERIA:
+- Given dokter login, When dokter view menu, Then Stok/Inventaris menu NOT visible
+- Given admin login, When admin view menu, Then Stok/Inventaris menu visible
+- Given dokter finish treatment, When dokter create EMR, Then optional field "Stok digunakan" (notes only, informational)
+- Given dokter input stok notes, When admin receive notification, Then admin manually input ke stok system
+- Given admin manage stok, When admin view stok list, Then admin can add, view, deduct, update qty
+
+---
+
+7. DATA MODEL & DATABASE SCHEMA
+
+ENTITIES:
+
+users (authentication & role-based)
+- id (PK)
+- email / username (unique)
+- password_hash (bcrypt)
+- role (PASIEN | ADMIN | DOKTER)
+- branch_id (FK, for ADMIN & DOKTER only)
+- name
+- phone
+- is_active (boolean)
+- created_at, updated_at
+
+bookings (appointment management)
+- id (PK)
+- pasien_id (FK)
+- branch_id (FK)
+- dokter_id (FK)
+- jadwal_id (FK)
+- booking_date (when booking made)
+- session_date (which session)
+- status (PENDING_PAYMENT | PAYMENT_CONFIRMED | CHECKED_IN | NO_SHOW | COMPLETED | CANCELLED)
+- dp_amount (Rp 50.000)
+- payment_gateway_id (Midtrans transaction ID)
+- payment_status (PENDING_PAYMENT | PAYMENT_CONFIRMED | FAILED)
+- payment_confirmed_at (timestamp)
+- check_in_code (6-digit alphanum, unique per booking)
+- queue_number (nullable, generated at check-in)
+- checked_in_at (timestamp, nullable)
+- created_at, updated_at
+- cancelled_by (USER_ID, nullable)
+- cancelled_reason (text, nullable)
+
+queues (antrian real-time)
+- id (PK)
+- booking_id (FK)
+- branch_id (FK)
+- dokter_id (FK)
+- queue_number (numeric)
+- queue_status (WAITING | BEING_CALLED | COMPLETED)
+- check_in_time (timestamp)
+- called_time (timestamp, nullable)
+- completed_time (timestamp, nullable)
+- created_at
+
+emrs (electronic medical records)
+- id (PK)
+- booking_id (FK)
+- pasien_id (FK)
+- dokter_id (FK)
+- branch_id (FK)
+- encounter_date (when treatment happened)
+- keluhan (text)
+- tindakan (text)
+- resep_anjuran (text, nullable)
+- diagnosa (text, nullable, internal only)
+- stok_material_notes (text, optional, informational)
+- status (DRAFT | COMPLETED)
+- created_at, updated_at
+- created_by (dokter_id)
+
+invoices (auto-generated)
+- id (PK)
+- booking_id (FK)
+- emr_id (FK)
+- pasien_id (FK)
+- branch_id (FK)
+- invoice_number (unique, format: INV-[CABANG]-[YYYYMMDD]-[SEQ])
+- dp_amount (Rp 50.000)
+- treatment_cost (Rp X)
+- total_amount (Rp X)
+- status (UNPAID | PAID)
+- payment_method (CASH | TRANSFER | null)
+- payment_date (timestamp, nullable)
+- paid_at (timestamp, nullable)
+- notes (text, optional)
+- created_at (auto-generated timestamp)
+
+payments (payment tracking)
+- id (PK)
+- invoice_id (FK)
+- branch_id (FK)
+- nominal (Rp)
+- method (CASH | TRANSFER)
+- input_date (timestamp)
+- input_by (admin_id)
+- notes (text, optional)
+- created_at
+
+inventory / stok (admin only)
+- id (PK)
+- branch_id (FK)
+- item_name (material name)
+- item_code (SKU, unique)
+- category (MATERIAL | TOOL | MEDICINE)
+- current_qty (numeric)
+- unit (pcs | box | ml | etc)
+- min_stock (threshold)
+- price_per_unit (Rp, optional)
+- supplier (text, optional)
+- last_updated (timestamp)
+- updated_by (admin_id)
+
+audit_logs (immutable append-only)
+- id (PK)
+- event_type (LOGIN | BOOKING | DP_PAID | PAYMENT_CONFIRMED | CHECK_IN | EMR_CREATE | EMR_EDIT | INVOICE_GENERATED | PAYMENT_INPUT | etc)
+- user_id (FK)
+- user_role (PASIEN | ADMIN | DOKTER)
+- branch_id (FK)
+- entity_type (BOOKING | EMR | PAYMENT | INVOICE | etc)
+- entity_id (reference to entity)
+- action (CREATE | UPDATE | DELETE)
+- details (JSON, event-specific data)
+- ip_address (optional)
+- user_agent (optional)
+- created_at (immutable timestamp)
+
+---
+
+8. API DESIGN OVERVIEW
+
+AUTHENTICATION:
+POST /api/auth/register (pasien, admin, dokter)
+POST /api/auth/login
+POST /api/auth/logout
+POST /api/auth/forgot-password
+POST /api/auth/reset-password
+POST /api/auth/refresh-token
+
+BOOKING:
+GET /api/bookings
+GET /api/bookings/{id}
+POST /api/bookings (create new booking)
+PUT /api/bookings/{id} (cancel)
+GET /api/bookings/{id}/payment-redirect (Midtrans)
+POST /api/bookings/{id}/check-in-info (get booking details)
+
+PAYMENT:
+POST /webhook/payment-confirmation (Midtrans callback)
+GET /api/payments/invoices (list unpaid invoices - admin)
+POST /api/payments/mark-paid (admin input payment)
+GET /api/payments/report (export CSV)
+
+QUEUE:
+GET /api/branches/{branch_id}/queue (real-time queue per branch)
+GET /api/branches/{branch_id}/queue-display (TV display)
+PUT /api/queue/{queue_id}/call (dokter panggil)
+PUT /api/queue/{queue_id}/complete (dokter selesai)
+POST /api/queue/add-walk-in (admin add walk-in)
+
+EMR:
+POST /api/emrs (dokter create EMR)
+GET /api/emrs/{id}
+PUT /api/emrs/{id} (dokter edit)
+GET /api/emrs/pasien/{pasien_id} (history)
+
+ADMIN:
+GET /api/admin/check-in (list unpaid bookings)
+POST /api/admin/check-in (input kode booking)
+GET /api/admin/stok (list inventory)
+POST /api/admin/stok (add item)
+PUT /api/admin/stok/{id} (update qty)
+GET /api/admin/audit-logs (view logs)
+
+---
+
+9. FRONTEND SPECIFICATIONS (Next.js + Flutter)
+
+NEXT.JS WEB:
+
+Landing Page:
+- Info klinik, contact, spesialis
+- Smart AI chat (hardcoded FAQ + Gemini enhancement)
+- CTA: Booking button
+
+Admin Dashboard:
+- Queue real-time display (refresh setiap 2 detik)
+- Check-in form (input kode booking)
+- Invoice management (list unpaid, mark paid)
+- Payment tracking
+- Stok/Inventaris management
+- EMR view (read-only)
+- Audit log (filter, export CSV)
+
+Dokter Portal:
+- Queue display (call, mark selesai)
+- EMR creation form (post-treatment)
+- EMR edit form
+- Invoice view (read-only)
+- Pasien history
+
+FLUTTER MOBILE:
+
+Auth:
+- Register/login
+- Forgot password
+
+Booking:
+- Cabang selection
+- Spesialis selection
+- Date/time picker
+- DP payment (redirect to Midtrans)
+- Booking confirmation
+
+Check-in:
+- Info: "Silakan datang ke Admin untuk check-in"
+- Display: Kode booking, Dokter, Spesialis, Jadwal
+
+Queue:
+- Real-time nomor antrian (polling)
+- FCM notification saat panggil
+
+EMR History:
+- List past encounters
+- Detail view (filtered fields)
+
+---
+
+10. TESTING & QA
+
+UNIT TESTS (Vitest):
+- Booking creation & validation
+- Queue number generation
+- EMR validation logic
+- Invoice calculation
+- Payment status update
+- Audit log writing
+- Target: >70% coverage
+
+INTEGRATION TESTS:
+- Booking + check-in + queue + EMR flow
+- Payment gateway webhook handling
+- Multi-branch data isolation
+- User role authorization
+- Audit log immutability
+
+E2E TESTS (Playwright):
+- Admin check-in flow
+- Dokter EMR creation & invoice generation
+- Pasien booking + payment + queue viewing
+- TV display real-time update
+- Mobile app (optional)
+
+---
+
+11. DEPLOYMENT & INFRASTRUCTURE
+
+BACKEND:
+- Provider: Vercel (Node.js) OR Render.com
+- Database: Supabase (PostgreSQL free 2GB)
+- Cache: Redis (Upstash free tier)
+- Storage: MinIO (Docker)
+- Payment: Midtrans Sandbox
+- Tunneling: Ngrok (webhook testing)
+
+FRONTEND:
+- Provider: Vercel (Next.js)
+- Mobile: Firebase App Distribution (APK)
+
+MONITORING & LOGGING:
+- Application: Pino (JSON logging)
+- Errors: Sentry (free tier)
+- Database: Supabase logs
+
+---
+
+12. RISK MANAGEMENT & MITIGATION
+
+🟢 CRITICAL (Impact: HIGH, Probability: MEDIUM)
+
+Risk: Midtrans webhook tidak arrive (network failure)
+Mitigasi:
+- Implement webhook signature verification (Midtrans standard)
+- Retry logic: 3x exponential backoff
+- Client-side polling fallback (check status every 5 detik)
+- Webhook timeout handler: booking stay PENDING_PAYMENT, pasien can retry
+- Admin alert jika webhook fail persistent (>5x)
+
+Risk: Check-in kode digunakan 2x (duplicate)
+Mitigasi:
+- Database constraint: UNIQUE check_in_code
+- Validation before processing: IF queue_number EXIST → error "sudah check-in"
+- Audit log track semua check-in attempt
+- Prevent re-use: check_in_status field (PENDING | USED | EXPIRED)
+
+Risk: TV display offline (power loss, WiFi down)
+Mitigasi:
+- Fallback: Paper queue board (manual backup)
+- Hardware: UPS untuk TV + router
+- Reconnect logic: Auto-reconnect setiap 30 detik
+- Last-known state: Display show cached data jika offline
+
+Risk: Database size exceed 2GB (Supabase free limit)
+Mitigasi:
+- Monitor database size weekly
+- Cleanup: Delete old audit logs (>1 year) monthly
+- Setup alert: 80% quota trigger
+- Fallback: Upgrade ke paid tier (post-demo)
+
+Risk: Booking state mismatch (PENDING_PAYMENT vs PAYMENT_CONFIRMED)
+Mitigasi:
+- Webhook idempotency: Check IF booking.status != PAYMENT_CONFIRMED before update
+- Database transaction: Atomic update (no race condition)
+- Audit log: Track every status change dengan timestamp
+
+🟡 MEDIUM (Impact: MEDIUM, Probability: MEDIUM)
+
+Risk: Admin input wrong kode (typo)
+Mitigasi:
+- Validation error message: Clear feedback dengan reason
+- Case-insensitive kode matching (user-friendly)
+- Confirm dialog sebelum submit
+- Audit log: Track failed attempts (security & troubleshooting)
+
+Risk: Pasien abandon payment halfway (Midtrans timeout)
+Mitigasi:
+- Booking stay PENDING_PAYMENT (tidak auto-cancel immediately)
+- Display: "Pembayaran pending, Anda bisa retry kapan saja dalam 24 jam"
+- Cron job: Auto-cancel booking jika PENDING_PAYMENT > 24 jam
+- Pasien notification: Reminder email/FCM sebelum timeout
+
+Risk: Walk-in queue overload (lebih dari 4 per sesi)
+Mitigasi:
+- Admin bisa add multiple walk-in (sistem memungkinkan)
+- No hard limit (pragmatic: biar dokter manage sendiri)
+- Audit log: Track jumlah walk-in per sesi (data untuk optimization)
+- Recommend V2: Walk-in limiter atau priority logic
+
+🟢 LOW (Impact: LOW, Probability: LOW)
+
+Risk: Ngrok tunnel expire / reconnect
+Mitigasi:
+- Ngrok paid tier untuk production (tapi V1 sandbox OK dengan free)
+- Fallback: Switch ke alternative tunnel service jika needed
+- Update webhook URL manually jika ngrok restart
+
+Risk: Invoice number collision (duplicate INV-CABANGA-20260707-001)
+Mitigasi:
+- Database sequence: Auto-increment per branch per day
+- Unique constraint: (branch_id, invoice_date, sequence)
+- Format: INV-[CABANG]-[YYYYMMDD]-[SEQUENCE PADDED 3 DIGIT]
+
+---
+
+13. DEPLOYMENT CHECKLIST
+
+BEFORE LAUNCH:
+☐ All unit tests passing (>70% coverage)
+☐ All integration tests passing
+☐ E2E tests stable (20+ min without failure)
+☐ Database schema validated (no migration issues)
+☐ Webhook signature verified (Midtrans)
+☐ Environment variables configured (API keys, etc)
+☐ CORS & security headers set
+☐ Rate limiting enabled (5 requests per second per IP)
+☐ Logging configured (Pino + Sentry)
+☐ Backup script tested (restore procedure verified)
+☐ Mobile APK built & tested (Firebase App Distribution)
+☐ Landing page AI chat working (Gemini API)
+☐ Demo scenario scripted (30+ min stable demo)
+
+DEPLOYMENT DAY:
+☐ PostgreSQL migration run (schema + seed data)
+☐ Redis cache initialized
+☐ Backend deployed (Vercel / Render)
+☐ Frontend deployed (Vercel)
+☐ DNS configured (if custom domain)
+☐ SSL certificate verified (HTTPS)
+☐ Smoke tests run (basic CRUD operations)
+☐ Mobile app APK signed & distributed
+☐ TV display app configured (kiosk mode)
+☐ Documentation finalized (README, API docs)
+☐ GitHub repo public (clean commit history)
+☐ Video walkthrough recorded (3-5 min)
+
+---
+
+14. AI FEATURES (V1)
+
+SMART CHAT SUPPORT (Landing Page / Public Web)
+
+Lokasi: www.dentflow.io/chat (atau embedded widget di landing page)
+
+Deskripsi:
+- Hardcoded FAQ database (20-30 questions tentang layanan, prosedur, harga)
+- Gemini API untuk enhance FAQ answers (personalisasi berdasarkan keluhan)
+- Intelligent routing: Chat AI suggest spesialis berdasarkan keluhan pasien
+- Direct link ke booking page (saat pasien ready book)
+- Escalation: Jika pertanyaan urgent/medical, direct to admin contact
+
+Contoh Conversation:
+
+User: "Saya ingin scaling gigi, berapa harganya?"
+AI: "Scaling adalah prosedur pembersihan plak & tartar di bawah gusi.
+     Harga: Rp 200.000 per sesi
+     Durasi: ±30-45 menit
+     Spesialis: Dr. Perio (Periodonsia)
+     
+     Jadwal tersedia:
+     1. Rabu 10:00 (Recommended)
+     2. Jumat 14:00
+     3. Sabtu 13:00
+     
+     Ingin booking?"
+
+User: "Apa itu filling?"
+AI: [Jawab dari hardcoded FAQ]
+
+User: "Saya alergi amoxicillin, apa obat alternatif?"
+AI: "Pertanyaan medical spesifik membutuhkan konsultasi dokter.
+     Hubungi kami: +62xxx atau chat langsung dengan admin."
+
+Teknologi:
+- Hardcoded FAQ list: JSON structure
+- API Integration: Google Gemini (free tier, 60 req/min sufficient)
+- Chat interface: Simple form + auto-scroll (HTML/React)
+- Storage: Save chat history (optional V1, untuk admin review V2)
+
+Implementation Timeline: 6-8 hours
+Cost: Free (Gemini free tier)
+Risk: Zero (no medical decision, just routing + FAQ)
+
+Benefits:
+✅ 24/7 support untuk calon pasien
+✅ Reduce admin workload (FAQ automation)
+✅ Appointment suggestion (smart routing to right spesialis)
+✅ Show AI capability (portfolio differentiator)
+
+---
+
+15. TECHNICAL ROADMAP & PHASING
+
+PHASE 1 (Weeks 1-2): Foundation & TDD
+☐ Finalize TDD document (detailed test scenarios)
+☐ Database schema design + ERD
+☐ API contract specification (OpenAPI/Swagger)
+☐ Setup Docker Compose (PostgreSQL, Redis, MinIO, RabbitMQ optional)
+☐ Setup authentication (JWT, bcrypt)
+☐ Setup Midtrans Sandbox integration
+☐ Setup Ngrok for webhook testing
+
+PHASE 2 (Weeks 3-4): Core Backend
+☐ Booking module API (create, cancel, list)
+☐ Payment gateway webhook handler (Midtrans)
+☐ Check-in module (6-digit kode generation, validation, admin input)
+☐ Queue management (Redis atomic counter, real-time)
+☐ EMR module (create, edit, view with field-level filtering)
+☐ Auto-invoice generation (trigger saat EMR complete)
+☐ Payment tracking module
+☐ Audit log implementation (immutable, Bahasa Indonesia)
+☐ Unit + integration tests (>70% coverage target)
+
+PHASE 3 (Weeks 5-6): Frontend Web & AI
+☐ Next.js setup + design system
+☐ Admin dashboard (queue, check-in form, invoice management, payment input, EMR view, stok, audit log)
+☐ Dokter portal (queue, EMR input, pasien list, invoice view)
+☐ Landing page (public, info, chat widget)
+☐ Smart Chat Support implementation (Gemini integration)
+☐ TV Queue Display page (real-time antrian per cabang)
+☐ E2E tests (Playwright)
+
+PHASE 4 (Weeks 7-8): Mobile & Polish
+☐ Flutter Android setup + Firebase integration
+☐ Mobile app: registration, booking, Midtrans payment, check-in info, queue view, EMR history
+☐ FCM push notification integration
+☐ Mobile app: Build APK + sign
+☐ Testing & bug fixes
+☐ APK distribution via Firebase App Distribution
+☐ Demo preparation & documentation
+
+PHASE 5 (Week 9): Demo & Documentation
+☐ Final testing (30+ min stable, all features working)
+☐ Record video walkthrough (3-5 min, demo all modules)
+☐ README update (comprehensive, with screenshots)
+☐ Deployment guide (step-by-step for recruiter)
+☐ API documentation (Swagger/OpenAPI)
+☐ TDD documentation (test scenarios, coverage report)
+☐ Public GitHub repo + clean commit history
+☐ Prepare demo account (seeded data, realistic scenario)
+
+ESTIMATED TOTAL: 9-11 weeks (solo developer, full-time)
+
+---
+
+16. GLOSARIUM
+
+6-DIGIT KODE: Alfanumerik unik (A-Z, 0-9) pengganti QR untuk check-in pasien, dibuat saat booking, diivalidasi oleh admin
+
+SPESIALIS: 8 dokter gigi spesialis per cabang
+- Sp.BM (Bedah Mulut)
+- Sp.KGA (Kedokteran Gigi Anak)
+- Sp.KG (Konservasi Gigi)
+- Sp.PM (Penyakit Mulut)
+- Sp.Ort (Ortodonti)
+- Sp.Perio (Periodonsia)
+- Sp.Pros (Prostodonsia)
+- Sp.RKG (Radiologi)
+
+SESI: Time slot praktek dokter (misal 09:00-12:00, 13:00-16:00)
+
+EMR: Electronic Medical Record (rekam medis digital)
+
+ENCOUNTER: Satu kali kunjungan pasien ke dokter (satu sesi EMR)
+
+DP (DOWN PAYMENT): Rp 50.000 (non-refundable, konfirmasi booking via payment gateway)
+
+PAYMENT GATEWAY: Sistem pembayaran online (Midtrans) untuk DP confirmation otomatis
+
+WEBHOOK: HTTP callback dari Midtrans ke backend untuk payment status update
+
+NO SHOW: Pasien tidak check-in hingga akhir sesi, DP hangus
+
+WALK-IN: Pasien datang tanpa booking sebelumnya
+
+FIFO: First In First Out (antrian berdasarkan urutan check-in)
+
+QUEUE: Antrian pasien per dokter spesialis
+
+TV QUEUE DISPLAY: Real-time antrian display di TV ruang tunggu (nomor urut only, no names)
+
+FCM: Firebase Cloud Messaging (push notification)
+
+AUDIT LOG: Catatan immutable (append-only) semua aktivitas sistem
+
+BRANCH_ID: Identifier cabang (A, B, atau C) untuk multi-tenant isolation
+
+IDEMPOTENT: Request yang sama tidak akan diproses 2x (prevent duplicate)
+
+JWT: JSON Web Token (authentication token)
+
+BCRYPT: Password hashing algorithm (security standard)
+
+MODULITH: Modular monolith (monolith dengan domain separation)
+
+INVOICE: Dokumen billing otomatis saat EMR completed (DP + Treatment cost)
+
+INVENTORY/STOK: Item management (admin only, tidak untuk dokter)
+
+================================================================
+END OF PRD v10.0 - FINAL APPROVED
+Target Rating: 9-9.5/10
+Status: Ready for Development
+================================================================

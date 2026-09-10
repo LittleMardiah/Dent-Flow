@@ -10,7 +10,7 @@ const encounterService = new EncounterService();
  */
 export const startEncounter = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { bookingId } = req.body;
+    const { bookingId, complaint, diagnosis, treatment, prescription, notes } = req.body;
     const doctorId = req.user?.userId;
     const branchId = req.user?.branchId;
 
@@ -21,7 +21,13 @@ export const startEncounter = async (req: Request, res: Response, next: NextFunc
       return res.status(400).json({ success: false, message: 'bookingId is required' });
     }
 
-    const encounter = await encounterService.startEncounter(bookingId, doctorId, branchId);
+    const encounter = await encounterService.startEncounter(bookingId, doctorId, branchId, {
+      complaint,
+      diagnosis,
+      treatment,
+      prescription,
+      notes,
+    });
     res.status(201).json({
       success: true,
       data: encounter,

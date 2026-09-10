@@ -1,0 +1,1715 @@
+================================================================
+HALAMAN.txt - DENTFLOW v10.0 (FINAL)
+Sistem Manajemen Klinik Gigi Multi-Cabang (Modular Monolith)
+================================================================
+Versi      : 1.0 (Complete - Sesuai PRD v10.0 & Logic Flow)
+Tanggal    : 2026-07-07
+Tujuan     : Memberikan deskripsi detail setiap halaman/screen, komponen,
+             interaksi user, dan flow logika (backend + frontend) yang dapat
+             dipahami oleh AI untuk implementasi design, frontend & backend.
+Referensi  : PRD v10.0, Logic Flow v10.0
+Target     : Hi-Fi Prototype & Design (Stitch With Google / Figma)
+
+================================================================
+📌 PANDUAN UNTUK AI:
+- Setiap halaman memiliki: URL/Route, role, deskripsi, komponen,
+  user interactions, dan LOGIC FLOW (detail apa yang terjadi).
+- Ikuti flow yang tertulis. Jangan invent fitur di luar PRD.
+- Semua validasi dilakukan di frontend & backend.
+- Desain: Clean, modern, mobile-first (responsive untuk web & mobile app).
+- Notifikasi: Toast notifications (non-blocking).
+- Konfirmasi modal: Custom dialog (bukan browser alert).
+- Error messages: Bahasa Indonesia, deskriptif.
+- Loading states: Skeleton/spinner selama fetch data.
+- Real-time updates: Polling 2-3 detik atau WebSocket untuk queue.
+
+================================================================
+1. LANDING PAGE (PUBLIC) - CUSTOMER-FACING
+================================================================
+   URL: /
+   Role: Tidak ada autentikasi (public)
+   Device: Web & Mobile
+
+   A. NAVBAR HEADER
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Logo klinik (kiri)
+     - Menu navigasi: Home, Layanan, Dokter, Cabang, FAQ, Kontak
+     - CTA button: "Download APK" atau "Booking Online"
+     - (Mobile) Hamburger menu
+
+   LOGIC FLOW:
+     1. Klik menu item → smooth scroll ke section yang sesuai (hash link).
+     2. CTA "Download APK" → buka link ke Firebase App Distribution atau Play Store.
+     3. CTA "Booking Online" → redirect ke /patient/booking (jika sudah login)
+        atau redirect ke /patient/login (jika belum login).
+
+   B. HERO SECTION
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Hero image (foto klinik atau dokter)
+     - Headline: "Klinik Gigi Terpercaya 3 Cabang"
+     - Subheadline: "Booking online, bayar mudah, antrian real-time"
+     - CTA besar: "Booking Sekarang" (primary) + "Hubungi Kami" (secondary)
+
+   LOGIC FLOW:
+     1. Klik "Booking Sekarang" → same as navbar CTA (redirect ke /patient/booking atau /patient/login).
+     2. Klik "Hubungi Kami" → scroll ke section Kontak atau buka WhatsApp chat.
+
+   C. LAYANAN SECTION (8 Spesialis)
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Grid 8 kartu (spesialis): Sp.BM, Sp.KG, Sp.KGA, Sp.PM, Sp.Ort, Sp.Perio, Sp.Pros, Sp.RKG
+     - Setiap kartu: ikon, nama spesialisasi, deskripsi singkat (2-3 kalimat), harga (opsional)
+     - Button "Pelajari Lebih" atau "Booking untuk Spesialis Ini"
+
+   LOGIC FLOW:
+     1. Klik button → redirect ke /patient/booking dengan pre-selected spesialis (jika implementasi mendukung).
+        Atau scroll ke daftar dokter untuk show dokter spesialis tersebut.
+
+   D. DOKTER SECTION (24 Dokter)
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Filter dropdown: pilih cabang (Cabang A, B, C)
+     - Grid dokter (default: tampilkan semua atau per cabang sesuai filter)
+     - Setiap kartu dokter:
+        * Foto profil
+        * Nama dokter (format: "Dr. Nama | Sp.Spesialisasi")
+        * Cabang (misal "Cabang A")
+        * Rating (opsional, dummy data)
+        * Button "Booking" atau "Lihat Detail"
+
+   LOGIC FLOW:
+     1. Load data: GET /doctors (public endpoint, tidak perlu auth).
+     2. Tampilkan semua 24 dokter atau filter berdasarkan cabang.
+     3. Klik "Booking" → redirect ke /patient/booking dengan pre-selected dokter (jika bisa).
+
+   E. JADWAL OPERASIONAL SECTION
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Tabel jam operasional per cabang
+     - Columns: Hari, Cabang A, Cabang B, Cabang C
+     - Setiap cell: jam buka - jam tutup (misal 09:00 - 17:00)
+
+   LOGIC FLOW:
+     - Statis, tidak ada interaksi. Data hardcoded atau fetch dari /settings/hours.
+
+   F. CABANG/LOKASI SECTION
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - 3 kartu untuk 3 cabang
+     - Setiap kartu:
+        * Nama cabang
+        * Alamat lengkap
+        * Nomor telepon
+        * Google Maps embed (map preview)
+        * Button "Lihat Rute" (buka Google Maps app dengan lokasi)
+
+   LOGIC FLOW:
+     1. Klik "Lihat Rute" → buka link Google Maps dengan koordinat cabang.
+
+   G. TESTIMONIAL/REVIEW SECTION
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Karusel (autoplay 5 detik, manual prev/next buttons)
+     - Setiap slide: avatar/foto, nama pasien, rating (⭐⭐⭐⭐⭐), teks review singkat
+     - Dots indikator slide
+
+   LOGIC FLOW:
+     - Data dummy (hardcoded atau fetch dummy data).
+     - Autoplay: slide bergerak setiap 5 detik.
+     - Manual navigation: prev/next buttons dan dots clickable.
+
+   H. FAQ SECTION
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Accordion (collapsible items)
+     - Setiap item: pertanyaan + jawaban
+     - Contoh Q&A:
+        * "Bagaimana cara booking?"
+        * "Apakah DP bisa dikembalikan?"
+        * "Berapa lama proses perawatan?"
+        * etc (minimal 8-10 FAQ)
+
+   LOGIC FLOW:
+     1. Klik pertanyaan → expand jawaban.
+     2. Klik lagi → collapse jawaban.
+     3. Data statis atau fetch dari /faqs endpoint.
+
+   I. FOOTER
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Quick links: Home, Layanan, Dokter, Cabang, Kontak
+     - Social media links: Facebook, Instagram, WhatsApp
+     - Copyright & legal links (Privacy Policy, Terms of Service)
+     - Contact info: email, phone, address
+
+   LOGIC FLOW:
+     - Semua link berfungsi normal.
+     - Social media links → buka di tab baru.
+
+================================================================
+2. LANDING PAGE TAMBAHAN: AI CHAT WIDGET (PUBLIC)
+================================================================
+   URL: Embedded di landing page atau /chat (opsional)
+   Role: Tidak ada autentikasi
+   Device: Web & Mobile
+
+   A. CHAT INTERFACE
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Chat header: "Halo, Ada yang bisa kami bantu?"
+     - Chat history (scrollable, oldest on top, newest at bottom)
+     - Message bubbles: user messages (kanan, biru), AI messages (kiri, abu-abu)
+     - Input field + send button (besar, easy to tap on mobile)
+     - Close button (X) untuk collapse widget (jika embedded)
+
+   LOGIC FLOW:
+     1. User input pertanyaan → kirim message.
+     2. Frontend display user message di chat history.
+     3. Frontend send POST /ai/chat dengan body { message, session_id (opsional) }.
+     4. Backend:
+        - Gunakan Gemini API (free tier, 60 req/min cukup).
+        - Combine hardcoded FAQ JSON + user message ke prompt template.
+        - Template: "Kamu adalah asisten klinik gigi. Pasien bertanya: [USER_MESSAGE]. 
+                    FAQ database: [FAQ_JSON]. Jawab dalam Bahasa Indonesia, ramah, 
+                    dan jika medical, arahkan konsultasi dengan dokter."
+        - Call Gemini API, return response.
+     5. Frontend display AI response di chat history.
+     6. If response includes "booking suggestion" atau "jadwal tersedia":
+        - Parse dan tampilkan clickable buttons/links (misal "Booking Senin 10:00 | Dr.ABC").
+        - Klik button → redirect ke /patient/booking dengan pre-filled data.
+     7. If response indicates "urgent medical question":
+        - Tampilkan CTA: "Chat dengan admin" atau "Hubungi dokter" (link ke WhatsApp).
+
+   B. EXAMPLE CONVERSATIONS
+   ─────────────────────────────────────────────────────────────
+   Example 1:
+   USER: "Saya ingin scaling gigi, berapa harganya?"
+   AI: "Scaling adalah prosedur pembersihan plak & tartar di bawah gusi.
+       Harga: Rp 200.000 per sesi
+       Durasi: ±30-45 menit
+       Spesialis: Dr. Perio (Periodonsia)
+       Jadwal tersedia:
+       [Booking Rabu 10:00] [Booking Jumat 14:00] [Booking Sabtu 13:00]"
+   
+   Example 2:
+   USER: "Saya alergi amoxicillin, apa obat alternatif?"
+   AI: "Pertanyaan medical spesifik membutuhkan konsultasi dokter.
+       Silakan hubungi kami untuk berkonsultasi dengan dokter spesialis gigi:
+       [Chat dengan Admin] [Hubungi via WhatsApp: +62xxx]"
+
+   C. HARDCODED FAQ DATABASE (JSON)
+   ─────────────────────────────────────────────────────────────
+   [Stored di backend atau frontend, minimum 20-30 FAQs]
+   Format:
+   {
+     "faqs": [
+       {
+         "id": 1,
+         "question": "Bagaimana cara booking?",
+         "answer": "...",
+         "specialist": "general"
+       },
+       {
+         "id": 2,
+         "question": "Berapa biaya scaling?",
+         "answer": "...",
+         "specialist": "perio"
+       },
+       ...
+     ]
+   }
+
+================================================================
+3. PATIENT MOBILE APP / WEB: AUTHENTICATION
+================================================================
+
+   A. LOGIN PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /patient/login
+   Role: Public (unauthenticated)
+   Device: Mobile app & Web
+
+   Komponen:
+     - Header: Logo + "Masuk ke Akun"
+     - Form:
+        * Email field (email input, placeholder: "email@example.com")
+        * Password field (password input, placeholder: "••••••••")
+        * Checkbox "Ingat saya" (opsional)
+        * Button "Masuk" (primary, full width, disabled jika form invalid)
+     - "Lupa Password?" link (secondary)
+     - CTA: "Belum punya akun? [Daftar Sekarang]" (tertiary link)
+
+   LOGIC FLOW:
+     1. User input email & password.
+     2. Validasi frontend:
+        - Email not empty & valid format.
+        - Password not empty & >= 8 karakter.
+     3. Submit POST /auth/login dengan body { email, password }.
+     4. Backend:
+        - Cek email exist, validate password (bcrypt).
+        - Jika gagal 5× dalam 5 menit → rate limit 429 lock 5 menit.
+        - Jika berhasil: generate JWT token (expiry 7 hari), return { token, role, patient_id, name }.
+     5. Frontend:
+        - Simpan token di secure storage (localStorage atau secure storage for mobile).
+        - Navigasi ke /patient/home (atau /patient/bookings).
+     6. Error handling:
+        - Gagal: tampilkan "Email atau password salah" atau "Akun terkunci sementara".
+
+   B. REGISTER PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /patient/register
+   Role: Public
+   Device: Mobile app & Web
+
+   Komponen:
+     - Header: Logo + "Buat Akun Baru"
+     - Form:
+        * Nama Lengkap (text input, wajib)
+        * Email (email input, wajib, harus unik)
+        * Nomor HP (tel input, wajib, format Indonesia, minimal 10 digit, max 13)
+        * Password (password input, wajib, >= 8 karakter, harus include uppercase, lowercase, number, symbol)
+        * Konfirmasi Password (password input, wajib, harus sama dengan password)
+        * Checkbox "Saya setuju dengan ToS & Privacy Policy" (wajib)
+        * Button "Daftar" (primary, full width, disabled jika form invalid)
+     - CTA: "Sudah punya akun? [Masuk]" (tertiary link)
+     - Password requirements indicator (visual: requirements list, check/cross marks)
+
+   LOGIC FLOW:
+     1. User input semua field.
+     2. Validasi frontend (real-time):
+        - Nama: not empty, min 3 karakter.
+        - Email: valid format, unique check (optional di frontend, definite di backend).
+        - HP: Indonesian format, 10-13 digits, starts with 0 or +62.
+        - Password: >= 8 karakter, uppercase, lowercase, number, symbol.
+        - Konfirmasi password: sama dengan password.
+        - Checkbox: checked.
+     3. Submit POST /auth/register dengan body { full_name, email, phone, password }.
+     4. Backend:
+        - Validasi ulang semua field.
+        - Cek email & phone unique (jika tidak, return 409).
+        - Hash password (bcrypt), simpan user ke database dengan role PATIENT.
+        - Kirim email verification link (opsional untuk V1, atau skip).
+     5. Frontend:
+        - Jika berhasil, redirect ke login page dengan pesan "Akun berhasil dibuat. Silakan login."
+     6. Error handling:
+        - Email already exists → "Email sudah terdaftar"
+        - Phone already exists → "Nomor HP sudah terdaftar"
+        - Server error → "Terjadi kesalahan. Coba lagi nanti."
+
+   C. FORGOT PASSWORD PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /patient/forgot-password
+   Role: Public
+   Device: Mobile app & Web
+
+   Komponen:
+     - Header: "Reset Password"
+     - Step 1 (Email verification):
+        * Text: "Masukkan email Anda untuk reset password"
+        * Email field
+        * Button "Kirim Link Reset" (primary)
+     - Step 2 (after submit, if email exists):
+        * Success message: "Link reset password telah dikirim ke email Anda"
+        * Text: "Buka email dan klik link untuk melanjutkan"
+        * Link: "Kembali ke Login"
+
+   LOGIC FLOW:
+     1. User input email.
+     2. Validasi frontend: email not empty & valid format.
+     3. Submit POST /auth/forgot-password dengan body { email }.
+     4. Backend:
+        - Cek email exist di database.
+        - Generate reset token (random, expiry 1 jam).
+        - Simpan reset token ke database (tokens table atau users table).
+        - Kirim email dengan link: 
+          https://[domain]/patient/reset-password?token=[reset_token]
+        - Return 200 OK (always, don't reveal if email exists untuk security).
+     5. Frontend:
+        - Tampilkan success message.
+        - (Opsional) Countdown timer: "Tidak terima email? Coba lagi dalam 60 detik."
+     6. User klik link email → navigasi ke reset password page dengan token query param.
+
+   D. RESET PASSWORD PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /patient/reset-password?token=[reset_token]
+   Role: Public (unauthenticated, tapi dengan valid reset token)
+   Device: Mobile app & Web
+
+   Komponen:
+     - Header: "Buat Password Baru"
+     - Form:
+        * Password Baru (password input, wajib, >= 8, uppercase, lowercase, number, symbol)
+        * Konfirmasi Password Baru (password input, wajib, sama dengan password baru)
+        * Button "Reset Password" (primary)
+     - Password requirements indicator
+
+   LOGIC FLOW:
+     1. Parse reset_token dari URL query.
+     2. Frontend validasi token format (optional, definite di backend).
+     3. Validasi form: passwords >= 8, requirements met, match.
+     4. Submit POST /auth/reset-password dengan body { token, new_password }.
+     5. Backend:
+        - Validasi token exist & not expired.
+        - Cek user associated dengan token.
+        - Hash password baru, update user.password.
+        - Delete/invalidate reset token.
+        - Return 200 OK.
+     6. Frontend:
+        - Tampilkan success message: "Password berhasil direset. Silakan login dengan password baru."
+        - Redirect ke /patient/login setelah 2-3 detik.
+     7. Error handling:
+        - Token invalid/expired → "Link reset tidak valid atau sudah kadaluarsa. [Minta link baru]"
+        - Password tidak sesuai syarat → "Password harus minimal 8 karakter, include huruf besar, kecil, angka, simbol"
+
+================================================================
+4. PATIENT MOBILE APP / WEB: HOME & BOOKING
+================================================================
+
+   A. HOME PAGE (AFTER LOGIN)
+   ─────────────────────────────────────────────────────────────
+   URL: /patient/home (or /patient/dashboard)
+   Role: PATIENT (authenticated)
+   Device: Mobile app & Web
+
+   Komponen (top to bottom):
+     - Header:
+        * Greeting: "Halo, [Nama Pasien]!" (atau "Selamat pagi/siang/malam, [Nama]")
+        * Date/time indicator
+        * Avatar icon (inisial nama)
+        * Hamburger/menu icon (mobile)
+     - Quick stats (optional):
+        * Total bookings
+        * Last visit date
+        * Upcoming appointment
+     - CTA banner (prominent): "Booking Janji Temu Baru" (button, primary)
+     - Upcoming Appointments section:
+        * If any: card per upcoming appointment
+          - Date, time, doctor name, specialist, cabang, status
+          - Status badge: "Pending Payment", "Confirmed", "Completed"
+          - Actions: "Lihat Detail" button
+        * If none: empty state message "Belum ada janji temu. Yuk booking sekarang!" + CTA button
+     - Recent visits section (EMR history):
+        * If any: list last 3-5 visits
+          - Date, doctor name, actions
+          - Button "Lihat Detail" → navigate to EMR detail
+        * If none: empty state "Belum ada riwayat kunjungan"
+     - Bottom nav (mobile) atau sidebar (web):
+        * Home (active)
+        * Bookings
+        * EMR History
+        * Profile
+
+   LOGIC FLOW:
+     1. Load page: GET /patients/:id/dashboard (token required).
+     2. Backend return:
+        {
+          "patient": { "id", "name", "email", "phone" },
+          "upcoming_appointments": [{ "id", "date", "time", "doctor", "specialist", "branch", "status" }],
+          "recent_encounters": [{ "id", "date", "doctor_name", "specialist" }]
+        }
+     3. Display greeting, stats, upcoming appointments.
+     4. Klik "Booking Janji Temu Baru" → navigate to /patient/booking.
+     5. Klik "Lihat Detail" pada upcoming appointment → navigate to /patient/bookings/:id (detail halaman).
+     6. Klik "Lihat Detail" pada recent visit → navigate to /patient/encounters/:id (EMR detail).
+
+   B. BOOKING FLOW PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /patient/booking
+   Role: PATIENT (authenticated)
+   Device: Mobile app & Web
+   Navigation: Step-by-step stepper (Step 1 of 4 → Step 2 of 4, etc.)
+
+   STEP 1: PILIH CABANG
+   ───────────────────────────────────────────────────────
+   Komponen:
+     - Header: "Pilih Cabang" (Step 1 of 4)
+     - Progres bar (1/4)
+     - Description: "Pilih cabang klinik yang ingin dikunjungi"
+     - 3 option cards (radiobuttons atau clickable cards):
+        * Cabang A (Lokasi, alamat singkat, Google Maps link "Lihat Peta")
+        * Cabang B
+        * Cabang C
+     - Button "Lanjut" (primary, disabled jika belum pilih)
+     - Button "Batal" (secondary)
+
+   LOGIC FLOW:
+     1. User klik salah satu cabang card.
+     2. Selected cabang di-highlight (border, background, checkmark).
+     3. Klik "Lanjut" → validation (cabang_id required) → store di state/session → navigate to Step 2.
+     4. Klik "Batal" → navigate back to /patient/home.
+
+   STEP 2: PILIH SPESIALIS & DOKTER
+   ───────────────────────────────────────────────────────
+   Komponen:
+     - Header: "Pilih Dokter" (Step 2 of 4)
+     - Progres bar (2/4)
+     - Description: "Pilih spesialis dan dokter yang tersedia di [Cabang Terpilih]"
+     - Filter tabs atau dropdown (optional):
+        * "Semua Spesialis" (default)
+        * "Sp.BM", "Sp.KG", "Sp.KGA", "Sp.PM", "Sp.Ort", "Sp.Perio", "Sp.Pros", "Sp.RKG"
+     - List dokter (per spesialis):
+        * Card per dokter:
+          - Foto/avatar
+          - Nama: "Dr. [Nama] | [Sp.Spesialisasi]"
+          - Cabang (highlight, sesuai Step 1)
+          - Rating (opsional)
+          - Radio button (untuk select)
+     - Button "Lanjut" (primary, disabled jika belum pilih dokter)
+     - Button "Kembali" (secondary)
+
+   LOGIC FLOW:
+     1. Load: GET /doctors?branch_id=[cabang_dari_step1] (public endpoint).
+     2. Display dokter list, grouped by spesialis (or filtered by selected spesialis).
+     3. User klik dokter card → select radio button.
+     4. Klik "Lanjut" → validation (doctor_id required) → store di state → navigate to Step 3.
+     5. Klik "Kembali" → navigate back to Step 1.
+
+   STEP 3: PILIH TANGGAL & SESI
+   ───────────────────────────────────────────────────────
+   Komponen:
+     - Header: "Pilih Tanggal & Sesi" (Step 3 of 4)
+     - Progres bar (3/4)
+     - Description: "Pilih tanggal dan sesi yang tersedia untuk Dr. [Dokter Terpilih]"
+     - Date picker (calendar widget atau date input):
+        * Tampilkan kalender 1 bulan ke depan.
+        * Hanya hari dengan jadwal dokter yang enabled (cek dari jadwal dokter).
+        * Hari tanpa jadwal disabled (greyed out).
+        * Selected date highlight.
+	* Berikan tanda warna hijau ke tanggal jadwak aktif dokter tersebut
+     - Sesi time slots (setelah tanggal dipilih):
+        * Tampilkan 2 sesi per hari (misal 09:00-12:00, 13:00-16:00).
+        * Per sesi, tampilkan:
+          - Waktu sesi
+          - Status "Tersedia [N/4 slot]" atau "Penuh" (jika sudah 4 pasien online)
+          - Button/radio untuk select sesi.
+        * Max 4 pasien online per sesi (FR-10 dari PRD).
+     - Button "Lanjut" (primary, disabled jika belum pilih tanggal & sesi)
+     - Button "Kembali" (secondary)
+
+   LOGIC FLOW:
+     1. Load: GET /doctors/:doctor_id/schedule?month=[date].
+     2. Backend return:
+        {
+          "schedules": [
+            { "date": "2026-07-15", "sessions": [
+              { "session_id", "start_time", "end_time", "max_patients": 4, "booked": 2, "available": 2 }
+            ]}
+          ]
+        }
+     3. Frontend:
+        - Render calendar dengan enabled/disabled dates.
+        - Saat user klik tanggal → fetch sesi untuk tanggal tersebut dan tampilkan.
+     4. User pilih tanggal & sesi.
+     5. Klik "Lanjut" → validation (date & session required) → store di state → navigate to Step 4.
+     6. Klik "Kembali" → navigate back to Step 2.
+
+   STEP 4: REVIEW & KONFIRMASI PEMBAYARAN
+   ───────────────────────────────────────────────────────
+   Komponen:
+     - Header: "Review & Bayar DP" (Step 4 of 4)
+     - Progres bar (4/4)
+     - Summary section (read-only):
+        * Cabang: [Cabang Terpilih]
+        * Dokter: Dr. [Nama] | [Sp.Spesialisasi]
+        * Tanggal: [Day], [Date] (misal "Selasa, 15 Juli 2026")
+        * Sesi: [Time Range] (misal "09:00 - 12:00")
+        * Biaya DP: Rp 50.000
+     - Bold warning box: 
+        "⚠️ DP bersifat non-refundable (tidak dapat dikembalikan). 
+         Jika tidak melakukan check-in pada waktu sesi, DP Anda akan hangus."
+     - Buttons:
+        * "Bayar Sekarang" (primary, large, prominent)
+        * "Edit Booking" (secondary, membawa kembali ke Step 1)
+        * "Batal Booking" (danger/tertiary)
+
+   LOGIC FLOW:
+     1. Display summary dari Step 1-3.
+     2. Klik "Bayar Sekarang":
+        - POST /bookings dengan body:
+          {
+            "branch_id", "doctor_id", "appointment_date", "session_id",
+            "patient_id", "dp_amount": 50000
+          }
+        - Backend:
+          * Validasi semua field.
+          * Cek slot masih tersedia (booking concurrency check).
+          * Create booking record dengan status PENDING_PAYMENT.
+          * Generate 6-digit alphanumerik booking code (FR-15).
+          * Simpan booking ke database.
+          * Return { "booking_id", "transaction_url" }.
+        - Frontend:
+          * Show loading spinner: "Sedang memproses..."
+          * Redirect ke payment page (Midtrans payment redirect).
+     3. Klik "Edit Booking" → navigate back ke Step 1 (preservasi data atau reset?).
+     4. Klik "Batal Booking" → confirm dialog "Apakah yakin ingin batal?" → navigate back to /patient/home.
+
+   C. PAYMENT PAGE (REDIRECT TO MIDTRANS)
+   ───────────────────────────────────────────────────────
+   URL: Midtrans hosted payment page (external)
+   Role: PATIENT
+   Device: Mobile app & Web
+
+   Komponen (handled by Midtrans):
+     - Midtrans payment UI (payment method selection, details entry, etc.)
+
+   LOGIC FLOW:
+     1. Frontend receive transaction_url from /bookings POST response.
+     2. Redirect to transaction_url (window.location = url).
+     3. User select payment method, enter details, submit.
+     4. Midtrans process payment.
+     5. On success:
+        - Midtrans send webhook POST /webhook/payment-confirmation ke backend.
+        - Backend validate webhook signature, update booking status → PAYMENT_CONFIRMED.
+        - Midtrans redirect user ke success page (URL configured in Midtrans dashboard).
+        - Frontend navigate to /patient/bookings/:booking_id (detail halaman dengan status PAYMENT_CONFIRMED).
+     6. On failure:
+        - Midtrans redirect ke failure page.
+        - User dapat retry atau batal.
+
+   D. BOOKING DETAIL PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /patient/bookings/:booking_id
+   Role: PATIENT (authenticated)
+   Device: Mobile app & Web
+
+   Komponen:
+     - Header: "Detail Janji Temu"
+     - Booking status badge:
+        * PENDING_PAYMENT: "Menunggu Pembayaran" (orange/warning)
+        * PAYMENT_CONFIRMED: "Pembayaran Dikonfirmasi" (green/success)
+        * CHECKED_IN: "Sudah Check-in" (blue/info)
+        * NO_SHOW: "Tidak Datang" (red/danger)
+        * COMPLETED: "Selesai" (gray)
+     - Booking info:
+        * Nomor booking: [6-digit code] (copyable)
+        * Dokter: Dr. [Nama] | [Sp.Spesialisasi]
+        * Tanggal: [Full Date]
+        * Sesi: [Time Range]
+        * Cabang: [Branch Name]
+        * Biaya DP: Rp 50.000
+     - Instructions (conditional per status):
+        * If PENDING_PAYMENT: "Lakukan pembayaran untuk melanjutkan booking. Klik tombol di bawah."
+        * If PAYMENT_CONFIRMED: "Pembayaran berhasil! Catat nomor booking Anda. Datanglah ke klinik sebelum sesi dimulai untuk check-in."
+        * If CHECKED_IN: "Anda sudah check-in. Tunggu dipanggil oleh dokter."
+        * If NO_SHOW: "Anda tidak melakukan check-in. DP Anda telah hangus sesuai kebijakan."
+        * If COMPLETED: "Kunjungan selesai. Lihat detail EMR Anda di halaman Riwayat."
+     - Action buttons (conditional):
+        * If PENDING_PAYMENT: "Bayar Sekarang" (primary), "Batalkan Booking" (danger)
+        * If PAYMENT_CONFIRMED: "Batalkan Booking" (danger, but show warning "DP tidak akan kembali")
+        * If CHECKED_IN: (no actions)
+        * If NO_SHOW: (no actions)
+        * If COMPLETED: "Lihat EMR" (primary) → navigate to /patient/encounters/:encounter_id
+     - Always available: "Kembali" button (navigate back to /patient/bookings)
+
+   LOGIC FLOW:
+     1. Load: GET /bookings/:booking_id (token required).
+     2. Backend return booking detail dengan status.
+     3. Display booking info & conditional instructions/buttons.
+     4. Klik "Bayar Sekarang" (if PENDING_PAYMENT):
+        - Same as Step 4 payment flow.
+     5. Klik "Batalkan Booking":
+        - Confirm dialog: "Apakah yakin ingin batalkan booking? DP tidak akan kembali."
+        - If confirm: POST /bookings/:booking_id/cancel.
+        - Backend: update status → CANCELLED, audit log.
+        - Frontend: show success toast, navigate back to /patient/bookings.
+     6. Klik "Lihat EMR" (if COMPLETED):
+        - Navigate to /patient/encounters/:encounter_id.
+
+   E. BOOKING LIST PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /patient/bookings
+   Role: PATIENT (authenticated)
+   Device: Mobile app & Web
+
+   Komponen:
+     - Header: "Janji Temu Saya"
+     - Filter tabs (optional):
+        * "Semua" (default, show all)
+        * "Menunggu Pembayaran"
+        * "Terkonfirmasi"
+        * "Selesai"
+        * "Dibatalkan"
+     - List of bookings (newest first):
+        * Card per booking:
+          - Status badge
+          - Doctor name, specialist, date, time
+          - CTA button: "Lihat Detail"
+     - Empty state (jika no bookings): "Belum ada janji temu. [Booking Sekarang]" (button link)
+
+   LOGIC FLOW:
+     1. Load: GET /bookings?filter=[status] (token required).
+     2. Display list of bookings.
+     3. Klik "Lihat Detail" → navigate to /patient/bookings/:booking_id.
+     4. Klik "Booking Sekarang" → navigate to /patient/booking.
+
+================================================================
+5. PATIENT MOBILE APP / WEB: EMR & HISTORY
+================================================================
+
+   A. EMR HISTORY LIST PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /patient/encounters (or /patient/emr-history)
+   Role: PATIENT (authenticated)
+   Device: Mobile app & Web
+
+   Komponen:
+     - Header: "Riwayat Kunjungan"
+     - Filter/sort (optional):
+        * Sort by: Newest First / Oldest First
+        * Date range filter (optional)
+     - List of encounters (newest first):
+        * Card per encounter:
+          - Date (formatted: "15 Juli 2026")
+          - Doctor name: "Dr. [Nama]"
+          - Specialist: "[Sp.Spesialisasi]"
+          - Branch: "[Cabang]" (optional)
+          - Brief summary (1-2 lines, misal "Scaling & Filling")
+          - CTA button: "Lihat Detail"
+     - Empty state (jika no encounters): "Belum ada riwayat kunjungan"
+
+   LOGIC FLOW:
+     1. Load: GET /encounters?patient_id=[from_token] (token required).
+     2. Backend return sorted list of encounters.
+     3. Display list.
+     4. Klik "Lihat Detail" → navigate to /patient/encounters/:encounter_id.
+
+   B. EMR DETAIL PAGE (READ-ONLY)
+   ─────────────────────────────────────────────────────────────
+   URL: /patient/encounters/:encounter_id
+   Role: PATIENT (authenticated)
+   Device: Mobile app & Web
+
+   Komponen:
+     - Header: "Detail Kunjungan" (dengan back button)
+     - Encounter info (read-only):
+        * Tanggal kunjungan: [Date]
+        * Dokter: Dr. [Nama]
+        * Spesialis: [Sp.Spesialisasi]
+        * Cabang: [Branch] (optional)
+     - Section: Keluhan / Anamnesa
+        * Label: "Keluhan"
+        * Text (read-only): [patient complaint]
+     - Section: Diagnosa (jika dokter input)
+        * Label: "Diagnosa"
+        * Text (read-only): [diagnosis]
+        * Note: "Diagnosa disembunyikan dari pasien untuk privasi medis" (opsional tooltip)
+     - Section: Tindakan Medis
+        * Label: "Tindakan"
+        * List (bullet/chip format): [action1, action2, ...]
+        * Example: "Scaling", "Filling", "Cleaning", etc.
+     - Section: Resep & Instruksi
+        * Label: "Resep & Instruksi"
+        * Text (read-only): [prescription/instructions]
+        * Jika kosong: "Tidak ada resep"
+     - Section: Lampiran / File
+        * Label: "Lampiran"
+        * List of files:
+          - If image (jpg, png):
+            * Thumbnail preview (small, clickable)
+            * Klik → open full-screen image viewer
+          - If PDF:
+            * PDF icon + filename
+            * Klik → open PDF viewer atau download
+        * Jika no files: "Tidak ada lampiran"
+     - Button: "Kembali" (navigate back to /patient/encounters)
+
+   LOGIC FLOW:
+     1. Load: GET /encounters/:encounter_id (token required).
+     2. Backend return encounter detail, filtered untuk patient (exclude medical fields jika needed).
+     3. Display encounter info in read-only format.
+     4. Klik thumbnail image → open image viewer (fullscreen).
+     5. Klik PDF icon → open PDF viewer atau trigger download.
+     6. Klik "Kembali" → navigate back to /patient/encounters.
+
+   C. PATIENT PROFILE PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /patient/profile
+   Role: PATIENT (authenticated)
+   Device: Mobile app & Web
+
+   Komponen:
+     - Header: "Profil Saya"
+     - Profile info (editable):
+        * Avatar / inisial nama (clickable untuk change photo? optional)
+        * Form:
+          - Nama Lengkap (text, editable)
+          - Email (text, read-only atau editable with verification)
+          - Nomor HP (tel, editable)
+        * Button: "Simpan Perubahan" (primary, enabled only if ada perubahan)
+     - Section: Ganti Password
+        * Accordion atau collapse section
+        * Form:
+          - Password Lama (password, wajib)
+          - Password Baru (password, wajib, >= 8, requirements)
+          - Konfirmasi Password Baru (password, wajib, match)
+        * Button: "Ganti Password" (secondary)
+     - Button: "Logout" (secondary, dengan confirm dialog)
+     - Button: "Hapus Akun"? (NOT IN PRD, skip)
+
+   LOGIC FLOW:
+     1. Load: GET /patients/:id (token required).
+     2. Display profile data in editable form.
+     3. Edit Profil:
+        - User modify field(s).
+        - Validasi frontend (realtime):
+          * Nama: not empty, min 3 chars.
+          * Email: valid format (if editable, unique check at backend).
+          * HP: Indonesian format, 10-13 digits.
+        - Klik "Simpan Perubahan":
+          * PUT /patients/:id dengan body { full_name, email, phone }.
+          * Backend validate & update user.
+          * Frontend show success toast: "Profil berhasil diubah".
+        - Error: show error toast (email already exists, etc).
+     4. Ganti Password:
+        - User input old password, new password, confirm.
+        - Validasi frontend:
+          * Old password: not empty.
+          * New password: >= 8, uppercase, lowercase, number, symbol.
+          * Confirm: match new password.
+        - Klik "Ganti Password":
+          * POST /auth/change-password dengan body { old_password, new_password }.
+          * Backend validate old password, hash new password, update.
+          * Frontend show success toast: "Password berhasil diubah".
+        - Error: "Password lama salah" atau server error.
+     5. Logout:
+        - Klik "Logout" → confirm dialog: "Apakah yakin ingin keluar?"
+        - If confirm:
+          * Delete token dari secure storage.
+          * (Optional) POST /fcm/unregister (untuk FCM token).
+          * Navigate to /patient/login atau /.
+
+================================================================
+6. ADMIN WEB: AUTHENTICATION & DASHBOARD
+================================================================
+
+   A. ADMIN LOGIN PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /admin/login
+   Role: Public (unauthenticated)
+   Device: Web only (not mobile)
+
+   Komponen:
+     - Logo klinik (centered)
+     - Heading: "Admin Dashboard"
+     - Form:
+        * Email / Username field
+        * Password field
+        * Checkbox "Ingat Saya" (optional)
+        * Button "Masuk" (primary, full width)
+     - "Lupa Password?" link (if supported, atau skip for V1)
+     - Note: "Hanya admin cabang yang bisa akses dashboard ini" (informational)
+
+   LOGIC FLOW:
+     1. User input email & password.
+     2. Validasi frontend: email/password not empty.
+     3. POST /auth/admin-login { email, password }.
+     4. Backend:
+        - Cek email exist, password match (bcrypt).
+        - Cek role == ADMIN_BRANCH.
+        - Rate limit: 5 failures dalam 5 menit → lock.
+        - Generate JWT (expiry 8 jam), return { token, branch_id, admin_name }.
+     5. Frontend:
+        - Simpan token di localStorage (atau cookie httpOnly).
+        - Redirect ke /admin/queue (dashboard default).
+     6. Error: "Email atau password salah" atau "Akun terkunci sementara".
+
+   B. ADMIN SIDEBAR & NAVIGATION
+   ─────────────────────────────────────────────────────────────
+   Komponen (persistent di semua admin pages):
+     - Header (top):
+        * Logo
+        * Hamburger toggle (mobile)
+        * Admin name & dropdown (profile, logout)
+     - Sidebar (left, atau collapsible on mobile):
+        * Menu items (7 total):
+          1. Antrian (/admin/queue) — icon + label
+          2. Dokter (/admin/doctors) — icon + label
+          3. Pasien (/admin/patients) — icon + label
+          4. Keuangan (/admin/finance) — icon + label
+          5. Inventaris (/admin/inventory) — icon + label
+          6. Audit Log (/admin/audit-logs) — icon + label
+          7. Pengaturan (/admin/settings) — icon + label
+        * Current page highlight
+        * Branch info: "Cabang [A/B/C]" (small text)
+     - Main content area (right): page-specific content
+
+   LOGIC FLOW:
+     - Sidebar persistent across all pages.
+     - Klik menu item → navigate to corresponding page.
+     - Admin logout → clear token, navigate to /admin/login.
+
+
+================================================================
+7. ADMIN WEB: QUEUE MANAGEMENT
+================================================================
+
+   URL: /admin/queue
+   Role: ADMIN_BRANCH (authenticated)
+   Device: Web
+
+   Komponen & Sections:
+
+   A. HEADER / FILTERS
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Title: "Antrian Hari Ini"
+     - Date picker (default: today, dapat diganti)
+     - Filter tabs:
+        * "Semua" (default, show all statuses)
+        * "Menunggu" (WAITING)
+        * "Sedang Dipanggil" (CALLED)
+        * "Sedang Dilayani" (IN_SERVICE)
+        * "Selesai" (COMPLETED)
+        * "Tidak Datang" (NO_SHOW)
+     - Doctor filter dropdown (multi-select atau single select, optional):
+        * "Semua Dokter" (default)
+        * Dr. [Nama] (untuk setiap dokter di cabang)
+
+   B. QUEUE TABLE / LIST (REAL-TIME, POLLING 3 DETIK)
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Table columns:
+        * Nomor (Queue Number)
+        * Nama Pasien
+        * Dokter
+        * Status (badge: color-coded)
+        * Waktu Check-in
+        * Aksi (buttons)
+     - Rows (sorted by queue number ascending):
+        * Per pasien di queue:
+          - Queue number (prominent, large font)
+          - Nama pasien (or pasien code jika privacy concern)
+          - Dokter assignment
+          - Status badge (WAITING = blue, CALLED = orange, IN_SERVICE = purple, COMPLETED = green, NO_SHOW = red)
+          - Check-in time
+          - Action buttons:
+            * Jika WAITING: [Panggil] [Selesai] [No-show] [Hapus]
+            * Jika CALLED: [Panggil Ulang] [Mulai Layani] [No-show]
+            * Jika IN_SERVICE: [Selesai] [No-show]
+            * Jika COMPLETED/NO_SHOW: [Hapus]
+
+   LOGIC FLOW (Real-time Queue):
+     1. Load: GET /queues/branch/:branch_id?date=[date] (polling every 3 seconds).
+     2. Backend return list of queue records untuk cabang & tanggal tersebut.
+     3. Frontend display table, refresh setiap 3 detik dengan update UI (preservasi scroll position).
+     4. Actions:
+        a) **Panggil (Call)**:
+           - Admin klik tombol "Panggil" pada baris WAITING.
+           - Confirm dialog: "Panggil pasien [Nama]?"
+           - POST /queues/:queue_id/call.
+           - Backend: update status → CALLED, publish event 'patient.called', kirim FCM ke pasien.
+           - Frontend: update row status immediately, show toast "Pasien dipanggil".
+        b) **Mulai Layani (Start Service)** (dari CALLED):
+           - Admin klik tombol (atau "Mulai Layani").
+           - POST /queues/:queue_id/start-service.
+           - Backend: update status → IN_SERVICE.
+           - Frontend: update row, show toast.
+        c) **Selesai (Complete)** (dari WAITING atau IN_SERVICE):
+           - Admin klik "Selesai".
+           - Modal: select "Tindakan apa yang dilakukan pasien?" (dropdown atau autocomplete, misal "Scaling", "Filling", "Check-up", etc) — OPTIONAL jika admin tidak perlu input, biarkan dokter input di EMR.
+           - POST /queues/:queue_id/complete { action (optional) }.
+           - Backend: update status → COMPLETED, remove from display, publish event.
+           - Frontend: remove row dari table atau grey out, show toast.
+        d) **No-show**:
+           - Admin klik tombol "No-show".
+           - Confirm dialog: "Tandai pasien tidak datang? DP akan hangus."
+           - POST /queues/:queue_id/no-show.
+           - Backend: update status → NO_SHOW, update booking status → NO_SHOW, deduct DP, audit log.
+           - Frontend: remove row atau grey out, show toast.
+        e) **Hapus (Delete)** (dari COMPLETED atau NO_SHOW):
+           - Admin klik "Hapus".
+           - Confirm dialog: "Hapus dari antrian? Data akan tetap tersimpan di history."
+           - DELETE /queues/:queue_id.
+           - Backend: delete queue record (or soft delete, mark as inactive).
+           - Frontend: remove row, show toast.
+
+   C. BOOKING MENUNGGU DP SECTION (CONDITIONAL)
+   ─────────────────────────────────────────────────────────────
+   Tampil jika ada booking dengan status WAITING_DP.
+
+   Komponen:
+     - Heading: "Booking Menunggu Konfirmasi DP" (with count badge)
+     - Table/list:
+        * Nama pasien
+        * Dokter
+        * Tanggal & sesi
+        * DP amount (Rp 50.000)
+        * Action: [Konfirmasi DP]
+
+   LOGIC FLOW:
+     1. Load: GET /bookings/waiting-dp?branch_id=... (polling 3 detik).
+     2. Display list.
+     3. Klik "Konfirmasi DP":
+        - Modal: "Konfirmasi DP untuk [Nama Pasien]?"
+        - POST /bookings/:booking_id/confirm-dp.
+        - Backend:
+          * Validasi booking status masih WAITING_DP.
+          * Update status → CONFIRMED.
+          * Generate 6-digit booking code.
+          * Publish event 'booking_confirmed', kirim FCM & email ke pasien dengan kode.
+        - Frontend: booking disappear dari "Menunggu DP" section, show toast "DP dikonfirmasi".
+
+   D. INPUT KODE ONLINE (CHECK-IN) BUTTON
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Button (prominent, e.g., FAB atau header button): "Input Kode Online"
+
+   LOGIC FLOW:
+     1. Klik "Input Kode Online" button → modal form muncul.
+     2. Modal:
+        * Title: "Input Kode Booking 6 Digit"
+        * Input field: 6-digit code (uppercase, alphanumeric, real-time validation)
+        * Button: [Konfirmasi] [Batal]
+     3. User input kode & klik "Konfirmasi":
+        - POST /queues/checkin { code }.
+        - Backend:
+          * Validasi kode exist, booking status CONFIRMED, belum check-in, time <= session_end.
+          * Jika valid: update booking status → CHECKED_IN, generate queue number (Redis atomic increment), create queue record status WAITING.
+          * Jika time > session_end: update booking → NO_SHOW.
+        - Frontend:
+          * Jika berhasil: modal close, queue table refresh & show new pasien, show toast "Check-in berhasil. Nomor antrian: [N]".
+          * Jika gagal: show error message di modal ("Kode salah", "Sudah check-in", "Lewat sesi", etc).
+
+   E. TAMBAH WALK-IN BUTTON
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Button: "Tambah Walk-in"
+
+   LOGIC FLOW:
+     1. Klik button → modal form muncul.
+     2. Modal:
+        * Title: "Tambah Pasien Walk-in"
+        * Form:
+          - Nama (text, wajib)
+          - Nomor HP (tel, optional)
+          - Spesialis / Dokter dropdown (wajib, assign ke salah satu dokter)
+          - Keluhan / Alasan (text, optional)
+        * Button: [Simpan] [Batal]
+     3. User fill form & klik "Simpan":
+        - POST /queues/checkin-walkin { name, phone, doctor_id, complaint (optional) }.
+        - Backend:
+          * Create temporary patient record (or use existing by phone if match).
+          * Generate queue number (Redis atomic increment).
+          * Create queue record status WAITING.
+          * Publish event.
+        - Frontend:
+          * Modal close, queue table refresh & show new walk-in pasien, show toast "Walk-in berhasil ditambahkan. Nomor: [N]".
+
+   F. QUEUE DISPLAY PREVIEW (OPTIONAL)
+   ─────────────────────────────────────────────────────────────
+   Komponen (opsional, untuk preview):
+     - Small widget / card: "Preview TV Display" dengan mock layout TV antrian.
+     - Button: "Lihat Full Screen" → open /tv/queue-display in new tab/window.
+
+================================================================
+8. ADMIN WEB: KEUANGAN (INVOICE & PAYMENT)
+================================================================
+
+   URL: /admin/finance (atau /admin/finance/invoices)
+   Role: ADMIN_BRANCH (authenticated)
+   Device: Web
+
+   A. INVOICE LIST PAGE
+   ─────────────────────────────────────────────────────────────
+   Komponen:
+     - Header: "Manajemen Invoice & Pembayaran"
+     - Filter & search:
+        * Date range picker (default: today, dapat rubah)
+        * Status filter tabs: "Semua", "Belum Bayar", "Sudah Bayar"
+        * Search: by patient name atau invoice number
+     - Table:
+        * Columns: Invoice #, Nama Pasien, Dokter, Tanggal, Total, Status (badge), Aksi
+        * Rows (sorted by date DESC):
+          - Invoice number (format: INV-A-20260708-001)
+          - Patient name
+          - Doctor name
+          - Service date
+          - Total amount (Rp)
+          - Status badge (UNPAID = red, PAID = green)
+          - Action buttons: [Lihat Detail] [Input Pembayaran] (if UNPAID), [Lihat Riwayat] (if PAID)
+     - Summary section (optional):
+        * Total belum bayar (Rp)
+        * Total sudah bayar (Rp)
+        * Total hari ini (Rp)
+
+   LOGIC FLOW:
+     1. Load: GET /invoices?branch_id=..., filter, date_range (dengan pagination, e.g., 50 per page).
+     2. Backend return invoice list dengan calculated totals.
+     3. Display table.
+     4. Klik [Lihat Detail] → navigate to /admin/finance/invoices/:invoice_id (detail page).
+     5. Klik [Input Pembayaran] (if UNPAID) → modal form atau navigate to detail page.
+
+   B. INVOICE DETAIL PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /admin/finance/invoices/:invoice_id
+   Role: ADMIN_BRANCH
+   Device: Web
+
+   Komponen:
+     - Header: "Detail Invoice"
+     - Invoice info (read-only display):
+        * Invoice number
+        * Status badge
+        * Patient name
+        * Doctor name
+        * Service date & time
+        * Specialist
+        * Branch
+     - Cost breakdown:
+        * DP (Rp 50.000) [dari booking payment]
+        * Treatment cost (Rp [amount]) [dari treatment pricing atau admin input]
+        * Total (Rp)
+     - Payment section:
+        * If UNPAID:
+          - Status: "Belum Bayar"
+          - Button: [Input Pembayaran]
+          - Modal / inline form:
+            * Nominal (pre-filled: total amount, editable?)
+            * Metode pembayaran: "Cash" / "Transfer" (radio buttons)
+            * Tanggal pembayaran (datetime picker, default: now)
+            * Catatan (optional text)
+            * Button: [Simpan Pembayaran] [Batal]
+          - Klik "Simpan Pembayaran":
+            * POST /invoices/:invoice_id/payment { nominal, method, paid_at, notes }.
+            * Backend: update invoice status → PAID, create payment record, audit log.
+            * Frontend: update display, show toast "Pembayaran berhasil dicatat".
+        * If PAID:
+          - Status: "Sudah Bayar"
+          - Display payment info (amount, method, date, who input)
+          - Button: [Ubah Pembayaran] (opsional, untuk edit payment)
+     - EMR link (if encounter completed):
+        * Button: "Lihat EMR" → navigate to /admin/emr/:encounter_id (read-only view for admin).
+     - Button: "Kembali" (navigate back to /admin/finance)
+
+   C. PAYMENT RECONCILIATION PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /admin/finance/reconciliation (atau link dari finance page)
+   Role: ADMIN_BRANCH
+   Device: Web
+
+   Komponen:
+     - Header: "Rekonsiliasi Pembayaran"
+     - Date range selector (default: today, rubah ke date range untuk month-end reconciliation)
+     - Filter:
+        * Payment method: "Semua", "Cash", "Transfer"
+     - Summary section:
+        * Total Cash tercatat (Rp)
+        * Total Transfer tercatat (Rp)
+        * Total (Rp)
+        * Unpaid invoices (Rp)
+     - Detailed table:
+        * Columns: Invoice #, Pasien, Metode, Nominal, Waktu Input, Input Oleh (admin name), Catatan
+        * Rows: setiap payment entry untuk period tersebut
+     - Export section:
+        * Button: [Export CSV] → download file "Payment Report - [Branch] - [Date].csv"
+        * CSV format: Invoice#, Pasien, Tindakan, Total, Method, PaidAt, ReconcileBy
+     - Notes section (textarea):
+        * Admin input catatan reconciliation (e.g., "Cocok dengan kas fisik Rp X, transfer Y sudah diterima")
+        * Save button
+     - Approval section (optional V2):
+        * Button: [Tandai Rekonsiliasi Selesai] → mark reconciliation as completed, immutable
+
+   LOGIC FLOW:
+     1. Load: GET /invoices?status=PAID, date_range, method_filter.
+     2. Backend calculate totals & return list.
+     3. Display summary & detailed table.
+     4. Klik [Export CSV]:
+        - Backend generate CSV file, return download link.
+        - Frontend trigger download.
+     5. Admin input catatan & klik save:
+        - POST /reconciliations { date_range, notes, data_summary }.
+        - Backend: store reconciliation record (immutable, audit log).
+        - Frontend: show toast "Rekonsiliasi disimpan".
+
+================================================================
+9. ADMIN WEB: DOCTOR & PATIENT MANAGEMENT
+================================================================
+
+   A. DOCTOR LIST PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /admin/doctors
+   Role: ADMIN_BRANCH
+   Device: Web
+
+   Komponen:
+     - Header: "Daftar Dokter"
+     - Note: "8 dokter spesialis per cabang" (informational)
+     - Doctor table (read-only display, edit via modal if needed):
+        * Columns: Nama, Spesialisasi, Jadwal (ringkas), Aksi
+        * Rows: 8 dokter untuk cabang ini
+          - Dr. [Nama]
+          - [Sp.Spesialisasi]
+          - Jadwal singkat (e.g., "Sen, Rab, Jum")
+          - Buttons: [Lihat Detail] [Ubah Jadwal]
+     - Add doctor button? (opsional, jika admin bisa add dokter, tapi PRD hardcoded 8 dokter per cabang, so mungkin skip)
+
+   LOGIC FLOW:
+     1. Load: GET /doctors?branch_id=... (dari branch admin).
+     2. Display list.
+     3. Klik [Lihat Detail]:
+        - Navigate to /admin/doctors/:doctor_id (detail page dengan info lengkap, read-only).
+        - Atau modal popup dengan detail (foto, Bio, spesialis, contact, dll).
+     4. Klik [Ubah Jadwal]:
+        - Modal form: edit doctor schedule per hari.
+        - Form layout: checkbox grid (hari × sesi).
+        - Contoh:
+          | Hari   | 09:00-12:00 | 13:00-16:00 |
+          |--------|-------------|-------------|
+          | Senin  | ☑️          | ☐           |
+          | Selasa | ☐           | ☑️          |
+          | ...    | ...         | ...         |
+        - Button: [Simpan] [Batal]
+        - POST /doctors/:doctor_id/schedule { day, sessions (array) }.
+        - Backend: update schedule, audit log.
+        - Frontend: close modal, show toast, refresh list.
+
+   B. PATIENT LIST PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /admin/patients
+   Role: ADMIN_BRANCH
+   Device: Web
+
+   Komponen:
+     - Header: "Daftar Pasien"
+     - Search & filter:
+        * Search by name atau phone
+        * Filter: "Pasien Online", "Walk-in", "Semua"
+        * Date range (optional, filter by last visit)
+     - Patient table:
+        * Columns: Nama, No. HP, Total Kunjungan, Last Visit, Status, Aksi
+        * Rows:
+          - Patient name
+          - Phone number
+          - Total visit count
+          - Last visit date
+          - Status ("Active", "Inactive", etc) — optional
+          - Button: [Lihat Detail]
+     - Export button: [Export CSV] (list pasien)
+
+   LOGIC FLOW:
+     1. Load: GET /patients?branch_id=..., search, filter (dengan pagination).
+     2. Display list.
+     3. Klik [Lihat Detail]:
+        - Navigate to /admin/patients/:patient_id (detail page).
+        - Display patient info: nama, email, phone, total visits, last visit, list bookings, list encounters (read-only).
+        - Buttons: [Lihat EMR History] (list encounters), [Edit Info] (opsional).
+
+   C. PATIENT DETAIL PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /admin/patients/:patient_id
+   Role: ADMIN_BRANCH
+   Device: Web
+
+   Komponen:
+     - Header: "Detail Pasien"
+     - Patient info (read-only):
+        * Nama, email, phone, registration date, total visits, last visit
+     - Tabs:
+        1. **Riwayat Booking**
+           - Table: list bookings
+           - Columns: Tanggal, Dokter, Status, Aksi (Lihat Detail)
+        2. **Riwayat Encounter (EMR)**
+           - Table: list encounters
+           - Columns: Tanggal, Dokter, Tindakan, Aksi (Lihat Detail)
+           - Button per encounter: [Lihat EMR] → navigate to /admin/emr/:encounter_id (read-only view for admin)
+        3. **Pembayaran**
+           - Table: invoices untuk pasien ini
+           - Columns: Invoice #, Tanggal, Total, Status
+     - Button: "Kembali" (navigate back to /admin/patients)
+
+   LOGIC FLOW:
+     1. Load: GET /patients/:patient_id (token required).
+     2. Backend return patient detail + list bookings + encounters.
+     3. Display patient info & tabs.
+     4. Klik tab → show corresponding list (atau fetch on-demand).
+     5. Klik [Lihat Detail] pada booking/encounter → navigate to detail page.
+
+================================================================
+10. ADMIN WEB: EMR VIEW (READ-ONLY)
+================================================================
+
+   URL: /admin/emr/:encounter_id (or similar)
+   Role: ADMIN_BRANCH (read-only access)
+   Device: Web
+
+   Komponen:
+     - Header: "EMR Encounter" dengan back button
+     - Read-only display (semua field read-only, no edit buttons):
+        * Encounter date & time
+        * Patient name
+        * Doctor name
+        * Specialist
+        * Branch
+     - Sections (read-only):
+        * Keluhan / Anamnesa (hide from admin)
+        * Diagnosa (hide diagnosa from admin)
+        * Tindakan Medis (list)
+        * Resep & Instruksi
+        * Lampiran (files, downloadable) (hide from admin)
+     - No edit buttons atau action buttons (read-only view)
+     - Button: "Kembali" (navigate back)
+    NB: Pastikan Admin hanya bisa melihat Kolom 'Tindakan' dan 'Resep & Instruksi' untuk kebutuhan invoice pembayaran. Kolom lainnya yang ditampilkan untuk admin WAJIB DI BLUR / DISAMARKAN 	demi privasi medis
+
+   LOGIC FLOW:
+     1. Load: GET /encounters/:encounter_id (token required, check admin role).
+     2. Backend return encounter detail (all fields).
+     3. Display read-only view.
+
+================================================================
+11. ADMIN WEB: INVENTORY MANAGEMENT
+================================================================
+
+   URL: /admin/inventory
+   Role: ADMIN_BRANCH
+   Device: Web
+
+   Note: Stok adalah admin-only feature, dokter tidak bisa akses (role-based menu per PRD).
+
+   Komponen:
+     - Header: "Inventaris"
+     - Summary section:
+        * Total items (jumlah item unique)
+        * Low stock items (count)
+        * Total value (optional Rp)
+     - Inventory table:
+        * Columns: Item Name, Category, Stock (Qty), Unit, Min. Stock, Status (Low/Ok), Aksi
+        * Rows: setiap item
+          - Item name (e.g., "Amalgam Silver", "Composite Resin", "Suction Tube")
+          - Category (Material, Consumable, Equipment)
+          - Stock qty
+          - Unit (e.g., "box", "unit", "bottle")
+          - Min. stock threshold (warna merah jika <= min)
+          - Status badge (Low stock = orange, Ok = green)
+          - Button: [Edit] [Hapus]
+     - Add Item button: "Tambah Item"
+     - Export button: [Export CSV]
+     - Filter & search:
+        * Search by item name
+        * Filter by category
+
+   LOGIC FLOW (CRUD):
+     1. Load: GET /inventory?branch_id=....
+     2. Display table.
+     3. Add item:
+        - Klik "Tambah Item" → modal form.
+        - Form: item_name, category, initial_stock, unit, min_stock.
+        - POST /inventory { item_name, category, stock, unit, min_stock }.
+        - Backend: create inventory item.
+        - Frontend: close modal, refresh list, show toast.
+     4. Edit item:
+        - Klik [Edit] → modal form with pre-filled data.
+        - Update form, klik "Simpan".
+        - PUT /inventory/:item_id { stock, min_stock, ... }.
+        - Backend: update inventory.
+        - Frontend: refresh list, show toast.
+     5. Delete item:
+        - Klik [Hapus] → confirm dialog.
+        - DELETE /inventory/:item_id.
+        - Backend: soft delete atau hard delete (per design choice).
+        - Frontend: remove row, show toast.
+     6. Low stock alert:
+        - Backend dapat mengirim alert via email/dashboard jika stock <= min_stock (opsional).
+
+================================================================
+12. ADMIN WEB: AUDIT LOG
+================================================================
+
+   URL: /admin/audit-logs
+   Role: ADMIN_BRANCH
+   Device: Web
+
+   Komponen:
+     - Header: "Audit Log"
+     - Filter & search:
+        * Date range picker (default: today, dapat rubah)
+        * Event type filter (dropdown): "Semua", "LOGIN", "BOOKING_CREATED", "PAYMENT_CONFIRMED", 
+          "CHECKIN", "QUEUE_CALL", "ENCOUNTER_COMPLETED", "INVOICE_CREATED", "PAYMENT_INPUT", 
+          "INVENTORY_UPDATE", "SCHEDULE_OVERRIDE", etc (15+ event types per PRD)
+        * Search by user name atau patient name (optional)
+        * Search by keyword dalam description
+     - Audit log table (immutable, append-only):
+        * Columns: Timestamp, Event Type, User, Description, Details (expand)
+        * Rows (newest first):
+          - Timestamp (format: "2026-07-08 10:20:15")
+          - Event type (badge atau label, e.g., "PAYMENT_INPUT", "BOOKING_CREATED")
+          - User name (admin yang perform action)
+          - Description (Bahasa Indonesia, e.g., "Admin Budi input pembayaran INV-A-20260708-001")
+          - Button: [Lihat Detail] atau expand row → show full details/metadata
+     - Export button: [Export CSV] (audit log untuk period tersebut, untuk compliance)
+     - Note: "Log ini immutable dan tidak dapat diedit atau dihapus (compliant dengan audit trail requirement)"
+
+   LOGIC FLOW:
+     1. Load: GET /audit-logs?branch_id=..., filters, date_range (dengan pagination, e.g., 100 per page).
+     2. Backend return audit log entries (immutable, ordered by timestamp DESC).
+     3. Display table.
+     4. Klik [Lihat Detail] / expand row:
+        - Show full event details (JSON structured data, formatted Bahasa Indonesia).
+        - Example: 
+          Event: PAYMENT_INPUT
+          Timestamp: 2026-07-08 10:20:15
+          User: Admin Budi (admin_budi@clinic.com)
+          Patient: Ahmad Wijaya
+          Invoice: INV-A-20260708-001
+          Amount: Rp 200.000
+          Method: Cash
+          Notes: "Terima dari pasien Ahmad"
+     5. Klik [Export CSV]:
+        - Backend generate CSV file.
+        - Frontend trigger download.
+
+================================================================
+13. ADMIN WEB: SETTINGS
+================================================================
+
+   URL: /admin/settings
+   Role: ADMIN_BRANCH
+   Device: Web
+
+   Komponen:
+     - Header: "Pengaturan"
+     - Tabs / sections:
+
+       A. **Branch Info** (read-only, atau super admin only)
+          - Branch name, address, phone, hours
+          - Display only (tidak ada edit untuk admin cabang)
+
+       B. **Backup & Restore**
+          - Current backup status (last backup date & time)
+          - Button: [Buat Backup Manual] (trigger backup now)
+          - Button: [Download Backup] (download latest backup file)
+          - Note: "Backup otomatis setiap hari pukul 02:00 (local time)"
+          - Restore section (opsional, maybe super admin only):
+            * File upload untuk restore dari backup
+            * Warning: "Restore akan overwrite semua data. Pastikan sudah backup terlebih dahulu!"
+
+       C. **User Account (Profile)** (admin can edit own profile)
+          - Admin name (read-only)
+          - Email (read-only atau editable)
+          - Phone (editable)
+          - Password (change password section, form sama dengan patient profile)
+          - Button: "Simpan Perubahan" (edit info), "Ganti Password"
+
+       D. **Session & Logout** (opsional)
+          - Current session info (login time, last activity)
+          - Button: "Logout Semua Device" (terminate all sessions, force re-login)
+
+   LOGIC FLOW:
+     1. Load settings data (GET /admin/settings).
+     2. Display sections.
+     3. Edit phone / password → same as patient profile flow.
+     4. Backup:
+        - Klik [Buat Backup Manual] → POST /admin/backup.
+        - Backend: trigger backup script (database dump), return status.
+        - Frontend: show toast "Backup sedang diproses..." → "Backup berhasil" (setelah selesai).
+     5. Download backup:
+        - Klik [Download Backup] → GET /admin/backup/download.
+        - Backend: return backup file (encrypted, password-protected optional).
+        - Frontend: trigger download.
+
+================================================================
+14. DOCTOR WEB: AUTHENTICATION & PORTAL
+================================================================
+
+   A. DOCTOR LOGIN PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /doctor/login
+   Role: Public
+   Device: Web
+
+   Komponen:
+     - Logo & heading: "Portal Dokter"
+     - Form:
+        * Username / Email (format: dr_[spesialisasi]_[cabang], e.g., dr_bm_a)
+        * Password
+        * Button "Masuk" (primary)
+     - Note: "Hanya dokter spesialis yang terdaftar dapat akses"
+
+   LOGIC FLOW:
+     1. User input username & password.
+     2. Validasi frontend: not empty.
+     3. POST /auth/doctor-login { username, password }.
+     4. Backend:
+        - Cek username/email, validate password.
+        - Cek role == DOCTOR.
+        - Rate limit: 5 failures → lock.
+        - Generate JWT (expiry 8 jam), return { token, doctor_id, doctor_name, specialty }.
+     5. Frontend: save token, redirect to /doctor/queue.
+     6. Error: "Username atau password salah" atau "Akun terkunci".
+
+   B. DOCTOR SIDEBAR & NAVIGATION
+   ─────────────────────────────────────────────────────────────
+   Komponen (persistent di semua doctor pages):
+     - Header (top):
+        * Logo
+        * Doctor name & dropdown (profile, logout)
+     - Sidebar (left, atau collapsible):
+        * Menu:
+          1. Antrian (/doctor/queue)
+          2. Pasien (/doctor/patients) — optional, list pasien untuk dokter ini
+          3. EMR (/doctor/emr) — optional, list encounters untuk dokter ini
+          4. Profil (/doctor/profile)
+        * Current page highlight
+     - Main content area (right)
+
+   C. DOCTOR QUEUE PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /doctor/queue
+   Role: DOCTOR (authenticated)
+   Device: Web
+
+   Komponen:
+     - Header: "Antrian Pasien Saya Hari Ini"
+     - Summary (optional):
+        * Total antrian
+        * Sedang dilayani
+        * Sudah selesai
+     - Queue table (real-time, polling 3 detik):
+        * Columns: Nomor, Nama Pasien, Status, Waktu Check-in, Aksi
+        * Rows:
+          - Queue number
+          - Patient name (or pasien code if privacy)
+          - Status badge (WAITING, CALLED, IN_SERVICE, COMPLETED)
+          - Check-in time
+          - Buttons:
+            * Jika WAITING: [Panggil] [Mulai Layani]
+            * Jika CALLED: [Mulai Layani] [Panggil Ulang]
+            * Jika IN_SERVICE: [Selesai Layani] (or "Input EMR")
+            * Jika COMPLETED: (no actions)
+
+   LOGIC FLOW:
+     1. Load: GET /queues/doctor/:doctor_id?date=[today] (polling 3 detik).
+     2. Display queue table.
+     3. Panggil:
+        - Klik [Panggil] → POST /queues/:queue_id/call.
+        - Backend: update status → CALLED, publish event, send FCM.
+        - Frontend: update row, show toast.
+     4. Mulai Layani:
+        - Klik [Mulai Layani] → POST /queues/:queue_id/start-service.
+        - Backend: update status → IN_SERVICE.
+        - Frontend: update row.
+     5. Selesai Layani:
+        - Klik [Selesai Layani] atau "Input EMR" → navigate to /doctor/emr/new dengan queue_id parameter.
+        - (Atau dapat direktly input EMR, see below)
+
+   D. DOCTOR EMR INPUT PAGE (NEW ENCOUNTER)
+   ─────────────────────────────────────────────────────────────
+   URL: /doctor/emr/new?queue_id=[queue_id] (or /doctor/emr/create)
+   Role: DOCTOR (authenticated)
+   Device: Web
+
+   Komponen:
+     - Header: "Input Rekam Medis (EMR)"
+     - Patient info (read-only, pre-filled dari queue/booking):
+        * Patient name
+        * Date & time
+     - Form (editable):
+        * Keluhan / Anamnesa (textarea, wajib)
+        * Diagnosa (textarea, wajib)
+        * Tindakan Medis (multi-select atau checklist, wajib, contoh: Scaling, Filling, Cleaning, etc)
+        * Resep & Instruksi (textarea, optional)
+        * Lampiran / File (file upload, optional, untuk foto/X-ray/PDF, max 5 files)
+     - Button: "Simpan Draft" (secondary), "Selesaikan EMR" (primary, akan trigger auto-invoice)
+
+   LOGIC FLOW:
+     1. Load: GET /queues/:queue_id (untuk pre-fill patient info).
+     2. Display form.
+     3. Dokter input data & upload files (jika ada).
+     4. Klik "Simpan Draft":
+        - POST /encounters { patient_id, queue_id, complaint, diagnosis, actions, prescription, files }
+          dengan status: DRAFT.
+        - Backend: create encounter record, store files di MinIO.
+        - Frontend: show toast "EMR disimpan sebagai draft". Dokter dapat kembali edit.
+     5. Klik "Selesaikan EMR":
+        - POST /encounters/:encounter_id/complete (atau POST /encounters dengan action: COMPLETE).
+        - Backend:
+          * Update encounter status → COMPLETED.
+          * Update queue status → COMPLETED.
+          * Trigger auto-invoice generation (event-driven atau synchronous).
+          * Publish event 'encounter.completed', kirim notifikasi ke patient (optional).
+        - Frontend: show toast "EMR selesai. Invoice otomatis dibuat", navigate back to /doctor/queue.
+
+   E. DOCTOR EMR LIST / HISTORY PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /doctor/emr (or /doctor/encounters)
+   Role: DOCTOR
+   Device: Web
+
+   Komponen:
+     - Header: "Riwayat EMR Saya"
+     - Filter & search:
+        * Date range (default: today, dapat rubah)
+        * Status: "Semua", "Draft", "Completed"
+        * Search by patient name
+     - Table:
+        * Columns: Tanggal, Pasien, Status, Aksi
+        * Rows:
+          - Date
+          - Patient name
+          - Status badge (DRAFT = orange, COMPLETED = green)
+          - Button: [Lihat Detail] [Edit] (if DRAFT)
+     - Pagination
+
+   LOGIC FLOW:
+     1. Load: GET /encounters?doctor_id=[from_token], filters, date_range.
+     2. Display list.
+     3. Klik [Lihat Detail] → navigate to /doctor/emr/:encounter_id (detail/read-only view).
+     4. Klik [Edit] (if DRAFT) → navigate to /doctor/emr/:encounter_id/edit (edit form).
+
+   F. DOCTOR PROFILE PAGE
+   ─────────────────────────────────────────────────────────────
+   URL: /doctor/profile
+   Role: DOCTOR
+   Device: Web
+
+   Komponen:
+     - Doctor info (read-only):
+        * Name
+        * Specialist
+        * Email
+        * Phone
+        * Bio (optional)
+     - Editable section:
+        * Phone (editable)
+        * Email (editable)
+     - Change password (form, sama dengan patient/admin)
+     - Button: "Simpan", "Ganti Password", "Logout" (dengan confirm)
+
+   LOGIC FLOW:
+     - Same as patient/admin profile flow.
+
+================================================================
+15. TV QUEUE DISPLAY (KIOSK MODE)
+================================================================
+
+   URL: /tv/queue-display (or /displays/queue)
+   Role: No authentication (public, restricted access via firewall/IP)
+   Device: Dedicated TV/Screen (kiosk mode, full-screen)
+
+   Komponen:
+     - Header (small, minimal): Branch name, current time (auto-updated)
+     - Main display area:
+        * Large grid layout showing all 8 specialists in a branch
+        * Per specialist card/panel:
+          - Nama dokter: [Dr. Nama | Sp.Spesialisasi]
+          - Current calling number: [N] (large, prominent font, color-coded)
+          - Queue list (below current number):
+            * "Nomor Antrian:"
+            * [List nomor-nomor menunggu: 3, 4, 5, 7, ... (up to 4-5 showing, or all if screen fits)]
+          - Color coding:
+            * Current calling: RED background, WHITE text (merah highlight)
+            * Queue numbers: BLUE or normal color
+
+   LOGIC FLOW (Real-time, WebSocket atau polling 2-3 detik):
+     1. Load: GET /tv-display/queue?branch_id=[branch] (no auth, or IP-restricted).
+     2. Backend return current queue state for all doctors in branch.
+     3. Frontend display layout.
+     4. Subscribe to real-time updates (WebSocket /ws/queue atau polling).
+     5. On update:
+        - Doctor calls pasien → queue state change → TV display immediately update.
+        - Pasien checked in → queue state update → TV display reflect new queue number.
+        - Pasien completed/selesai → current number removed → next number show.
+     6. Auto-delete completed numbers:
+        - Saat dokter mark pasien selesai, nomor otomatis hilang dari display (FR-18 dari PRD).
+
+   Design notes:
+     - Full-screen, kiosk mode (no URL bar, no navigation).
+     - High contrast (easy to read dari distance).
+     - Auto-refresh jika connection lost (fallback mode).
+     - Responsive grid (adapt to different screen sizes/resolutions).
+
+================================================================
+16. LOGIC FLOW UMUM (CROSS-CUTTING)
+================================================================
+
+   A. AUTHENTICATION & AUTHORIZATION
+      ─────────────────────────────────────────────────────────
+      - All endpoints (except /auth, /health, public pages) require JWT token.
+      - Role-based access control:
+        * PATIENT: /patient/*, /auth/patient-*
+        * ADMIN_BRANCH: /admin/*, /auth/admin-*
+        * DOCTOR: /doctor/*, /auth/doctor-*
+      - Admin & Doctor: row-level security, can only access own branch data (branch_id filter).
+      - Patient: can only access own bookings & encounters (patient_id filter).
+
+   B. VALIDASI & ERROR HANDLING
+      ─────────────────────────────────────────────────────────
+      - Frontend validation: real-time feedback, disable submit jika invalid.
+      - Backend validation: all inputs validated (Zod), return 400 dengan error detail.
+      - Error messages: Bahasa Indonesia, deskriptif, actionable.
+      - Examples:
+        * 400 Bad Request: "Email format tidak valid"
+        * 409 Conflict: "Email sudah terdaftar"
+        * 401 Unauthorized: "Silakan login terlebih dahulu"
+        * 403 Forbidden: "Anda tidak memiliki akses ke halaman ini"
+        * 429 Too Many Requests: "Terlalu banyak percobaan. Coba lagi dalam [X] menit"
+        * 500 Server Error: "Terjadi kesalahan server. Tim kami sedang menangani. Coba lagi nanti."
+      - Rate limiting: 5 failed login attempts dalam 5 menit → lock akun 5 menit.
+
+   C. REAL-TIME UPDATES (QUEUE, PAYMENTS)
+      ─────────────────────────────────────────────────────────
+      - Queue updates: polling every 3 seconds (fallback) atau WebSocket (preferred).
+      - TV display updates: polling every 2-3 seconds (more frequent).
+      - Payment webhook: real-time via Midtrans webhook (synchronous).
+      - FCM notifications: push notification ke mobile app (async).
+      - Event-driven: use RabbitMQ untuk publish events (booking_confirmed, patient.called, etc).
+
+   D. NOTIFIKASI (FCM & EMAIL)
+      ─────────────────────────────────────────────────────────
+      - FCM push notifications:
+        * Booking confirmed: "Booking Anda dikonfirmasi. Kode: [6-digit]. Datang sebelum [waktu]"
+        * Patient called: "Dokter memanggil Anda. Nomor: [N]"
+        * EMR completed: "Kunjungan selesai. Lihat EMR Anda" (link ke app)
+      - Email notifications:
+        * Registration confirmation (optional)
+        * Booking confirmation: "Booking Anda berhasil. Kode: [6-digit]"
+        * Payment confirmation: "Pembayaran diterima. Silakan check-in di klinik"
+        * EMR completion: "Rekam medis kunjungan Anda telah selesai" (link untuk lihat)
+      - Sendiri: use Resend (or similar email service).
+      - Mock untuk testing (development environment).
+
+   E. AUDIT LOG
+      ─────────────────────────────────────────────────────────
+      - Immutable, append-only, no UPDATE/DELETE.
+      - Events logged:
+        * Authentication: LOGIN, LOGOUT, FAILED_LOGIN, CHANGE_PASSWORD
+        * Booking: BOOKING_CREATED, BOOKING_CANCELLED, BOOKING_CONFIRMED
+        * Payment: PAYMENT_REDIRECT, PAYMENT_CONFIRMED, PAYMENT_INPUT
+        * Queue: CHECKIN, QUEUE_CALL, SERVICE_START, SERVICE_COMPLETE, NO_SHOW
+        * EMR: EMR_CREATED, EMR_UPDATED, EMR_COMPLETED
+        * Inventory: INVENTORY_CREATE, INVENTORY_UPDATE, INVENTORY_DELETE
+        * Schedule: SCHEDULE_OVERRIDE
+        * Reconciliation: RECONCILIATION_COMPLETED
+      - Each log entry: timestamp, event_type, user_id, user_name (Bahasa Indonesia), 
+        affected_resource_id, description, metadata (JSON).
+      - Stored in audit_logs table (immutable), indexed by branch_id & date for fast retrieval.
+
+   F. IDEMPOTENCY (PAYMENT)
+      ─────────────────────────────────────────────────────────
+      - Each payment request: generate unique request_id (UUID), store di database dengan unique constraint.
+      - Midtrans webhook: IF request_id already exist, return existing payment response (no duplicate charge).
+      - Prevents duplicate charges jika webhook di-retry.
+
+   G. DATA SECURITY & PRIVACY
+      ─────────────────────────────────────────────────────────
+      - JWT tokens: HttpOnly cookie (preferred) atau localStorage (fallback).
+      - HTTPS only (enforced).
+      - Passwords: bcrypt (cost 12+), no plaintext.
+      - Sensitive data (DP amount, payment method): encrypted di database (optional, per compliance requirement).
+      - Patient privacy: EMR diagnosa dapat disembunyikan dari admin (policy decision).
+      - TV display: hanya nomor antrian (no patient names, untuk privacy).
+
+   H. DATABASE BACKUPS
+      ─────────────────────────────────────────────────────────
+      - Automated daily backup: 02:00 (local time).
+      - Backup destination: local storage + Supabase auto-backup.
+      - Manual backup: admin dapat trigger via /admin/settings.
+      - Restore procedure: tested & documented (untuk disaster recovery).
+
+================================================================
+END OF HALAMAN.txt
+Versi    : 1.0 (Final - Complete PRD v10.0 Coverage)
+Tanggal  : 2026-07-07
+Status   : Ready for Hi-Fi Design & TDD Phase
+================================================================

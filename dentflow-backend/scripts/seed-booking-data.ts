@@ -56,13 +56,13 @@ async function seedBookingData() {
       await pool.query(
         `INSERT INTO doctor_schedules (branch_id, dokter_id, day_of_week, session_start, session_end, max_patients_per_session)
          VALUES ($1, $2, $3, '09:00', '12:00', 4)
-         ON CONFLICT (branch_id, dokter_id, day_of_week, session_start) DO NOTHING`,
+         ON CONFLICT DO NOTHING`,
         [branchId, doctorUserId, day]
       );
       await pool.query(
         `INSERT INTO doctor_schedules (branch_id, dokter_id, day_of_week, session_start, session_end, max_patients_per_session)
          VALUES ($1, $2, $3, '13:00', '16:00', 4)
-         ON CONFLICT (branch_id, dokter_id, day_of_week, session_start) DO NOTHING`,
+         ON CONFLICT DO NOTHING`,
         [branchId, doctorUserId, day]
       );
     }

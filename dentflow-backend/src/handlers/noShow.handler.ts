@@ -1,11 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
-import { Pool } from 'pg';
-import { config } from '../config';
+
 import { logger } from '../utils/logger';
 import { auditService } from '../services/audit.service';
 import { AuditEventType } from '../models/audit.model';
+import { pool } from '../config/database';
 
-const pool = new Pool({ connectionString: config.database.url });
 
 /**
  * GET /api/admin/no-shows?branchId=...&date=...
@@ -33,9 +32,9 @@ export const getNoShows = async (req: Request, res: Response, next: NextFunction
       `
       SELECT 
         b.id as booking_id,
-        b.pasien_id,
-        u.full_name as patient_name,
-        u.phone_number as patient_phone,
+        b.patient_id,
+        p.full_name as patient_name,
+        p.phone as patient_phone,
         b.doctor_id,
         d.full_name as doctor_name,
         b.booking_date,
@@ -45,12 +44,11 @@ export const getNoShows = async (req: Request, res: Response, next: NextFunction
         b.status,
         b.branch_id
       FROM bookings b
-      LEFT JOIN users u ON b.pasien_id = u.id
-      LEFT JOIN users d ON b.doctor_id = d.id
+      LEFT JOIN patients p ON b.patient_id = p.id
+      LEFT JOIN doctors d ON b.doctor_id = d.id
       WHERE b.branch_id = $1
         AND b.status = 'NO_SHOW'
         AND b.no_show_at::date = $2::date
-        AND b.deleted_at IS NULL
       ORDER BY b.no_show_at DESC
       `,
       [branchId, dateStr]
@@ -85,7 +83,7 @@ export const markNoShowManual = async (req: Request, res: Response, next: NextFu
     await client.query('BEGIN');
 
     const bookingResult = await client.query(
-      `SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL`,
+      `SELECT * FROM bookings WHERE id = $1`,
       [bookingId]
     );
     if (bookingResult.rows.length === 0) {

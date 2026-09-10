@@ -2,9 +2,17 @@
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 
+declare global {
+  namespace Express {
+    interface Request {
+      requestId?: string;
+    }
+  }
+}
+
 export const requestLoggerMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const requestId = req.headers['x-request-id'] as string || uuidv4();
-  (req as any).requestId = requestId; // <-- FIX: casting ke any
+  req.requestId = requestId;
 
   const startTime = Date.now();
   const originalSend = res.send;
