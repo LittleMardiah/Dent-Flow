@@ -2985,3 +2985,32 @@ Catatan (di luar scope, bukan regresi task ini):
   queue stats 0, 403->200) — tidak terkait audit immutability.
 - Audit test data sengaja dibiarkan di DB (append-only), branch dicakup FK
   RESTRICT tidak bisa dihapus setelah ada audit log.
+
+
+========================================================
+Task 5.2.0 - Phase 0: Bersih-bersih Working Tree
+Status: ✅ SELESAI
+Tanggal: 2026-09-10
+========================================================
+
+Apa yang dilakukan:
+1. Hapus backup files, coverage, temp scripts (~300+ files).
+2. Hapus root node_modules (75MB) & mcp-server (tooling lama).
+3. Update .gitignore comprehensive.
+4. Hapus dentflow-web/src/app/patient/* (deviasi PRD - TD-ARCH-003).
+5. Hapus orphaned files: 6 hooks, 5 API, PatientLayout.tsx.
+6. Commit rapi.
+7. Update LOGBOOK & TECHNICAL DEBT.
+
+Hasil Verifikasi:
+- ✅ Working tree bersih
+- ✅ Git history rapi
+- ✅ All migrations (026-030) tetap ada
+- ✅ All integration test FASE 5 tetap ada
+- ✅ Patient web portal dihapus (deviasi PRD resolved)
+- ✅ TSC EXIT CODE: 0
+- ✅ TD-ARCH-003 ditutup
+
+Referensi:
+- ROADMAP TAMBAHAN.txt (Phase 0)
+- TECHNICAL DEBT.txt (TD-ARCH-003)

@@ -2680,3 +2680,46 @@ Perbaikan:
 Validasi:
 - UPDATE konten -> DITOLAK; DELETE -> DITOLAK; INSERT -> sukses;
   DELETE user (FK SET NULL) -> sukses tanpa mengubah isi audit.
+
+===
+TD-ARCH-003 UPDATE - 2026-09-10
+Status: ✅ RESOLVED
+
+Keputusan:
+- Patient web portal di Next.js DIHAPUS (bukan redirect, tapi hapus total)
+- Flutter tetap satu-satunya akses pasien di production
+- Backend API /api/patient/* tetap (dipakai Flutter)
+- Deviasi PRD teratasi
+
+Files dihapus:
+- dentflow-web/src/app/patient/* (6 pages: dashboard, booking, bookings, history, invoices, profile)
+- dentflow-web/src/components/patient/* (3 components: AIChatWidget, FeedbackModal, HealthTipsCarousel)
+- dentflow-web/src/components/layouts/PatientLayout.tsx
+- dentflow-web/src/hooks/usePatient.ts, useBooking.ts, usePatientBookings.ts, usePatientEmr.ts, usePatientInvoices.ts, usePatientProfile.ts (6 hooks)
+- dentflow-web/src/lib/api/patient.ts, patientBookings.ts, patientEmr.ts, patientInvoices.ts, patientProfile.ts (5 API clients)
+
+Yang DIHAPUS:
+- PatientLayout.tsx (navigasi patient web)
+- Semua route /patient/* di Next.js
+- Semua hook/orphaned API untuk patient web
+
+Yang TETAP ADA (tidak dihapus):
+- usePatients.ts (plural) — dipakai admin portal
+- patients.ts (plural) — dipakai admin portal
+- Backend API /api/patient/* — dipakai Flutter mobile
+
+Verifikasi:
+- TSC EXIT CODE: 0 (no errors)
+- Git commit: 097b28d
+- Tidak ada regresi di admin/doctor portal
+- Cypress E2E test tetap passing (8/8)
+
+Rationale:
+- PRD v10.0: Pasien HANYA akses via Flutter mobile
+- Duplikasi effort web vs mobile dihilangkan
+- Maintenance overhead berkurang (~500+ lines kode tidak perlu)
+- Developer/recruiter tidak bingung dengan kode patient web
+
+Referensi:
+- ROADMAP TAMBAHAN.txt (Phase 0)
+- LOGBOOK Task 5.2.0
