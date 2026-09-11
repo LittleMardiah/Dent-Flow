@@ -9,7 +9,7 @@ import { logger } from '../utils/logger';
  */
 const PROFILE_QUERY = `
   SELECT d.id, d.user_id, d.full_name, d.specialization, d.license_number,
-         d.is_active, d.branch_id, d.created_at, d.updated_at,
+         u.is_active, d.branch_id, d.created_at, d.updated_at,
          u.email, u.phone,
          b.name AS branch_name
   FROM doctors d

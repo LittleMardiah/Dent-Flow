@@ -3324,3 +3324,53 @@ File yang diubah:
 - dentflow-web/src/app/doctor/profile/page.tsx
 - dentflow-web/src/lib/api/doctorProfile.ts (interface DoctorProfile + branchName)
 - dentflow-backend/src/handlers/doctorProfile.handler.ts (SELECT d.is_active + map isActive)
+
+
+============================================================
+Task 5.3.5 - Fix Kolom d.is_active di doctorProfile.handler.ts
+Status: ✅ SELESAI
+Tanggal: 2026-09-11
+============================================================
+
+Production error: "column d.is_active does not exist"
+
+Root Cause:
+- Task 5.3.4 menambahkan `SELECT d.is_active` ke PROFILE_QUERY di
+  src/handlers/doctorProfile.handler.ts untuk fix "Status Nonaktif" di
+  frontend. Namun tabel doctors TIDAK memiliki kolom `is_active` —
+  yang ada hanya `is_available`. Kolom `is_active` justru berada di
+  tabel users (yang sudah di-JOIN sebagai `u`).
+- Akibatnya GET /api/doctors/me selalu throw error 500
+  "column d.is_active does not exist".
+
+Validasi (STEP 1):
+- information_schema.columns tabel doctors:
+  id, branch_id, user_id, full_name, specialization, license_number,
+  is_available, created_at, updated_at  → is_active TIDAK ADA.
+- information_schema.columns tabel users (is_active/is_available):
+  is_active ✓ ADA → sumber status aktif dokter yang benar.
+
+Perbaikan (STEP 2):
+- src/handlers/doctorProfile.handler.ts PROFILE_QUERY:
+  `d.is_active` → `u.is_active` (users sudah di-JOIN `JOIN users u ON u.id = d.user_id`).
+- Mapping `isActive: row.is_active ?? true` TIDAK berubah (nama field sama).
+
+Cek query lain (STEP 3):
+- grep "d.is_active|doctors.is_active" di seluruh src/ → TIDAK ADA
+  file lain yang bermasalah. Fix terisolasi di doctorProfile.handler.ts.
+
+Verifikasi (STEP 4):
+- ✅ npx tsc --noEmit → exit 0 (0 error)
+- ✅ Backend restart (ts-node di port 3001)
+- ✅ Login dr_bm_a → token valid
+- ✅ GET /api/doctors/me →
+  success: true, data.isActive: true (dari users.is_active),
+  data.branchName: "Cabang A"
+
+File yang diubah:
+- dentflow-backend/src/handlers/doctorProfile.handler.ts
+  (SELECT d.is_active → u.is_active)
+
+Referensi:
+- prompt.txt (FIX: Kolom d.is_active Salah di doctorProfile.handler.ts)
+- Task 5.3.4 (yang memperkenalkan d.is_active)
