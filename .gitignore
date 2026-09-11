@@ -76,3 +76,5 @@ dentflow-backend/reference/
 # Vercel production env (JANGAN COMMIT)
 docs 1.0/.env.vercel.production
 *.env.vercel*
+
+.vercel

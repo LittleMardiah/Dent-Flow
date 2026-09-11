@@ -1,11 +1,14 @@
 ﻿import pino, { Logger as PinoLogger } from 'pino';
 import { config } from '../config';
 
+const isVercel = process.env.VERCEL === '1';
+const isDev = config.server.nodeEnv === 'development' && !isVercel;
+
 // Konfigurasi Pino
 const pinoConfig = {
   level: config.logging.level || 'info',
-  // Di development, pakai pretty print. Di production, output JSON murni.
-  ...(config.server.nodeEnv === 'development' && {
+  // Di local development, pakai pretty print. Di production/Vercel, output JSON murni.
+  ...(isDev && {
     transport: {
       target: 'pino-pretty',
       options: {

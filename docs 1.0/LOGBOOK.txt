@@ -3172,3 +3172,31 @@ File yang diubah/created:
 Referensi:
 - ROADMAP TAMBAHAN.txt (Vercel deploy)
 - prompt.txt PHASE 1 STEP 6
+
+
+========================================================
+Task 5.3.2 - Fix Vercel Runtime Error: pino-pretty + dotenv
+Status: ✅ SELESAI
+Tanggal: 2026-09-11
+========================================================
+
+Apa yang dilakukan:
+1. Refactor src/utils/logger.ts: pino-pretty transport HANYA aktif di local
+   development (isDev = nodeEnv development && !isVercel). Di production/Vercel
+   pake pino default output JSON murni (tanpa transport worker thread).
+2. Refactor src/config/index.ts: skip dotenv load saat process.env.VERCEL === '1'.
+   Vercel inject env vars langsung ke process.env, dotenv cuma dipake di local.
+
+Hasil Verifikasi:
+- ✅ npx tsc --noEmit → exit 0 (0 error)
+
+File yang diubah:
+- dentflow-backend/src/utils/logger.ts (skip transport pino-pretty di Vercel/production)
+- dentflow-backend/src/config/index.ts (skip dotenv saat VERCEL=1)
+
+Root cause:
+- pino-pretty ga bisa jalan di Vercel serverless (worker thread ga didukung)
+- dotenv load .env lokal force-override, nimpalin env vars Vercel yg benar
+
+Referensi:
+- prompt.txt Task 5.3.2

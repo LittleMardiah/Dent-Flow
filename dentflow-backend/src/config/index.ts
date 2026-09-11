@@ -2,20 +2,24 @@ import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
 
-// Load environment file based on NODE_ENV
-const envFile = process.env.NODE_ENV === "test" ? ".env.test" : ".env";
-const envPath = path.resolve(process.cwd(), envFile);
+// Skip dotenv di Vercel: env vars udah diinject langsung ke process.env oleh Vercel.
+// dotenv cuma dipake di local development.
+if (process.env.VERCEL !== '1') {
+  // Load environment file based on NODE_ENV
+  const envFile = process.env.NODE_ENV === "test" ? ".env.test" : ".env";
+  const envPath = path.resolve(process.cwd(), envFile);
 
-// Baca file .env secara manual dan set ke process.env (paksa override)
-if (fs.existsSync(envPath)) {
-  const envContent = fs.readFileSync(envPath, 'utf-8');
-  const parsed = dotenv.parse(envContent);
-  for (const [key, value] of Object.entries(parsed)) {
-    process.env[key] = value;
+  // Baca file .env secara manual dan set ke process.env (paksa override)
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    const parsed = dotenv.parse(envContent);
+    for (const [key, value] of Object.entries(parsed)) {
+      process.env[key] = value;
+    }
+    console.log(`✅ Loaded ${Object.keys(parsed).length} variables from ${envFile}`);
+  } else {
+    console.warn(`⚠️ Environment file ${envFile} not found, using system env`);
   }
-  console.log(`✅ Loaded ${Object.keys(parsed).length} variables from ${envFile}`);
-} else {
-  console.warn(`⚠️ Environment file ${envFile} not found, using system env`);
 }
 
 if (!process.env.DATABASE_URL) {
