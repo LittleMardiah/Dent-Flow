@@ -35,6 +35,11 @@ class WebSocketService {
       return;
     }
 
+    if (process.env.NEXT_PUBLIC_WS_ENABLED !== 'true') {
+      console.log('⏭️ WebSocket disabled (NEXT_PUBLIC_WS_ENABLED != true)');
+      return;
+    }
+
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 
                   process.env.NEXT_PUBLIC_API_URL?.replace('http', 'ws').replace('/api', '') || 
                   'ws://localhost:3001';

@@ -9,7 +9,7 @@ import { logger } from '../utils/logger';
  */
 const PROFILE_QUERY = `
   SELECT d.id, d.user_id, d.full_name, d.specialization, d.license_number,
-         d.branch_id, d.created_at, d.updated_at,
+         d.is_active, d.branch_id, d.created_at, d.updated_at,
          u.email, u.phone,
          b.name AS branch_name
   FROM doctors d
@@ -25,6 +25,7 @@ const mapDoctorProfile = (row: any) => ({
   phone: row.phone || '',
   specialization: row.specialization || '',
   licenseNumber: row.license_number || '',
+  isActive: row.is_active ?? true,
   branchId: row.branch_id,
   branchName: row.branch_name || '',
   createdAt: row.created_at,

@@ -9,6 +9,7 @@ export interface DoctorProfile {
   licenseNumber: string;
   isActive: boolean;
   branchId: string;
+  branchName?: string;
   branch?: {
     id: string;
     name: string;

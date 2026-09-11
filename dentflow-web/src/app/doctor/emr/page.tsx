@@ -96,12 +96,20 @@ export default function DoctorEmrPage() {
             <h1 className="text-2xl font-bold text-gray-800">Riwayat EMR</h1>
             <p className="text-sm text-gray-500">{totalEncounters} rekam medis</p>
           </div>
-          <Link href="/doctor/emr/new">
-            <Button variant="primary">
-              <Plus size={16} className="mr-2" />
-              EMR Baru
-            </Button>
-          </Link>
+          <Button
+            variant="primary"
+            onClick={() => {
+              const confirmed = window.confirm(
+                'Anda akan diarahkan ke antrian untuk memilih pasien. Lanjutkan?'
+              );
+              if (confirmed) {
+                router.push('/doctor/queue');
+              }
+            }}
+          >
+            <Plus size={16} className="mr-2" />
+            EMR Baru
+          </Button>
         </div>
 
         {/* Error */}

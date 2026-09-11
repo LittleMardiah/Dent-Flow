@@ -148,7 +148,7 @@ export default function DoctorProfilePage() {
                 </div>
                 <div>
                   <span className="text-gray-400">Cabang:</span>{' '}
-                  <span className="text-gray-700">{profile?.branch?.name || '-'}</span>
+                  <span className="text-gray-700">{profile?.branchName || '-'}</span>
                 </div>
                 <div>
                   <span className="text-gray-400">Email:</span>{' '}

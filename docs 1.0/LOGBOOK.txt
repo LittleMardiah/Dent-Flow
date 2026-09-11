@@ -3284,3 +3284,43 @@ File yang sudah ada (tidak diubah):
 
 Verifikasi:
 - ✅ npx tsc --noEmit → exit 0 (tidak ada error)
+
+---
+
+5.3.4
+Polish Phase 1: EMR UX + WebSocket Suppress + Profil Fix
+
+1. EMR button (+ EMR Baru):
+   - dentflow-web/src/app/doctor/emr/page.tsx
+   - Klik tombol → confirm dialog "Anda akan diarahkan ke antrian untuk memilih
+     pasien. Lanjutkan?" → [ya] redirect ke /doctor/queue, [batal] tetap di halaman.
+   - Menghilangkan redirect langsung ke queue tanpa penjelasan.
+
+2. WebSocket suppress di production:
+   - dentflow-web/src/lib/websocket.ts
+   - connect() sekarang cek process.env.NEXT_PUBLIC_WS_ENABLED.
+   - Jika != 'true' → skip koneksi, log "⏭️ WebSocket disabled (NEXT_PUBLIC_WS_ENABLED != true)".
+   - Fallback polling tetap berjalan.
+   - dentflow-web/.env.production tambah baris NEXT_PUBLIC_WS_ENABLED=false
+     (backend di Vercel tidak support WebSocket → mencegah error noise di console).
+
+3. Profil fix (Cabang "-" & Status "Nonaktif"):
+   - Root cause 1: frontend akses profile?.branch?.name (nested), tapi backend
+     return branchName sebagai flat field → Cabang selalu "-".
+     Fix: profile page pakai profile?.branchName, interface DoctorProfile
+     tambah field branchName (opsional, untuk backward compat).
+   - Root cause 2: backend mapDoctorProfile tidak return isActive → Status selalu
+     "Nonaktif" (undefined falsy).
+     Fix: PROFILE_QUERY tambah d.is_active, mapDoctorProfile return
+     isActive: row.is_active ?? true.
+
+Verifikasi:
+- ✅ npx tsc --noEmit → exit 0 (0 error)
+
+File yang diubah:
+- dentflow-web/src/app/doctor/emr/page.tsx
+- dentflow-web/src/lib/websocket.ts
+- dentflow-web/.env.production
+- dentflow-web/src/app/doctor/profile/page.tsx
+- dentflow-web/src/lib/api/doctorProfile.ts (interface DoctorProfile + branchName)
+- dentflow-backend/src/handlers/doctorProfile.handler.ts (SELECT d.is_active + map isActive)
