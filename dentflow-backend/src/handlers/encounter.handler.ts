@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { EncounterService } from '../services/encounter.service';
 import { logger } from '../utils/logger';
+import { pool } from '../config/database';
 
 const encounterService = new EncounterService();
 
@@ -163,6 +164,113 @@ export const getEncounter = async (req: Request, res: Response, next: NextFuncti
     if (err.message === 'ACCESS_DENIED') {
       return res.status(403).json({ success: false, message: 'Anda tidak memiliki akses ke pemeriksaan ini' });
     }
+    next(error);
+  }
+};
+
+/**
+ * GET /api/encounters
+ * List encounters dengan filter:
+ *   - doctor_id  : filter dokter (hanya untuk ADMIN_BRANCH; DOCTOR selalu dilihatkan miliknya sendiri)
+ *   - date_from  : mulai dari tanggal (e.started_at / e.created_at)
+ *   - date_to    : sampai tanggal
+ *   - status     : ONGOING | COMPLETED | CANCELLED
+ * Response: { data: [...], pagination: { total, page, limit, pages } }
+ */
+export const listEncounters = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const branchId = (req as any).branchId || req.user?.branchId;
+    const userRole = req.user?.role || '';
+    const userId = req.user?.userId;
+
+    if (!branchId || !userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const page = Math.max(parseInt(String(req.query.page || '1')) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit || '20')) || 20, 1), 100);
+    const offset = (page - 1) * limit;
+
+    const conditions: string[] = ['e.branch_id = $1'];
+    const params: any[] = [branchId];
+    let idx = 2;
+
+    if (userRole === 'DOCTOR') {
+      // Dokter hanya melihat encounter miliknya sendiri (doctor record-nya)
+      const doctorResult = await pool.query(
+        'SELECT id FROM doctors WHERE user_id = $1',
+        [userId]
+      );
+      if (doctorResult.rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Data dokter tidak ditemukan' });
+      }
+      conditions.push(`e.doctor_id = $${idx++}`);
+      params.push(doctorResult.rows[0].id);
+    } else if (req.query.doctor_id) {
+      const doctorId = String(req.query.doctor_id);
+      conditions.push(`e.doctor_id = $${idx++}`);
+      params.push(doctorId);
+    }
+
+    if (req.query.status && typeof req.query.status === 'string') {
+      conditions.push(`e.status = $${idx++}`);
+      params.push(req.query.status.toUpperCase());
+    }
+    if (req.query.date_from && typeof req.query.date_from === 'string') {
+      // Filter berdasarkan tanggal kalender (::date) supaya independen timezone DB (timestamp tanpa time zone)
+      conditions.push(`COALESCE(e.started_at, e.created_at)::date >= $${idx}::date`);
+      params.push(req.query.date_from);
+      idx++;
+    }
+    if (req.query.date_to && typeof req.query.date_to === 'string') {
+      conditions.push(`COALESCE(e.started_at, e.created_at)::date <= $${idx}::date`);
+      params.push(req.query.date_to);
+      idx++;
+    }
+
+    const whereSql = conditions.join(' AND ');
+
+    const totalResult = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM encounters e WHERE ${whereSql}`,
+      params
+    );
+    const total = totalResult.rows[0]?.total || 0;
+
+    const listResult = await pool.query(
+      `SELECT e.id,
+              COALESCE(e.started_at, e.created_at) AS encounter_date,
+              e.treatment,
+              e.status,
+              p.full_name AS patient_name
+       FROM encounters e
+       JOIN patients p ON p.id = e.patient_id
+       WHERE ${whereSql}
+       ORDER BY encounter_date DESC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, limit, offset]
+    );
+
+    const data = listResult.rows.map((row) => ({
+      id: row.id,
+      encounterDate: row.encounter_date || null,
+      patientName: row.patient_name || '',
+      treatment: row.treatment || '',
+      status: row.status,
+    }));
+
+    res.status(200).json({
+      success: true,
+      data,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit) || 0,
+      },
+    });
+  } catch (error: unknown) {
+    const err = error as Error;
+    logger.error({ error: err.message, stack: err.stack }, 'Error listing encounters');
     next(error);
   }
 };

@@ -7,12 +7,14 @@ import {
   updateEncounter,
   completeEncounter,
   getEncounter,
+  listEncounters,
 } from '../handlers/encounter.handler';
 
 const router = Router();
 
 router.use(authMiddleware);
 
+router.get('/', roleMiddleware(['DOCTOR', 'ADMIN_BRANCH']), listEncounters);
 router.post('/', roleMiddleware(['DOCTOR', 'ADMIN_BRANCH']), validateBody(StartEncounterSchema), startEncounter);
 router.put('/:id', roleMiddleware(['DOCTOR', 'ADMIN_BRANCH']), updateEncounter);
 router.post('/:id/complete', roleMiddleware(['DOCTOR', 'ADMIN_BRANCH']), completeEncounter);

@@ -3200,3 +3200,87 @@ Root cause:
 
 Referensi:
 - prompt.txt Task 5.3.2
+
+
+========================================================
+Task 5.3.3 (Backend) - Doctor Pages Endpoints:
+GET/PUT /api/doctors/me, GET /api/doctors/:id/patients,
+GET /api/encounters (list + filter)
+Status: ✅ SELESAI
+Tanggal: 2026-09-11
+========================================================
+
+Apa yang dilakukan:
+1. Handler baru src/handlers/doctorProfile.handler.ts:
+   - getDoctorProfile(req,res) → GET /api/doctors/me (role DOCTOR).
+     Query JOIN doctors + users + branches by d.user_id = JWT req.user.userId.
+     Response: { id, userId, fullName, email, specialization, licenseNumber,
+     branchId, branchName, phone }.
+   - updateDoctorProfile(req,res) → PUT /api/doctors/me (role DOCTOR).
+     Update phone & email di tabel users (cek duplikat email).
+   - getDoctorPatients(req,res) → GET /api/doctors/:id/patients (DOCTOR, ADMIN_BRANCH).
+     List pasien yang pernah di-handle dokter (berbasis encounters), scoped
+     ke branch efektif (tenant). Response per pasien:
+     { id, fullName, phone, email, totalVisits, lastVisit }.
+2. Routes di src/routes/doctorSlot.routes.ts: GET /me + PUT /me (mount SEBELUM
+   /:id supaya tidak konflik) dan GET /:id/patients.
+3. GET /api/encounters list + filter: tambah listEncounters di
+   src/handlers/encounter.handler.ts + route GET / (role DOCTOR, ADMIN_BRANCH).
+   Filter: doctor_id (ADMIN_BRANCH krn DOCTOR selalu di-scope ke rekornya
+   sendiri), date_from, date_to (semantik kalender ::date), status.
+   Response: { data: [...{ id, encounterDate, patientName, treatment, status }],
+   pagination: { total, page, limit, pages } }.
+4. Migration baru migrations/031_doctor_phone.sql: tambah kolom users.phone
+   VARCHAR(20) (root cause: tabel users belum punya kolom phone).
+
+Root cause:
+- encounters.doctor_id = doctors.id (FK fk_encounters_doctor), BUKAN users.id.
+  Query awal di prompt pakai (SELECT user_id FROM doctors WHERE id=$1) → hasil
+  selalu kosong. Diganti langsung e.doctor_id = $1.
+- ID dokter untuk test dr_bm_a di curl prompt (3ad82f53-...) adalah phantom ID;
+  record dokter asli adalah 09baea2f-8ac1-4f8c-9b98-9bcc3e6d682d.
+- Tabel users belum punya kolom phone → dibuat migration 031.
+- Filter date dari UTC berbeda dengan timestamp DB (timestamp tanpa time zone,
+  lokal UTC+7) → pakai perbandingan ::date (semantik kalender).
+
+Hasil Verifikasi:
+- ✅ npx tsc --noEmit → exit 0 (0 error)
+- ✅ npx eslint file baru → 0 error (hanya warning no-explicit-any, konsisten dgn codebase)
+- ✅ npx tsc --noEmit sesudah fix lint → exit 0
+- ✅ Test login dr_bm_a + GET /api/doctors/me → profil lengkap
+- ✅ PUT /api/doctors/me (phone) tersimpan di users.phone → terbaca lagi di GET /me
+- ✅ GET /api/doctors/09baea2f.../patients → 3 pasien (A-1, A-2, A-3)
+- ✅ GET /api/doctors/3ad82f53.../patients → HTTP 404 DOCTOR_NOT_FOUND (root cause terbukti)
+- ✅ GET /api/encounters (dokter) → 3 encounter miliknya + pagination
+- ✅ GET /api/encounters?status=COMPLETED&limit=2 → pagination total=3 pages=2
+- ✅ GET /api/encounters?date_from=2026-09-10&date_to=2026-09-10 → total 3
+- ✅ GET /api/encounters?doctor_id=...&status=COMPLETED (ADMIN_BRANCH) → total 3
+- ✅ Data uji (phone dr_bm_a) dikembalikan ke NULL setelah testing.
+
+File yang diubah:
+- dentflow-backend/migrations/031_doctor_phone.sql (NEW)
+- dentflow-backend/src/handlers/doctorProfile.handler.ts (NEW)
+- dentflow-backend/src/routes/doctorSlot.routes.ts (tambah /me, /me, /:id/patients)
+- dentflow-backend/src/handlers/encounter.handler.ts (tambah listEncounters + import pool)
+- dentflow-backend/src/routes/encounter.routes.ts (tambah GET /)
+
+Referensi:
+- prompt.txt BUILD DOKTER PAGES — BAGIAN 1: BACKEND ENDPOINTS
+- migrations/001_initial_schema.sql (fk_encounters_doctor)
+
+---
+
+5.3.3
+Frontend: 3 Halaman Dokter
+
+File yang dibuat:
+- dentflow-web/src/lib/api/doctorProfile.ts (NEW) — API client (getMyProfile, updateMyProfile, getMyPatients, getMyEncounters)
+- dentflow-web/src/app/doctor/patients/page.tsx (NEW) — Halaman daftar pasien dokter
+- dentflow-web/src/app/doctor/emr/page.tsx (NEW) — Halaman riwayat EMR + filter + pagination
+- dentflow-web/src/app/doctor/profile/page.tsx (NEW) — Halaman profil dokter (info, edit, password placeholder, logout)
+
+File yang sudah ada (tidak diubah):
+- dentflow-web/src/components/shared/Sidebar.tsx — doctorMenu sudah lengkap (Antrian, Pasien, EMR, Profil)
+
+Verifikasi:
+- ✅ npx tsc --noEmit → exit 0 (tidak ada error)
