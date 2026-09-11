@@ -218,7 +218,7 @@ MONITORING:
 | Phase | Status | Start | End | Notes |
 |-------|--------|-------|-----|-------|
 | Phase 0: Bersih-bersih | ✅ Selesai | 2026-09-10 | 2026-09-10 | Done |
-| Phase 1: Baseline | 🔴 Belum | - | - | - |
+| Phase 1: Baseline | ✅ Selesai | 2026-09-11 | 2026-09-11 | Done |
 | Phase 2: Serverless | 🔴 Belum | - | - | - |
 | Phase 3: Landing | 🔴 Belum | - | - | - |
 | Phase 4: Demo | 🔴 Belum | - | - | - |
@@ -230,7 +230,7 @@ Legend: 🔴 Belum | 🟡 In Progress | ✅ Selesai
 ================================================================
 
 MILESTONE 1: Working Tree Clean (Phase 0)
-MILESTONE 2: Demo Baseline Jalan (Phase 1)
+MILESTONE 2: Demo Baseline Jalan (Phase 1) ✅ DONE
 MILESTONE 3: Full Serverless (Phase 2)
 MILESTONE 4: Landing Page Live (Phase 3)
 MILESTONE 5: Portfolio Siap (Phase 4)
