@@ -62,3 +62,13 @@ Thumbs.db
 
 # OpenCode prompt template (jangan di-commit)
 prompt.txt
+
+# Security: Kredensial & secrets (JANGAN commit!)
+Kredensial.txt
+*Kredensial*.txt
+*credentials*.txt
+*.secret
+.env.secret
+
+# Reference files (sementara, jangan commit)
+dentflow-backend/reference/

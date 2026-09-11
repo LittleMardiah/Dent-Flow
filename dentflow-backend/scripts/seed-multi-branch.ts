@@ -157,9 +157,9 @@ async function ensureInvoice(
   }
 
   await client.query(
-    `INSERT INTO invoices (id, branch_id, encounter_id, patient_id, invoice_number, invoice_date,
+    `INSERT INTO invoices (id, branch_id, encounter_id, patient_id, invoice_number,
                            amount_due, amount_paid, paid_amount, payment_status, status, paid_at)
-     VALUES (gen_random_uuid(), $1, $2, $3, $4, CURRENT_DATE, $5, $5, $5, 'PAID', 'PAID', NOW())
+     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $5, $5, 'PAID', 'PAID', NOW())
      ON CONFLICT (encounter_id) DO NOTHING`,
     [branchId, encounterId, patientId, `MB-${key}-INV-${index}`, amount]
   );

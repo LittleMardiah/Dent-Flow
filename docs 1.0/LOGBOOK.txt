@@ -3014,3 +3014,126 @@ Hasil Verifikasi:
 Referensi:
 - ROADMAP TAMBAHAN.txt (Phase 0)
 - TECHNICAL DEBT.txt (TD-ARCH-003)
+
+
+========================================================
+Task 5.2.1 - Phase 1c: Seed Data ke Supabase
+Status: ✅ SELESAI
+Tanggal: 2026-09-10
+========================================================
+
+Apa yang dilakukan:
+1. Jalankan seed-multi-branch.ts ke Supabase
+2. Fix root cause: kolom "invoice_date" tidak ada di tabel invoices (schema mismatch seed script vs DB)
+3. Hapus kolom invoice_date dari INSERT statement di seed script
+4. Re-run seed berhasil
+5. Verifikasi data masuk (branches, users, patients, invoices, schedules)
+
+Hasil Verifikasi:
+- ✅ 3 branches (Cabang A, B, C)
+- ✅ 3 admins (admin_a, admin_b, admin_c)
+- ✅ 3 doctors (dr_bm_a, dr_bm_b, dr_bm_c)
+- ✅ 15 patients (5 marker per branch)
+- ✅ 9 invoices (3 PAID per branch)
+- ✅ Doctor schedules = 0 (expected, seed script tidak membuat schedules)
+
+Root Cause & Fix:
+- Error: "column 'invoice_date' of relation 'invoices' does not exist"
+- Cause: seed script line 160 INSERT ke kolom invoice_date yang tidak ada di tabel invoices
+- Fix: Hapus invoice_date & CURRENT_DATE dari INSERT statement
+- File: dentflow-backend/scripts/seed-multi-branch.ts
+
+Referensi:
+- ROADMAP TAMBAHAN.txt (Phase 1)
+- scripts/seed-multi-branch.ts
+
+========================================================
+Task 5.2.2 - Phase 1e: Seed Doctors + Schedules ke Supabase
+Status: ✅ SELESAI
+Tanggal: 2026-09-11
+========================================================
+
+Apa yang dilakukan:
+1. Buat scripts/seed-doctors-schedules.ts
+2. Seed 21 dokter baru (7 spesialis × 3 cabang) dengan nama orang Indonesia realistis (drg. Siti Rahayu, dst.)
+3. Seed 63 doctor_schedules (21 dokter × 3 hari per dokter)
+4. Verify data masuk
+
+Hasil Verifikasi:
+- ✅ 24 doctors total (3 existing Sp.BM + 21 new)
+- ✅ 63 doctor_schedules
+- ✅ 8 spesialis per cabang (7 new + Sp.BM existing)
+- ✅ max_patients_per_session = 4 (sesuai PRD)
+- ✅ slot_duration_minutes = 30, is_active = true
+- ✅ 0 duplicate (dokter_id, day_of_week) — script idempotent (re-run: 0 insert)
+
+Catatan Verifikasi (ROOT CAUSE & KOREKSI):
+- Query verifikasi di prompt memakai join `ds.dokter_id = d.id` (doctors.id),
+  sedangkan kolom doctor_schedules.dokter_id adalah FK ke users(id).
+  Akibatnya per-branch schedules tampil 0. Join dikoreksi menjadi
+  `ds.dokter_id = d.user_id` → hasil nyata 21 schedule per cabang. ✅
+- Total schedule 63 (bukan 72): Sp.BM di-skip sesuai instruksi
+  ("Sp.BM: 09:00-12:00 existing, skip") → 21 dokter × 3 hari = 63.
+- Password DOCTOR: 'Doctor123!' (konsisten dengan existing).
+
+Referensi:
+- ROADMAP TAMBAHAN.txt (Phase 1)
+- reference/SessionValidatorService.reference.ts
+
+========================================================
+Task 5.2.3 - Phase 1f: Fix Sp.BM Schedule (24 doctors complete)
+Status: ✅ SELESAI
+Tanggal: 2026-09-11
+========================================================
+
+Apa yang dilakukan:
+1. Cek 3 Sp.BM doctors yang belum punya schedule
+2. Insert 9 schedules Sp.BM (3 doctors × 3 hari: Senin/Rabu/Jumat, 09:00-12:00)
+3. Verifikasi total 72 schedules
+
+Hasil Verifikasi:
+- ✅ 72 total schedules (24 doctors × 3 hari)
+- ✅ 24 schedules per cabang
+- ✅ 8 spesialis per cabang, masing-masing punya 3 schedules
+- ✅ Sp.BM: 3 doctors, 9 schedules
+
+Root Cause:
+- Prompt Phase 1e salah asumsi "Sp.BM existing, skip"
+- Padahal Sp.BM doctors ga punya schedule dari seed-multi-branch
+- Fix: tambah schedule untuk Sp.BM
+
+Referensi:
+- ROADMAP TAMBAHAN.txt (Phase 1)
+
+========================================================
+Task 5.2.4 - Phase 1g: Fix /api/doctors (List) Endpoint
+Status: ✅ SELESAI
+Tanggal: 2026-09-11
+========================================================
+
+Apa yang dilakukan:
+1. Cek frontend expectation (lib/api/doctors.ts)
+2. Buat endpoint GET /api/doctors?branch_id=... (doctorsList.handler.ts)
+3. Verifikasi slot API (user_id, bukan doctors.id)
+4. Update LOGBOOK
+
+Hasil Verifikasi:
+- ✅ Endpoint GET /api/doctors return list dokter (8 dokter branch A)
+- ✅ Slot API bekerja dengan user_id (6 slots utk 5a18ce4a)
+- ✅ Frontend /admin/doctors bisa load data
+
+Catatan Root Cause:
+- Slot API BEKERJA, test sebelumnya salah kasih ID phantom (3ad82f53)
+- Endpoint /api/doctors (list) memang tidak ada — perlu dibuat
+- service pakai dokter_id = users.id (bukan doctors.id)
+
+Catatan Implementasi:
+- Handler baru: src/handlers/doctorsList.handler.ts
+- Route: GET / di doctorSlot.routes.ts, role [ADMIN_BRANCH, PATIENT, DOCTOR]
+- Terima param branchId (frontend) ATAU branch_id (tema REST)
+- Return BOTH camelCase (frontend contract) dan snake_case alias (sample prompt)
+- JOIN users utk email, branches utk branch_name, queues utk queueCount (WAITING)
+
+Referensi:
+- ROADMAP TAMBAHAN.txt (Phase 1)
+- dentflow-web/src/lib/api/doctors.ts
