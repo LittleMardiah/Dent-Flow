@@ -2723,3 +2723,123 @@ Rationale:
 Referensi:
 - ROADMAP TAMBAHAN.txt (Phase 0)
 - LOGBOOK Task 5.2.0
+
+========================================================
+Phase 1 Update - Vercel Deployment Tech Debt
+Tanggal: 2026-09-11
+Status: ⚠️ KNOWN LIMITATIONS (Phase 2 scope)
+========================================================
+
+TD-VERCEL-001: Socket.IO Disabled di Vercel Serverless
+Status: ⚠️ KNOWN LIMITATION
+
+Deskripsi:
+Socket.IO (WebSocket server) tidak bisa jalan di Vercel serverless.
+Backend Express tetap punya kode Socket.IO, tapi di-guard dengan
+process.env.VERCEL === '1' supaya skip init di production.
+
+Dampak:
+- Real-time queue & TV display di production pakai polling (setInterval)
+- Latency: ~2-3 detik (vs <1s di local dev dengan WebSocket)
+- Frontend fallback polling sudah works
+
+Perbaikan (Phase 2):
+- Migrate ke Supabase Realtime (channel-based, postgres_changes)
+- Atau Vercel Edge Function + Server-Sent Events (SSE)
+- Ref: ROADMAP TAMBAHAN.txt (Phase 2 - Refactor Real-time)
+
+Estimasi: 3-4 hari
+Prioritas: HIGH
+
+
+TD-VERCEL-002: Cron Jobs Disabled di Vercel Serverless
+Status: ⚠️ KNOWN LIMITATION
+
+Deskripsi:
+node-cron tidak bisa jalan di Vercel (serverless, no persistent process).
+4 jobs disabled di production:
+- no-show-detection (setiap 30 menit)
+- reset-queue (setiap midnight)
+- cleanup-temp-patients (setiap 3 AM)
+- webhook-retry (setiap 5 menit)
+
+Status di /health endpoint: { initialized: false, totalJobs: 0 }
+
+Dampak:
+- NO-SHOW detection tidak jalan otomatis di production
+- Webhook retry tidak otomatis (manual via admin endpoint)
+- Queue reset tidak otomatis
+- Temp patients cleanup tidak otomatis
+
+Perbaikan (Phase 2):
+- Migrate ke Supabase pg_cron (native PostgreSQL scheduler)
+- Atau Vercel Cron (Hobby plan: max 2 jobs)
+- Atau external scheduler (Upstash QStash)
+
+Estimasi: 3-5 hari
+Prioritas: HIGH
+
+
+TD-VERCEL-003: MinIO Storage Skipped di Vercel
+Status: ⚠️ KNOWN LIMITATION
+
+Deskripsi:
+MinIO (S3-compatible file storage) tidak di-deploy bersama Vercel.
+Backend masih config MinIO di .env tapi ga jalan di production.
+
+Dampak:
+- File upload (EMR attachment, X-ray, lab result) tidak works
+- Backend endpoint yang butuh storage bakal error kalau di-hit
+
+Perbaikan (Phase 2):
+- Migrate ke Supabase Storage (S3-compatible, free 1GB)
+- Atau Vercel Blob (paid)
+- Update FileUploadService pakai Supabase Storage client
+
+Estimasi: 2-3 hari
+Prioritas: MEDIUM
+
+
+TD-VERCEL-004: WebSocket Error Suppressed (Workaround, Bukan Fixed)
+Status: ✅ WORKAROUND
+
+Deskripsi:
+Frontend WebSocket client coba connect ke backend Vercel → error (9x noise).
+Workaround: Set NEXT_PUBLIC_WS_ENABLED=false di .env.production & Vercel
+env vars. Frontend skip WebSocket connect, langsung pakai polling.
+
+Dampak:
+- Console bersih (no WebSocket error)
+- Real-time queue via polling saja (latency ~2-3s)
+- Ini workaround, bukan fix
+
+Perbaikan (Phase 2):
+- Setelah migrate ke Supabase Realtime, enable kembali WebSocket client
+- Update websocket.ts untuk pakai Supabase Realtime channel
+
+Estimasi: Tergantung TD-VERCEL-001
+Prioritas: MEDIUM
+
+
+TD-TEST-009: Integration Test Suite Local DB Only
+Status: ⚠️ KNOWN LIMITATION
+
+Deskripsi:
+Test suite pakai DATABASE_URL lokal (Docker PostgreSQL di port 5432).
+Supabase production diisolasi dari test (sengaja).
+7 integration test suite butuh local DB running:
+- invoicePayment, paymentInput, paymentWebhook, webhookRetry.job,
+  patientHistory, notification, doctorSchedule
+
+Dampak:
+- CI/CD perlu setup Docker PostgreSQL (udah ada di workflow)
+- Test suite tidak bisa jalan tanpa local stack
+- Supabase production data ga ke-test otomatis
+
+Perbaikan (Phase 2):
+- Migrate test ke Supabase test project (isolated)
+- Atau pake testcontainers (auto-spawn PostgreSQL container)
+- Update CI/CD workflow
+
+Estimasi: 2-3 hari
+Prioritas: MEDIUM

@@ -3374,3 +3374,27 @@ File yang diubah:
 Referensi:
 - prompt.txt (FIX: Kolom d.is_active Salah di doctorProfile.handler.ts)
 - Task 5.3.4 (yang memperkenalkan d.is_active)
+
+
+========================================================
+Task 5.4 - Update TECHNICAL DEBT (Phase 1 Tech Debt)
+Status: ✅ SELESAI
+Tanggal: 2026-09-11
+========================================================
+
+Apa yang dilakukan:
+Catat 5 tech debt baru dari Phase 1 (Vercel migration):
+- TD-VERCEL-001: Socket.IO disabled (perlu refactor ke Supabase Realtime)
+- TD-VERCEL-002: Cron jobs disabled (perlu pg_cron)
+- TD-VERCEL-003: MinIO skipped (perlu Supabase Storage)
+- TD-VERCEL-004: WebSocket suppressed (workaround, bukan fix)
+- TD-TEST-009: Integration test local DB only (perlu Supabase test project)
+
+Hasil Verifikasi:
+- 5 tech debt tercatat di TECHNICAL DEBT.txt
+- Semua punya status, dampak, perbaikan (Phase 2), dan estimasi
+- Siap untuk jadi refactor plan Phase 2
+
+Referensi:
+- ROADMAP TAMBAHAN.txt (Phase 2 - Refactor Serverless)
+- Phase 1 deploy (Task 5.3.1 - 5.3.5)
