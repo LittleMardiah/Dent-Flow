@@ -74,29 +74,27 @@ app.use('/api/admin', adminWebhookRoutes);
 app.use(errorHandler);
 
 // ================================================================
-// START SERVER (ALWAYS LISTEN, EVEN IN TEST)
+// START SERVER — Skip on Vercel (serverless, no persistent listener)
 // ================================================================
-console.log('🔍 [DEBUG] About to call app.listen()...');
+let server: import('http').Server | undefined;
 
-const server = app.listen(PORT, () => {
-  console.log('🔍 [DEBUG] Callback entered - server listening!');
-  logger.info(`✅ DentFlow API starting on port ${PORT}`);
-  logger.info(`   Environment: ${config.server.nodeEnv}`);
-  
-  // Only initialize job scheduler in production/development
-  if (process.env.NODE_ENV !== 'test') {
-    jobScheduler.initialize();
-  }
-});
+const isVercel = process.env.VERCEL === '1';
 
-console.log('🔍 [DEBUG] app.listen() called, server object created');
+if (!isVercel) {
+  server = app.listen(PORT, () => {
+    logger.info(`✅ DentFlow API starting on port ${PORT}`);
+    logger.info(`   Environment: ${config.server.nodeEnv}`);
 
-// Attach Socket.IO ke HTTP server (real-time queue/TV display)
-initSocketIo(server);
+    if (process.env.NODE_ENV !== 'test') {
+      jobScheduler.initialize();
+    }
+  });
+
+  initSocketIo(server);
+}
 
 // ================================================================
 // [TEST/DEV ONLY] Endpoint untuk drop semua koneksi WebSocket
-// Dipakai Cypress E2E: verifikasi polling fallback + auto-reconnect.
 // ================================================================
 if (config.server.nodeEnv !== 'production') {
   app.post('/__ws/drop', (_req, res) => {
@@ -106,6 +104,6 @@ if (config.server.nodeEnv !== 'production') {
 }
 
 // ================================================================
-// EXPORT APP & SERVER UNTUK TESTING
+// EXPORT APP (& SERVER for non-Vercel usage / testing)
 // ================================================================
 export { app, server };

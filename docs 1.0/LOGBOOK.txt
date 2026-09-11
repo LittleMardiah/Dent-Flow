@@ -3137,3 +3137,38 @@ Catatan Implementasi:
 Referensi:
 - ROADMAP TAMBAHAN.txt (Phase 1)
 - dentflow-web/src/lib/api/doctors.ts
+
+
+========================================================
+Task 5.3.1 - Vercel Serverless Wrapper (Backend Deploy)
+Status: ✅ SELESAI
+Tanggal: 2026-09-11
+========================================================
+
+Apa yang dilakukan:
+1. Refactor src/index.ts: guard app.listen(), initSocketIo(), jobScheduler.initialize()
+   dengan process.env.VERCEL === '1'. Jika VERCEL=1, hanya export app (tanpa listen).
+   Hapus semua console.log DEBUG (🔍 [DEBUG]).
+2. Buat api/index.ts: Vercel Serverless Function handler yang import Express app dari
+   ../src/index dan export sebagai default handler.
+3. Install @vercel/node (dev dependency).
+4. Buat vercel.json: builds ke api/index.ts, routes semua request ke api/index.ts,
+   region sin1.
+5. Update package.json: tambah scripts vercel-build (tsc) dan vercel-dev (vercel dev).
+
+Hasil Verifikasi:
+- ✅ VERCEL=1 npx ts-node import { app } → "App imported successfully (no listen)"
+- ✅ app.listen() TIDAK dipanggil saat VERCEL=1
+- ✅ npx tsc --noEmit → 0 error
+- ✅ Socket.IO & cron jobs skip saat VERCEL=1
+- ✅ Local dev (tanpa VERCEL) tetap jalan normal (app.listen + socket + jobs)
+
+File yang diubah/created:
+- dentflow-backend/src/index.ts (refactor guard)
+- dentflow-backend/api/index.ts (NEW - Vercel handler)
+- dentflow-backend/vercel.json (NEW - Vercel config)
+- dentflow-backend/package.json (tambah vercel-build, vercel-dev scripts)
+
+Referensi:
+- ROADMAP TAMBAHAN.txt (Vercel deploy)
+- prompt.txt PHASE 1 STEP 6
