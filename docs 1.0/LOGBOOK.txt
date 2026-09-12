@@ -3628,3 +3628,33 @@ Next Action:
 Referensi:
 - MIGRATION_PLAN.md §3 Batch 1
 - task_2_1_2.log
+
+========================================================
+Task 2.1.2 (FIX) - Branch Scope Check Missing
+Status: ✅ FIXED (code + local full verify) - pending auto-deploy + HTTP verify
+Tanggal: 2026-09-12
+========================================================
+
+Bug ditemukan saat review pasca Task 2.1.2:
+- Express: WHERE id=$1 AND branch_id=$2 (branch scope)
+- Serverless: cuma WHERE id=$1 (no branch scope)
+- Akibat: cross-branch data leak (doctor branch B bisa diakses user branch A)
+
+Fix: tambah .eq('branch_id', user.branchId) di query doctors.
+
+Local Full Verify (actual handler + real Supabase):
+- 200 doctor valid, 200 admin valid
+- 404 doctor gak ada, 403 role patient
+- 404 cross-branch (doctor B via user A) <- SECURITY FIX confirmed
+- 200 control (doctor B via user B) <- bukan false-positive
+- A/B proof: OLD code leak 200 count=3 vs NEW code 404
+
+Verifikasi (setelah push + auto-deploy):
+- 200 dengan valid doctor token
+- 404 dengan doctor ID yang gak ada
+- 403 dengan patient token (role salah)
+- 404 cross-branch (doctor branch B diakses branch A)
+
+Referensi:
+- fix_verify_2_1_2.log
+- task_2_1_2.log

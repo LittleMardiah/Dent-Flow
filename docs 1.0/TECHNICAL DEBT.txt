@@ -3078,3 +3078,18 @@ Verifikasi 2026-09-12:
 - rootDirectory after -> dentflow-serverless
 
 Referensi: fix_rootdir.log
+
+===
+TD-MIGRATE-006: Branch Scope Missing di /api/doctors/:id/patients (cross-branch leak)
+Status: ✅ FIXED (2026-09-12)
+
+Kontek: Task 2.1.2 versi awal tidak cek branch_id dokter terhadap branch user.
+Akibat: user branch A bisa query patients dari dokter branch B (A/B proof: HTTP 200 count=3).
+
+Fix: tambah `.eq('branch_id', user.branchId)` di query doctors.
+
+Parity Express: WHERE id=$1 AND branch_id=$2
+
+Local verify: doctor B + user A => 404 DOCTOR_NOT_FOUND; doctor B + user B => 200.
+
+Referensi: fix_verify_2_1_2.log

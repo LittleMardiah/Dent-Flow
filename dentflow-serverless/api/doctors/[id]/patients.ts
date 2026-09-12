@@ -54,11 +54,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const supabase = getSupabase();
 
-    // Parrity dgn Express: dokter harus ada di branch user (feature branch scope).
+    // Parity dgn Express: dokter harus ada DI BRANCH USER (WHERE id=$1 AND branch_id=$2).
+    // Mencegah cross-branch data leak.
     const { data: doctorRow, error: doctorErr } = await supabase
       .from('doctors')
       .select('id, branch_id')
       .eq('id', doctorId)
+      .eq('branch_id', user.branchId)
       .maybeSingle();
 
     if (doctorErr) {
