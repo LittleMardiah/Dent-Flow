@@ -18,18 +18,26 @@
 | Total endpoint terdaftar (router) | 69 |
 | Total endpoint TERMOUNT di `index.ts` | 63 |
 | Endpoint orphan (file ada, TIDAK di-mount) | 6 (docs×2, invoicePayment×2, notification×2) |
-| Router termount | 18 router via `app.use(...)` (auth termount 2x: `/auth` + `/api/auth`) |
-| Endpoint public (tanpa auth) | 9 |
-| Endpoint wajib auth+role | 54 dari 63 |
+| Router termount | 19 kali app.use(...) — beberapa router dimount 2x (mis. auth: /auth + /api/auth) |
+| Endpoint public (tanpa auth) | 11 |
+| Endpoint wajib auth+role | 52 dari 63 |
 | Dependency infra | Postgres (pg), Redis (ioredis), Socket.IO, node-cron, Midtrans webhook |
 | MinIO | DIKONFIGURASI tapi TIDAK dipakai endpoint manapun (dead config) |
 
-Endpoint orphan (docs.routes, invoicePayment.routes, notification.routes) perlu
-diputuskan dulu: hapus permanen atau migrate — BUKAN default ikut dimigrate.
-Rekomendasi: `notification.routes` (send reminder/confirmation) punya pasangan
-handler + service aktif → migrate. `docs.routes` (Swagger) → drop (serverless
-pakai route file langsung). `invoicePayment.routes` → cek overlap dgn
-`invoiceWeb.routes` sebelum diputuskan.
+### VERDICT LOCKED — Endpoint Orphan
+
+**Keputusan FINAL** untuk 3 router orphan (file ada, tidak di-mount di index.ts):
+
+| Router | Verdict | Alasan | Task Assignment |
+|---|---|---|---|
+| `docs.routes.ts` | ❌ **DROP** | Serverless tidak pakai Swagger UI di runtime. Dokumentasi API via `api/*.ts` JSDoc + README. | Tidak ada task — hapus file di cleanup Batch 10. |
+| `invoicePayment.routes.ts` | ❌ **DROP** | Overlap 100% dengan `invoice.routes.ts` (mark-paid) + `invoiceWeb.routes.ts` (detail). Handler/service duplicate. | Tidak ada task — hapus file di cleanup Batch 10. |
+| `notification.routes.ts` | ✅ **MIGRATE** | Handler + service aktif. Fitur send-reminder + send-confirmation masih dipakai admin. | **Batch 4.5 (NEW)**: migrate 2 endpoint ini di Task 2.4.5. |
+
+**Konsekuensi:**
+- Orphan termount berkurang jadi **63 endpoint** (dari 69 terdaftar).
+- Setelah cleanup: repo Express terakhir akan berisi **19 router aktif** (bukan 21).
+- Batch 4.5 ditambahin di §3 URUTAN MIGRATE setelah Batch 4.4.
 
 ---
 
@@ -51,7 +59,7 @@ pakai route file langsung). `invoicePayment.routes` → cek overlap dgn
 | booking.routes.ts | `/api` | 4 | 🔒 | Postgres |
 | patientHistory.routes.ts | `/api` | 3 | 🔒 | Postgres |
 | attendance.routes.ts | `/api` | 2 | 🔒 | Postgres |
-| noShow.routes.ts | `/api` + `/api/admin` | 2 | 🔒 | Postgres |
+| noShow.routes.ts | `/api/no-shows` | 2 | 🔒 | Postgres |
 | invoice.routes.ts | `/api/admin/invoices` | 3 | 🔒 | Postgres |
 | invoiceWeb.routes.ts | `/api/invoices` | 4 | 🔒 | Postgres |
 | invoicePayment.routes.ts | — (orphan) | 2 | 🔒 | Postgres — TIDAK di-mount |
@@ -76,7 +84,7 @@ pakai route file langsung). `invoicePayment.routes` → cek overlap dgn
 /api/patient/bookings, /patient/bookings/:id→ booking.routes (mount /api)
 /api/patients/:id/history|quick-view|medical-records → patientHistory.routes
 /api/patients/:id/attendance, /api/reports/no-show-summary → attendance.routes
-/api/admin/no-shows, /api/admin/bookings/:id/mark-no-show → noShow.routes
+/api/no-shows/admin/no-shows, /api/no-shows/admin/bookings/:id/mark-no-show → noShow.routes
 /api/admin/invoices                          → invoice.routes
 /api/invoices                               → invoiceWeb.routes
 /api/payments/reconciliation                → paymentReconciliation.routes
@@ -109,7 +117,7 @@ pakai route file langsung). `invoicePayment.routes` → cek overlap dgn
 | `/api/patients/:id/medical-records` | GET | 🔒 | rekam medis |
 | `/api/patients/:id/attendance` | GET | 🔒 | statistik kunjungan |
 | `/api/reports/no-show-summary` | GET | 🔒 | summary no-show |
-| `/api/admin/no-shows` | GET | 🔒 | list no-show |
+| `/api/no-shows/admin/no-shows` | GET | 🔒 | list no-show |
 | `/api/admin/audit-logs` | GET | 🔒 | audit log admin |
 | `/api/admin/webhook-errors` | GET | 🔒 | log error webhook |
 | `/api/admin/queues` | GET | 🔒 | queue board cabang |
@@ -145,7 +153,7 @@ Total: **30 endpoint read-only** (mayoritas yang harus migrasi pertama).
 | `/api/admin/invoices/:id/mark-paid` | POST | 🔒 | mark paid |
 | `/api/admin/invoices/:id/undo-payment` | POST | 🔒 | undo payment |
 | `/api/invoices/:id/payments` | POST | 🔒 | tambah pembayaran |
-| `/api/admin/bookings/:id/mark-no-show` | PUT | 🔒 | mark no-show manual |
+| `/api/no-shows/admin/bookings/:id/mark-no-show` | PUT | 🔒 | mark no-show manual |
 | `/walk-in/create-profile` | POST | ⚠️ | temp profile (rate-limit) |
 | `/walk-in/book-appointment` | POST | 🔒 | booking walk-in |
 | `/walk-in/convert-to-patient` | POST | ⚠️ | temp → patient |
@@ -214,15 +222,46 @@ Migrasi: Vercel Edge Function (Task 2.9). Env yang dibutuhkan: `MIDTRANS_SERVER_
 
 ---
 
+
+### 2.8 Authentication + Health (8 endpoint)
+Endpoint auth (public + mix auth) dan health check. Auth tidak butuh Redis/Socket/cron, tapi butuh JWT sign + bcrypt.
+
+| Endpoint | Method | Auth | Dekomposisi |
+|---|---|---|---|
+| `/auth/patient/register` | POST | ⚠️ | register pasien (bcrypt + JWT) |
+| `/auth/login` | POST | ⚠️ | auto-detect role login |
+| `/auth/patient/login` | POST | ⚠️ | patient login |
+| `/auth/admin/login` | POST | ⚠️ | admin login |
+| `/auth/doctor/login` | POST | ⚠️ | doctor login |
+| `/auth/forgot-password` | POST | ⚠️ | generate reset token |
+| `/auth/reset-password` | POST | ⚠️ | reset password |
+| `/health` | GET | ⚠️ | health check (Postgres + Redis + jobs) |
+
+Total: **8 endpoint** (7 auth + 1 health).
+
+### 2.9 Rekapitulasi Klasifikasi
+| Kategori | Jumlah |
+|---|---|
+| Read-only (Postgres) | 30 |
+| Write (Postgres transaction) | 19 |
+| Auth + Health | 8 |
+| Redis INCR | 1 |
+| Socket.IO broadcast | 4 |
+| Midtrans webhook | 1 |
+| **Total termount** | **63** |
+| Orphan (tidak termount) | 6 |
+| **Grand Total** | **69** |
+
 ## 3. URUTAN MIGRATE (Sequential)
 
 > Prioritas: read-only → auth → write → infra-complex → testing.
 
 ### Batch 1: Foundation (Task 2.1.0 - 2.1.3)
 - [x] `/api/health` — DONE (supabase normal, region sin1)
-- [ ] `/api/branches`-jika-ada — read-only, simpel
-- [ ] `/api/doctors` (GET list) — read-only
+- [ ] `/api/doctors` (GET list) — read-only pertama
+- [ ] `/api/doctors/:id/patients` (GET) — read-only
 - [ ] Validasi pattern: helper `lib/response.ts`, `lib/supabase.ts`, error handling
+- NOTE: `/api/branches` tidak ada di Express. Branch list hanya via `/api/patients/branches` (Batch 3).
 
 ### Batch 2: Auth Foundation (Task 2.2.x)
 - [ ] Middleware → helper functions (`lib/auth.ts`):
@@ -243,6 +282,11 @@ Migrasi: Vercel Edge Function (Task 2.9). Env yang dibutuhkan: `MIDTRANS_SERVER_
 - [ ] `/api/admin/invoices/:id/mark-paid` + undo-payment
 - [ ] `/api/patients/:id` PUT + DELETE (soft delete) + `/api/patients/merge`
 - [ ] Walk-in endpoints (rate-limit: `@upstash/ratelimit` atau vercel kv tanpa log value)
+
+### Batch 4.5: Notification (Task 2.4.5) — NEW dari verdict orphan
+- [ ] `/api/admin/bookings/:id/send-reminder` (POST)
+- [ ] `/api/admin/bookings/:id/send-confirmation` (POST)
+- Source: `notification.routes.ts` (orphan) — handler + service aktif.
 
 ### Batch 5: Redis Replacement (Task 2.7)
 - [ ] `/api/queue/status` — Redis INCR → Postgres `nextval()` sequence
@@ -315,4 +359,4 @@ Migrasi: Vercel Edge Function (Task 2.9). Env yang dibutuhkan: `MIDTRANS_SERVER_
 ---
 
 **Last Updated**: 2026-09-12
-**Version**: 1.0 (Draft)
+**Version**: 1.1 (Patched 2026-09-12) — fix 5 gap dari review
