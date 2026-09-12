@@ -1,0 +1,318 @@
+# MIGRATION PLAN - PHASE 2: EXPRESS → SERVERLESS
+
+> Dokumen ini memetakan seluruh endpoint Express yang perlu dimigrate ke
+> Vercel Serverless Functions (Supabase sebagai backend DB).
+>
+> **Status**: Draft, dibuat 2026-09-12
+> **Referensi**: ROADMAP TAMBAHAN.txt (Phase 2)
+> **Sumber Audit**: dentflow-backend/src/routes/*.ts + dentflow-backend/src/index.ts
+> **Log Session**: task_2_1_0.log
+
+---
+
+## 0. RINGKASAN AUDIT
+
+| Metrik | Nilai |
+|---|---|
+| Total file router Express | 21 |
+| Total endpoint terdaftar (router) | 69 |
+| Total endpoint TERMOUNT di `index.ts` | 63 |
+| Endpoint orphan (file ada, TIDAK di-mount) | 6 (docs×2, invoicePayment×2, notification×2) |
+| Router termount | 18 router via `app.use(...)` (auth termount 2x: `/auth` + `/api/auth`) |
+| Endpoint public (tanpa auth) | 9 |
+| Endpoint wajib auth+role | 54 dari 63 |
+| Dependency infra | Postgres (pg), Redis (ioredis), Socket.IO, node-cron, Midtrans webhook |
+| MinIO | DIKONFIGURASI tapi TIDAK dipakai endpoint manapun (dead config) |
+
+Endpoint orphan (docs.routes, invoicePayment.routes, notification.routes) perlu
+diputuskan dulu: hapus permanen atau migrate — BUKAN default ikut dimigrate.
+Rekomendasi: `notification.routes` (send reminder/confirmation) punya pasangan
+handler + service aktif → migrate. `docs.routes` (Swagger) → drop (serverless
+pakai route file langsung). `invoicePayment.routes` → cek overlap dgn
+`invoiceWeb.routes` sebelum diputuskan.
+
+---
+
+## 1. INVENTARIS ROUTER EXPRESS
+
+> Data = hasil `grep -c "router.(get|post|put|delete|patch)("` per file + mount point dari index.ts.
+> Auth: 💛 = mix (public + auth/role per endpoint), 🔒 = semua endpoint wajib auth+role,
+> ⚠️ = public (no auth).
+
+| Router File | Mount Path | Jumlah Endpoint | Auth | Dependensi |
+|---|---|---|---|---|
+| health.routes.ts | `/health` | 1 | ⚠️ | Redis (checkRedis), node-cron (job status) |
+| auth.routes.ts | `/auth` + `/api/auth` | 7 | 💛 | Postgres (users, tokens) |
+| patients.routes.ts | `/api/patients` | 7 | 🔒 | Postgres (tenant isolation) |
+| encounter.routes.ts | `/api/encounters` | 5 | 🔒 | Postgres + validation zod |
+| doctorSlot.routes.ts | `/api/doctors` | 7 | 🔒 | Postgres (schedules, leave) |
+| doctorQueue.routes.ts | `/api` | 6 | 🔒 | Postgres + Socket.IO broadcast + Redis (status) |
+| queue (via doctorQueue) | `/api` | — | 🔒 | Redis INCR (queue.service) |
+| booking.routes.ts | `/api` | 4 | 🔒 | Postgres |
+| patientHistory.routes.ts | `/api` | 3 | 🔒 | Postgres |
+| attendance.routes.ts | `/api` | 2 | 🔒 | Postgres |
+| noShow.routes.ts | `/api` + `/api/admin` | 2 | 🔒 | Postgres |
+| invoice.routes.ts | `/api/admin/invoices` | 3 | 🔒 | Postgres |
+| invoiceWeb.routes.ts | `/api/invoices` | 4 | 🔒 | Postgres |
+| invoicePayment.routes.ts | — (orphan) | 2 | 🔒 | Postgres — TIDAK di-mount |
+| paymentReconciliation.routes.ts | `/api/payments` | 2 | 🔒 | Postgres |
+| admin.routes.ts | `/api/admin` | 3 | 🔒 | Postgres + Socket.IO broadcast |
+| adminWebhook.routes.ts | `/api/admin` | 2 | 🔒 | Postgres (webhook_outbox) |
+| audit.routes.ts | `/api/admin` | 1 | 🔒 | Postgres |
+| walkIn.routes.ts | `/walk-in` | 3 | 💛 | Postgres + rate limiter |
+| webhook.routes.ts | `/webhooks` | 1 | ⚠️ | Midtrans signature + Postgres |
+| notification.routes.ts | — (orphan) | 2 | 🔒 | Postgres — TIDAK di-mount |
+| docs.routes.ts | — (orphan) | 2 | ⚠️ | swagger-ui-express — TIDAK di-mount |
+
+**Akar URI per router** (dari index.ts, setelah middleware global `/api` auth+tenant):
+
+```
+/health                                     → health.routes
+/auth  +  /api/auth                         → auth.routes
+/api/patients                               → patients.routes
+/api/encounters                             → encounter.routes
+/api/doctors                                → doctorSlot.routes
+/api/doctors/:id/queue, /queue/status, dll  → doctorQueue.routes (mount /api)
+/api/patient/bookings, /patient/bookings/:id→ booking.routes (mount /api)
+/api/patients/:id/history|quick-view|medical-records → patientHistory.routes
+/api/patients/:id/attendance, /api/reports/no-show-summary → attendance.routes
+/api/admin/no-shows, /api/admin/bookings/:id/mark-no-show → noShow.routes
+/api/admin/invoices                          → invoice.routes
+/api/invoices                               → invoiceWeb.routes
+/api/payments/reconciliation                → paymentReconciliation.routes
+/api/admin/queues, /api/admin/check-in...   → admin.routes
+/api/admin/webhook-errors, /webhooks/:id/replay → adminWebhook.routes
+/api/admin/audit-logs                       → audit.routes
+/walk-in/create-profile, ...                → walkIn.routes
+/webhooks/midtrans                          → webhook.routes
+```
+
+---
+
+## 2. KLASIFIKASI ENDPOINT
+
+### 2.1 Pure Read-Only (Paling Mudah Dimigrate)
+`SELECT` Postgres saja, tanpa Redis/Socket/cron. Pattern: route file + handler → query Supabase.
+
+| Endpoint | Method | Auth | Dekomposisi |
+|---|---|---|---|
+| `/api/doctors` | GET | 🔒 | list doctors |
+| `/api/doctors/me` | GET | 🔒 | profile dokter |
+| `/api/doctors/:id/patients` | GET | 🔒 | pasien per dokter |
+| `/api/doctors/:id/availability` | GET | 🔒 | availability schedule |
+| `/api/patients` | GET | 🔒 | list pasien (scoped branch) |
+| `/api/patients/branches` | GET | 🔒 | daftar branch akses |
+| `/api/patients/:id` | GET | 🔒 | detail pasien |
+| `/api/patients/:id/audit-trail` | GET | 🔒 | audit trail pasien |
+| `/api/patients/:id/history` | GET | 🔒 | history pasien |
+| `/api/patients/:id/quick-view` | GET | 🔒 | quick view (queue board) |
+| `/api/patients/:id/medical-records` | GET | 🔒 | rekam medis |
+| `/api/patients/:id/attendance` | GET | 🔒 | statistik kunjungan |
+| `/api/reports/no-show-summary` | GET | 🔒 | summary no-show |
+| `/api/admin/no-shows` | GET | 🔒 | list no-show |
+| `/api/admin/audit-logs` | GET | 🔒 | audit log admin |
+| `/api/admin/webhook-errors` | GET | 🔒 | log error webhook |
+| `/api/admin/queues` | GET | 🔒 | queue board cabang |
+| `/api/admin/invoices/:id` | GET | 🔒 | detail invoice (admin) |
+| `/api/invoices/summary` | GET | 🔒 | summary invoice |
+| `/api/invoices` | GET | 🔒 | list invoice |
+| `/api/invoices/:id` | GET | 🔒 | detail invoice |
+| `/api/payments/reconciliation` | GET | 🔒 | rekonsiliasi harian |
+| `/api/payments/reconciliation/summary` | GET | 🔒 | summary rekonsiliasi |
+| `/api/patient/bookings` | GET | 🔒 | daftar booking pasien |
+| `/api/patient/bookings/:id` | GET | 🔒 | detail booking |
+| `/api/encounters` | GET | 🔒 | list encounter |
+| `/api/encounters/:id` | GET | 🔒 | detail encounter |
+| `/api/doctors/:id/queue` | GET | 🔒 | queue dokter (Postgres) |
+| `/api/doctors/:id/queue-today` | GET | 🔒 | queue hari ini dokter |
+| `/api/doctors/:id/queue/stats` | GET | 🔒 | statistik queue |
+
+Total: **30 endpoint read-only** (mayoritas yang harus migrasi pertama).
+
+### 2.2 Write + Transaction (Medium)
+`INSERT/UPDATE/DELETE` + validasi zod. Tanpa Redis/Socket/cron.
+
+| Endpoint | Method | Auth | Dekomposisi |
+|---|---|---|---|
+| `/api/patients/:id` | PUT | 🔒 | update pasien |
+| `/api/patients/merge` | POST | 🔒 | merge pasien duplikat |
+| `/api/patients/:id` | DELETE | 🔒 | soft delete pasien |
+| `/api/encounters` | POST | 🔒 | start encounter |
+| `/api/encounters/:id` | PUT | 🔒 | update encounter |
+| `/api/encounters/:id/complete` | POST | 🔒 | selesaikan encounter |
+| `/api/patient/bookings` | POST | 🔒 | create booking |
+| `/api/patient/bookings/:id/cancel` | PUT | 🔒 | cancel booking |
+| `/api/admin/invoices/:id/mark-paid` | POST | 🔒 | mark paid |
+| `/api/admin/invoices/:id/undo-payment` | POST | 🔒 | undo payment |
+| `/api/invoices/:id/payments` | POST | 🔒 | tambah pembayaran |
+| `/api/admin/bookings/:id/mark-no-show` | PUT | 🔒 | mark no-show manual |
+| `/walk-in/create-profile` | POST | ⚠️ | temp profile (rate-limit) |
+| `/walk-in/book-appointment` | POST | 🔒 | booking walk-in |
+| `/walk-in/convert-to-patient` | POST | ⚠️ | temp → patient |
+| `/api/admin/webhooks/:id/replay` | POST | 🔒 | replay webhook |
+| `/api/doctors/me` | PUT | 🔒 | update profile dokter |
+| `/api/doctors/:id/leave` | PUT | 🔒 | set leave |
+| `/api/doctors/:id/leave` | DELETE | 🔒 | hapus leave |
+
+Total: **19 endpoint write** (Postgres transaction).
+
+### 2.3 Butuh Redis (Complex)
+`ioredis` → INCR / queue number. Source: `services/queue.service.ts` (`new Redis(config.redis.url)`).
+
+| Endpoint | Method | Redis usage |
+|---|---|---|
+| `/api/queue/status` | GET | INCR / nomor antrian (queue.service) |
+| queue reset via `queueManagement.service` | — | resetAllQueuesForDate |
+
+Migrasi: Redis INCR → **Postgres sequence** (Task 2.7). Catatan: grep di handler
+menunjuk `queue.handler` sebagai pemakai `queueService`. Endpoint queue lain
+(`doctorQueue.service`) sudah Postgres murni → aman deteksi Redis hanya di
+`/api/queue/status` + `queueManagement.service`.
+
+### 2.4 Butuh Socket.IO (Complex)
+Broadcast `broadcastQueueUpdated` saat queue berubah. File pemanggil:
+`admin.handler.ts`, `adminWalkIn.handler.ts`, `doctorQueue.handler.ts`,
+`queue.handler.ts`. Ini mempengaruhi endpoint (percikan broadcast setelah aksi
+POST):
+
+| Endpoint | Method | Broadcast event |
+|---|---|---|
+| `/api/admin/check-in` | POST | `queue:updated` |
+| `/api/admin/check-in/walk-in` | POST | `queue:updated` |
+| `/api/doctors/:id/ready-next` | POST | `queue:updated` |
+| `/api/queue/:id/check-in` | POST | `queue:updated` |
+| handler socket-driven (check-in selesai / complete) | — | `queue:updated`, `tv:display:refresh` |
+
+Migrasi: Socket.IO → **Supabase Realtime** (Task 2.6). Frontend consumer:
+`dentflow-web/src/app/tv-display` & admin/doctor queue, `dentflow-web/src/lib/websocket.ts`.
+
+### 2.5 Butuh node-cron (Complex)
+Dari `jobs/jobScheduler.ts`:
+
+| Job | Schedule | Fungsi | Migrasi |
+|---|---|---|---|
+| cleanup-temp-patients | `0 3 * * *` (03:00) | hapus temp profile basi | Supabase pg_cron / Vercel Cron |
+| no-show-detection | `*/30 * * * *` | auto-mark no-show | pg_cron / Vercel Cron |
+| reset-queue | `0 0 * * *` (midnight) | reset nomor antrian | pg_cron / Vercel Cron |
+| webhook-retry | `*/5 * * * *` | retry webhook gagal (max 3x) | pg_cron / Vercel Cron |
+
+Endpoint: `/health` membaca `jobScheduler.getStatus()` — di serverless, hapus
+bagian ini / ganti dgn status pg_cron (bila perlu).
+
+### 2.6 Butuh Midtrans Webhook (Complex)
+| Endpoint | Auth | Ketergantungan |
+|---|---|---|
+| `/webhooks/midtrans` | ⚠️ (public) | validasi `x-midtrans-signature`, `paymentWebhook.service`, tabel `webhook_outbox` |
+
+Migrasi: Vercel Edge Function (Task 2.9). Env yang dibutuhkan: `MIDTRANS_SERVER_KEY`
+— TANPA logout value di log (lihat TD-VERCEL-007).
+
+### 2.7 Butuh MinIO / Storage (Medium)
+`config/index.ts` punya blok `minio` (endpoint/accessKey/secretKey/bucket), tapi
+**TIDAK ada handler/service yang memakainya** (grep `minio` → hanya config).
+→ Langsung skip; cosmetik upload bisa ke **Supabase Storage** di Task 2.10.
+
+---
+
+## 3. URUTAN MIGRATE (Sequential)
+
+> Prioritas: read-only → auth → write → infra-complex → testing.
+
+### Batch 1: Foundation (Task 2.1.0 - 2.1.3)
+- [x] `/api/health` — DONE (supabase normal, region sin1)
+- [ ] `/api/branches`-jika-ada — read-only, simpel
+- [ ] `/api/doctors` (GET list) — read-only
+- [ ] Validasi pattern: helper `lib/response.ts`, `lib/supabase.ts`, error handling
+
+### Batch 2: Auth Foundation (Task 2.2.x)
+- [ ] Middleware → helper functions (`lib/auth.ts`):
+  - [ ] `extractBearerToken` / `verifyJwt`
+  - [ ] `requireRole(allowedRoles[])`
+  - [ ] `enforceTenant(user, requestedBranch)` (ganti tenant.middleware.ts → user_branch_access check)
+- [ ] `/auth/login` + `/auth/register` (`auth.service.detectRoleAndLogin`, JWT sama)
+
+### Batch 3: Core Read (Task 2.3.x)
+- [ ] `/api/patients` (GET, GET /:id, branches, audit-trail)
+- [ ] `/api/encounters` (GET)
+- [ ] `/api/invoices` (GET list, GET /:id, summary)
+- [ ] Repository pattern Supabase (`lib/supabase.ts` client)
+
+### Batch 4: Core Write (Task 2.4.x)
+- [ ] `/api/patient/bookings` (POST create, PUT cancel)
+- [ ] `/api/encounters` (POST, PUT, POST complete)
+- [ ] `/api/admin/invoices/:id/mark-paid` + undo-payment
+- [ ] `/api/patients/:id` PUT + DELETE (soft delete) + `/api/patients/merge`
+- [ ] Walk-in endpoints (rate-limit: `@upstash/ratelimit` atau vercel kv tanpa log value)
+
+### Batch 5: Redis Replacement (Task 2.7)
+- [ ] `/api/queue/status` — Redis INCR → Postgres `nextval()` sequence
+- [ ] queueManagement.resetAllQueuesForDate → SQL reset
+
+### Batch 6: Realtime (Task 2.6)
+- [ ] Socket.IO → Supabase Realtime (`channel` per `branch:{id}`)
+- [ ] Broadcast `queue:updated` → supabase channel emit / polling fallback
+- [ ] Frontend `dentflow-web/src/lib/websocket.ts` switch ke supabase realtime
+
+### Batch 7: Cron (Task 2.8)
+- [ ] node-cron → Supabase pg_cron (4 job: cleanup, no-show, reset-queue, webhook-retry)
+
+### Batch 8: Webhook (Task 2.9)
+- [ ] `/webhooks/midtrans` → Vercel Edge Function (signature verify)
+- [ ] Admin webhook replay + webhook-errors (ada di Batch 3/4 bila lebih dulu)
+
+### Batch 9: Storage (Task 2.10)
+- [ ] MinIO (jika nanti dibutuhkan) → Supabase Storage
+
+### Batch 10: Testing (Task 2.11 - 2.14)
+- [ ] E2E Cypress + Jest (>70%)
+- [ ] Load test k6
+- [ ] Tech Inspector Mode (fetch wrapper + Zustand)
+- [ ] Final polish + cleanup (hapus Express route legacy setelah verified)
+
+---
+
+## 4. ACCEPTANCE CRITERIA PER TASK
+
+**Task 2.1.x** (Foundation):
+- Endpoint respond 200 dengan data Supabase
+- Health + regression check tetap 200
+- rootDirectory Vercel tetap stabil (cek via Vercel API setiap deploy)
+- LOGBOOK + TECHNICAL DEBT update
+- Commit + push
+
+**Task 2.2.x** (Auth middleware → helper):
+- Semua protected route tolak request tanpa/token invalid → 401
+- role check salah → 403
+- Tenant isolation tetap berjalan (test cross-branch → 403)
+- Login/register flow identik dengan Express (bandingkan response shape)
+
+**Task 2.3.x** (Core Read):
+- Response JSON shape SAMA dengan Express (contract test)
+- Filter/query param (branchId, status, dll) berfungsi sama
+
+**Task 2.4.x** (Core Write):
+- INSERT/UPDATE jalan dengan transaction; rollback saat error
+- Validasi zod sama (pesan error identik)
+- Soft delete tidak menghilangkan row
+
+**Task 2.5** dst — diisi per task saat dimulai (ikuti template di atas).
+
+---
+
+## 5. RISK & MITIGATION
+
+| Risk | Mitigation |
+|---|---|
+| rootDirectory Vercel ke-reset → empty lambda 404 | Monitor via API tiap deploy (pelajaran TD-VERCEL-008) |
+| Supabase free tier 500MB | Audit ukuran tabel, cleanup job temp data |
+| Vercel timeout 10s (functions) | Optimasi query, tambah index, reduce payload |
+| Express masih live (parallel run) | Frontend pointing switch manual (`NEXT_PUBLIC_API_URL`) |
+| Runtime Node <22 (supabase-js butuh WebSocket native) | Dependency `ws`, passthrough transport (TD-VERCEL-006) |
+| Response contract drift (Express vs serverless) | Contract test: bandingkan JSON shape endpoint-by-endpoint |
+| Env tidak tersedia di Vercel serverless | Audit var env: `DATABASE_URL`, `JWT_SECRET`, `MIDTRANS_SERVER_KEY` (TANPA login value) |
+| Endpoint orphan terlewat (docs, invoicePayment, notification) | Verdict eksplisit di §0 sebelum dikerjakan |
+
+---
+
+**Last Updated**: 2026-09-12
+**Version**: 1.0 (Draft)

@@ -3480,3 +3480,56 @@ Referensi:
 - verify_autodeploy.log (session ini)
 - Task 6.1.1, 6.1.2
 - TD-VERCEL-005, 006, 008
+
+
+========================================================
+Task 2.1.0 - Audit Express Router + Bikin Migration Plan
+Status: ✅ SELESAI
+Tanggal: 2026-09-12
+========================================================
+
+Fungsi:
+- Audit semua router Express di dentflow-backend/src/routes/
+- Klasifikasi endpoint berdasarkan dependency (Redis/Socket/cron/Midtrans/MinIO)
+- Bikin MIGRATION_PLAN.md sebagai panduan sequential Phase 2
+
+Apa yang dilakukan:
+1. Scan routes (21 file) + main index.ts (mount points)
+2. Scan handlers + services untuk tau dependency (Redis/Socket/cron/Midtrans/MinIO)
+3. Scan middleware (auth, tenant, validation)
+4. Baca ROADMAP TAMBAHAN Phase 2 sebagai referensi
+5. Generate MIGRATION_PLAN.md dengan urutan migrate 10 batch
+
+Hasil audit:
+- Total router files: 21
+- Total endpoint terdaftar: 69
+- Total endpoint termount di index.ts: 63
+- Endpoint orphan (TIDAK di-mount): 6 (docs x2, invoicePayment x2, notification x2)
+- Klasifikasi endpoint termount:
+  - Read-only (simpel, Postgres): 30
+  - Write (medium, transaction): 19
+  - Complex (Redis Queue): /api/queue/status + queueManagement
+  - Complex (Socket.IO): 4 endpoint admin/doctor queue broadcast + 2 event
+  - Complex (node-cron): 4 job (cleanup-temp, no-show-detection, reset-queue, webhook-retry)
+  - Complex (Midtrans webhook): /webhooks/midtrans
+  - MinIO: dikonfigurasi tapi TIDAK dipakai endpoint manapun (dead config)
+
+Temuan penting:
+- notification.routes, invoicePayment.routes, docs.routes TIDAK di-mount di
+  index.ts (orphan) - perlu verdict eksplisit di MIGRATION_PLAN sebelum dikerjakan
+- Gateway /api pakai (authMiddleware + tenantMiddleware) GLOBAL, kecuali
+  /api/auth. Serverless harus replika lewat helper lib/auth.ts
+- Socket broadcast queue:updated dipicu admin.handler, adminWalkIn.handler,
+  doctorQueue.handler, queue.handler
+- Env yang wajib dijamin ada di Vercel: DATABASE_URL, JWT_SECRET,
+  MIDTRANS_SERVER_KEY (tanpa login value)
+
+Next Action:
+- Task 2.1.1: Migrate /api/doctors (GET, read-only pertama - health sudah DONE)
+- Task 2.1.2: Migrate /api/doctors/:id/patients || /api/patients read
+- Task 2.1.3: Validasi pattern middleware (extractJwt, requireRole, enforceTenant)
+
+Referensi:
+- MIGRATION_PLAN.md
+- ROADMAP TAMBAHAN.txt (Phase 2)
+- task_2_1_0.log

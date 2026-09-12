@@ -2923,3 +2923,52 @@ Fix: commit 24f95c5 -> vercel.json jadi { version: 2, regions: ["sin1"] }.
 Zero-config Vercel sudah otomatis build api/*.ts via @vercel/node.
 
 File: dentflow-serverless/vercel.json
+
+
+===
+TD-MIGRATE-001: Express Backend Parallel Run Selama Phase 2
+Status: ⚠️ OPEN (2026-09-12, by design)
+
+Kontek: Phase 2 migrate Express → serverless secara bertahap. Express
+tetap live (dentflow-backend-lilac.vercel.app) sampai semua endpoint
+selesai migrasi.
+
+Risiko:
+- Frontend pointing harus di-update manual saat switch
+- 2 stack running = resource double
+- Potensi drift behavior antara Express & serverless
+
+Mitigasi:
+- Parallel run sampai Batch 10 (Testing) selesai
+- Switch frontend NEXT_PUBLIC_API_URL setelah verifikasi full
+- Deprecate Express di Phase 4
+
+Referensi:
+- MIGRATION_PLAN.md Batch 10
+- ROADMAP TAMBAHAN.txt Phase 2
+
+===
+TD-MIGRATE-002: Endpoint Orphan Tidak Termount (docs, invoicePayment, notification)
+Status: ⚠️ OPEN (2026-09-12)
+
+Kontek: Audit Task 2.1.0 menemukan 3 router berisi 6 endpoint yang TIDAK
+di-mount di dentflow-backend/src/index.ts:
+- docs.routes.ts (2): Swagger UI + OpenAPI JSON
+- invoicePayment.routes.ts (2): invoice detail + mark-paid (kemungkinan
+  overlap dengan invoiceWeb.routes + invoice.routes yang aktif)
+- notification.routes.ts (2): send-reminder + send-confirmation
+
+Risiko:
+- Endpoint di-duplikasi/di-lupakan saat migrasi; behavior tidak konsisten
+- notification & invoicePayment punya handler/service aktif → buang-buang
+  resource kalau tidak dipakai
+
+Mitigasi (keputusan di MIGRATION_PLAN.md):
+- docs.routes → DROP (serverless pakai route file langsung)
+- notification.routes → migrate (handler + service aktif)
+- invoicePayment.routes → verifikasi overlap dengan invoiceWeb/invoice, baru
+  diputuskan migrate atau hapus
+
+Referensi:
+- MIGRATION_PLAN.md §0
+- task_2_1_0.log
