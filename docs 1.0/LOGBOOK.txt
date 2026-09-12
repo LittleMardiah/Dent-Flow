@@ -3658,3 +3658,37 @@ Verifikasi (setelah push + auto-deploy):
 Referensi:
 - fix_verify_2_1_2.log
 - task_2_1_2.log
+
+========================================================
+Task 2.1.3 - Validasi Pattern + JWT Sign Dry-Run (Batch 1 DONE)
+Status: ✅ SELESAI
+Tanggal: 2026-09-12
+========================================================
+
+Fungsi:
+- Mark Batch 1 Foundation sebagai DONE di MIGRATION_PLAN
+- Dokumentasi pattern reusable (auth + supabase + response + branch scope + A/B proof)
+- Dry-run JWT sign + bcryptjs di serverless env (pre-Batch 2 / Auth)
+
+Apa yang dilakukan:
+1. Ringkas pattern yang terbentuk dari Task 2.1.1 + 2.1.2:
+   - lib/auth.ts, lib/supabase.ts, lib/response.ts
+   - Branch scope check sebagai standard
+   - A/B proof methodology
+2. Install bcryptjs + @types/bcryptjs (dependency untuk Batch 2)
+3. Dry-run test JWT sign + verify + bcrypt hash + compare
+4. Update MIGRATION_PLAN §3 Batch 1 (mark DONE + pattern documented)
+
+Hasil Dry-Run (serverless env):
+- JWT sign: PASS
+- JWT verify: PASS
+- Bcrypt hash: PASS
+- Bcrypt compare: PASS
+
+Next Action:
+- Batch 2 Task 2.2.1: lib/auth lanjutan (middleware helper)
+- Batch 2 Task 2.2.2: /auth/login + /auth/register
+
+Referensi:
+- MIGRATION_PLAN.md §3 Batch 1 (updated)
+- task_2_1_3.log

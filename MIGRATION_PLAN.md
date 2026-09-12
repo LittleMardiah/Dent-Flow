@@ -256,12 +256,28 @@ Total: **8 endpoint** (7 auth + 1 health).
 
 > Prioritas: read-only → auth → write → infra-complex → testing.
 
-### Batch 1: Foundation (Task 2.1.0 - 2.1.3)
-- [x] `/api/health` — DONE (supabase normal, region sin1)
-- [ ] `/api/doctors` (GET list) — read-only pertama
-- [ ] `/api/doctors/:id/patients` (GET) — read-only
-- [ ] Validasi pattern: helper `lib/response.ts`, `lib/supabase.ts`, error handling
-- NOTE: `/api/branches` tidak ada di Express. Branch list hanya via `/api/patients/branches` (Batch 3).
+### Batch 1: Foundation (Task 2.1.0 - 2.1.3) — ✅ DONE
+- [x] `/api/health` — DONE (commit f6dbed1, region sin1)
+- [x] `/api/doctors` (GET list) — DONE (Task 2.1.1, commit aafd1d4)
+- [x] `/api/doctors/:id/patients` (GET) — DONE (Task 2.1.2, commit 12500d6)
+- [x] Branch scope fix — DONE (Task 2.1.2 fix, commit 92014ec, A/B proof in TD-MIGRATE-006)
+- [x] Validasi pattern: auth + supabase + response + branch scope + A/B proof
+
+**Pattern established (reusable untuk Batch berikutnya):**
+1. Auth: `extractBearerToken` + `verifyJwt` + `requireRole` (lib/auth.ts)
+2. Query: `getSupabase()` factory + select with join
+3. Response: `success(res, data)` / `error(res, msg, code, status)`
+4. **Branch scope check:** `.eq('branch_id', user.branchId)` — WAJIB untuk endpoint per-resource
+5. **A/B proof methodology:** reproduce leak → fix → verify blocked
+6. Deploy: `git push origin main` → auto-deploy Vercel (~60-90s)
+7. Verify: local harness (real Supabase) + production HTTP test
+
+**Tech debt dari Batch 1:**
+- TD-MIGRATE-003: `/api/doctors` response shape `{count, doctors}` vs frontend flat array — pending decision
+- TD-MIGRATE-005: seed user Express hilang di prod DB — gunakan self-signed JWT untuk verify
+- TD-MIGRATE-006: branch scope missing → FIXED dengan A/B proof
+
+**Next:** Batch 2 — Auth Foundation (`/auth/login`, `/auth/register` + lib/auth middleware helper lanjutan)
 
 ### Batch 2: Auth Foundation (Task 2.2.x)
 - [ ] Middleware → helper functions (`lib/auth.ts`):
