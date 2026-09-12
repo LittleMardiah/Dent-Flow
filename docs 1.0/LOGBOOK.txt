@@ -3398,3 +3398,49 @@ Hasil Verifikasi:
 Referensi:
 - ROADMAP TAMBAHAN.txt (Phase 2 - Refactor Serverless)
 - Phase 1 deploy (Task 5.3.1 - 5.3.5)
+
+========================================================
+Task 6.1.1 - Phase 2.1: Setup dentflow-serverless/ + PoC
+Status: ✅ SETUP DONE (ready test)
+Tanggal: 2026-09-11
+========================================================
+
+Apa yang dilakukan:
+1. Bikin folder baru: dentflow-serverless/ (isolated, ga ganggu production)
+2. Init package.json + tsconfig.json + vercel.json + .gitignore
+3. Install dependencies:
+   - @supabase/supabase-js (v2.x)
+   - @vercel/node (v3.x)
+   - zod
+4. Bikin lib/supabase.ts — Supabase client (service role)
+5. Bikin lib/response.ts — helper success/error response
+6. Bikin api/health.ts — PoC endpoint (GET /api/health)
+   - Test koneksi Supabase (query branches)
+   - Return health status
+7. Bikin .env.example (template)
+
+Struktur folder:
+dentflow-serverless/
+├── api/health.ts
+├── lib/supabase.ts
+├── lib/response.ts
+├── package.json
+├── tsconfig.json
+├── vercel.json
+└── .env.example
+
+Verifikasi:
+- ✅ tsc --noEmit: exit 0
+- ⏳ Belum deploy (user perlu setup .env + vercel link)
+- ⏳ Belum test production
+
+Next Step:
+- Bikin .env lokal (SUPABASE_URL + SERVICE_ROLE_KEY)
+- vercel link (project baru: dentflow-serverless)
+- Set env vars di Vercel dashboard
+- vercel --prod
+- Test https://dentflow-serverless-xxx.vercel.app/api/health
+
+Referensi:
+- ROADMAP TAMBAHAN.txt (Phase 2 - Serverless Refactor)
+- TECHNICAL DEBT.txt (TD-VERCEL-001 s/d 004)

@@ -1,0 +1,22 @@
+{
+  "name": "dentflow-serverless",
+  "version": "1.0.0",
+  "description": "DentFlow Serverless API (Vercel Functions + Supabase)",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "zod": "^3.22.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@vercel/node": "^3.2.0",
+    "typescript": "^5.1.6"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
