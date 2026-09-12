@@ -3592,3 +3592,39 @@ Next Action:
 Referensi:
 - MIGRATION_PLAN.md §3 Batch 1 & Batch 2 (lib/auth diambil lebih awal)
 - task_2_1_1.log
+
+========================================================
+Task 2.1.2 - Migrate /api/doctors/:id/patients (GET)
+Status: ✅ SELESAI (code) - pending auto-deploy verify
+Tanggal: 2026-09-12
+========================================================
+
+Fungsi:
+- Migrate GET /api/doctors/:id/patients dari Express ke serverless
+- Read-only endpoint, role DOCTOR + ADMIN_BRANCH
+
+Apa yang dilakukan:
+1. Baca handler Express getDoctorPatients (doctorProfile.handler.ts)
+2. Validasi kontrak frontend (doctorProfile.ts MyPatient + getMyPatients)
+   ROOT CAUSE: draft awal memakai wrapper {count,patients}, padahal frontend
+   membaca response.data.data sebagai array pasien langsung (MyPatient[]).
+3. Bikin dentflow-serverless/api/doctors/[id]/patients.ts
+   - Auth: bearer + role DOCTOR/ADMIN_BRANCH
+   - Path param :id = doctor_id
+   - Parity Express: cek dokter di branch user (404 DOCTOR_NOT_FOUND),
+     filter p.deleted_at IS NULL, email via join users, phone default '',
+     lastVisit = MAX(COALESCE(started_at, created_at)), order by lastVisit DESC
+4. TSC check
+
+Hasil Verifikasi (code-level):
+- tsc --noEmit: exit 0
+
+Next Action:
+- Commit via PowerShell
+- Tunggu auto-deploy dari git
+- Verify endpoint (200/401/403/404)
+- Task 2.1.3: validasi pattern lanjutan
+
+Referensi:
+- MIGRATION_PLAN.md §3 Batch 1
+- task_2_1_2.log
