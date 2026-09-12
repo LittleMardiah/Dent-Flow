@@ -3093,3 +3093,19 @@ Parity Express: WHERE id=$1 AND branch_id=$2
 Local verify: doctor B + user A => 404 DOCTOR_NOT_FOUND; doctor B + user B => 200.
 
 Referensi: fix_verify_2_1_2.log
+
+===
+TD-MIGRATE-005 (UPDATE): Seed test user di Supabase (partially resolved)
+Status: 🟡 PARTIAL (2026-09-12)
+
+Task 2.2.1 seed user patient@test.com/Patient123! ke Supabase
+(dengan bcrypt hash 10 rounds, branch = Cabang A pertama).
+
+Membuka jalan untuk Task 2.2.2 (login endpoint) bisa diverifikasi
+dengan kredensial asli, bukan self-signed JWT.
+
+Masih pending:
+- Seed admin@test.com + doctor@test.com (kalau Task 2.2.3 butuh)
+- Update seed-multi-branch.ts agar include user password (bukan cuma patient marker)
+
+Referensi: task_2_2_1.log

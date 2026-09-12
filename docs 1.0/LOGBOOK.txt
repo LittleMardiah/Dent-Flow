@@ -3692,3 +3692,45 @@ Next Action:
 Referensi:
 - MIGRATION_PLAN.md §3 Batch 1 (updated)
 - task_2_1_3.log
+
+========================================================
+Task 2.2.1 - Auth Helpers Extension + Seed Test User
+Status: ✅ SELESAI (code + seed) - pending commit
+Tanggal: 2026-09-12
+========================================================
+
+Fungsi:
+- Extend lib/auth.ts dengan helper login (signAccessToken, signRefreshToken, comparePassword, hashPassword)
+- Tambah enforceTenant helper (parity Express tenant.middleware.ts)
+- Seed test user patient@test.com di Supabase (solve TD-MIGRATE-005)
+
+Apa yang dilakukan:
+1. Baca auth.service.login (Express) + jwt.utils + tenant.middleware untuk shape parity
+2. Extend lib/auth.ts:
+   - signAccessToken (24h default, payload userId/branchId/role/email)
+   - signRefreshToken (7d default, payload userId)
+   - comparePassword (bcrypt.compare async)
+   - hashPassword (bcrypt.hash 10 rounds, parity PasswordService)
+   - enforceTenant (user_branch_access grant check, role ADMIN_BRANCH/DOCTOR)
+3. Dry-run bcrypt + jwt sign + verify (raw libs + lib/auth.ts runtime test)
+4. Seed user patient@test.com/Patient123! ke Supabase (idempotent, bcrypt 10 rounds)
+5. Verify: user exists, is_active=true, password match=true, patient row=1
+
+Root causes ditemukan saat seed:
+- .env.local pakai CRLF → regex `$` (tanpa /m) gagal match sebelum `\r` → manual parse EMPTY
+- supabase-js v2.45 butuh ws transport di Node < 22 → seed harus pass realtime.transport (parity lib/supabase.ts)
+
+Hasil:
+- tsc --noEmit: PASS (exit 0)
+- Dry-run bcrypt + jwt: PASS
+- lib/auth.ts runtime test (compile + execute): PASS
+- Seed: PASS (user created + patient record, password match verified)
+
+Next Action:
+- Commit via PowerShell
+- Task 2.2.2: /api/auth/patient/login (endpoint pertama)
+
+Referensi:
+- MIGRATION_PLAN.md §3 Batch 2
+- task_2_2_1.log
+- TD-MIGRATE-005 (partially addressed)
