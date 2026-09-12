@@ -3734,3 +3734,47 @@ Referensi:
 - MIGRATION_PLAN.md §3 Batch 2
 - task_2_2_1.log
 - TD-MIGRATE-005 (partially addressed)
+
+========================================================
+Task 2.2.2 - Migrate /api/auth/patient/login
+Status: ✅ SELESAI (code) - pending deploy verify
+Tanggal: 2026-09-12
+========================================================
+
+Fungsi:
+- Migrate POST /api/auth/patient/login dari Express ke serverless
+- Endpoint pertama yang sign JWT (access + refresh)
+
+Apa yang dilakukan:
+1. CEK auth.service.login (return shape) + route Express + skema tabel users
+2. ROOT CAUSE ditemukan: draft awal select `full_name` dari users + join
+   `branches:branch_id(name)`, padahal:
+   - users table TIDAK punya kolom full_name (letaknya di tabel patients)
+   - Express login TIDAK join branches
+   → pasti DB_ERROR di runtime (PostgREST unknown column) + response drift.
+   FIX: select hanya kolom Express (`id, email, username, password_hash,
+   branch_id, role, is_active`) dan response user parity persis:
+   `{ id, email, username, role, branchId }` sans fullName/branchName.
+3. Bikin dentflow-serverless/api/auth/patient/login.ts:
+   - Method POST only
+   - Body: { email?, username?, password }
+   - Query by email first, fallback username, role = PATIENT, is_active
+   - comparePassword + sign access (24h) + refresh (7d)
+   - Response: { success, data: { user, token, refreshToken } }
+4. Fix import path: ../../../../lib -> ../../../lib (kedalaman folder auth/patient)
+5. TSC check
+
+Hasil (pending deploy verify):
+- tsc --noEmit: PASS (exit 0)
+- Deploy + test: menunggu auto-deploy + verify HTTP
+
+Next Action:
+- Commit + push via PowerShell
+- Verify: 200 dengan credentials asli (patient@test.com/Patient123!)
+- Verify: 401 dengan wrong password
+- Verify: 400 dengan missing field
+- Task 2.2.3: /api/auth/admin/login + /api/auth/doctor/login
+
+Referensi:
+- MIGRATION_PLAN.md §3 Batch 2
+- task_2_2_2.log
