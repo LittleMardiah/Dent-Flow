@@ -24,7 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return success(res, {
       status: 'ok',
-      version: '1.0.0',
+      version: '1.0.1',
       runtime: 'vercel-serverless',
       region: process.env.VERCEL_REGION || 'unknown',
       services: {
