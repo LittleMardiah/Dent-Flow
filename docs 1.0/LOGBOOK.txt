@@ -3533,3 +3533,62 @@ Referensi:
 - MIGRATION_PLAN.md
 - ROADMAP TAMBAHAN.txt (Phase 2)
 - task_2_1_0.log
+
+========================================================
+Task 2.1.1 - Foundation Pattern + Migrate /api/doctors (GET)
+Status: ✅ SELESAI
+Tanggal: 2026-09-12
+========================================================
+
+Fungsi:
+- Bikin lib/auth.ts (pattern auth minimal: extractBearer, verifyJwt, requireRole)
+- Migrate GET /api/doctors dari Express ke serverless
+- Validasi pattern: auth + Supabase query + response format
+
+Apa yang dilakukan:
+1. Baca handler Express: doctorsList.handler.ts + doctorSlot.routes.ts +
+   authMiddleware.ts + jwt.utils.ts (validasi contract & roles)
+2. Bikin dentflow-serverless/lib/auth.ts:
+   - extractBearerToken(authHeader)
+   - verifyJwt(token) — pakai JWT_SECRET env
+   - requireRole(user, allowedRoles)
+3. Root cause fix: lib/supabase.ts belum punya getSupabase() (task code pakai
+   factory). Ditambah getSupabase() return singleton, backward compat health.ts.
+4. Root cause fix: Vercel project dentflow-serverless BELUM punya env JWT_SECRET
+   (tanpa ini endpoint selalu 500 ENV_MISSING). JWT_SECRET di-copy dari
+   dentflow-backend/.env (= production) ke Vercel (type sensitive, target
+   production+preview). Nilai secret TIDAK pernah di-log.
+5. Install jsonwebtoken + @types/jsonwebtoken di dentflow-serverless
+   (catatan: workdir tool kadang tidak terpakai -> selalu cd eksplisit)
+6. Bikin dentflow-serverless/api/doctors.ts:
+   - Auth check (bearer + role ADMIN_BRANCH/PATIENT/DOCTOR)
+   - Query Supabase: doctors + users email + branches name
+   - Response format: { success, data: { count, doctors: [...] } }
+7. Root cause fix deploy: vercel --prod dari dalam dentflow-serverless gagal
+   "Root Directory dentflow-serverless does not exist" karena project setting
+   rootDirectory=dentflow-serverless bertabrakan dengan source dir deploy.
+   Fix: rootDirectory project dihapus (null) -> deploy dari dalam folder OK.
+8. Deploy + verifikasi
+
+Hasil Verifikasi:
+- GET /api/doctors tanpa token → 401
+- GET /api/doctors token PATIENT → 200 + 8 dokter (branch deploy)
+- GET /api/doctors role RECEPTIONIS (bonus) → 403 (requireRole jalan)
+- GET /api/health regression → 200
+- rootDirectory proyek → null (sebelumnya "dentflow-serverless"; lihat note)
+- tsc --noEmit: exit 0
+
+Catatan verifikasi:
+- Login patient@test.com/Patient123! di Express prod GAGAL "Invalid username
+  or password" (seed user tidak ada di prod DB). Untuk memvalidasi auth path,
+  dipakai token HS256 self-signed dengan JWT_SECRET yang SAMA dengan Express
+  prod + payload identik (userId/branchId/role/email). Nilai secret tidak di-log.
+  Ini temuan env (bukan bug endpoint) — dicatat di TECHNICAL DEBT.
+
+Next Action:
+- Task 2.1.2: migrate /api/doctors/:id/patients
+- Task 2.1.3: validasi pattern middleware lanjutan
+
+Referensi:
+- MIGRATION_PLAN.md §3 Batch 1 & Batch 2 (lib/auth diambil lebih awal)
+- task_2_1_1.log

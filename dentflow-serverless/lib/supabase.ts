@@ -18,3 +18,9 @@ export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
     transport: WebSocket as any,
   },
 });
+
+// Factory pattern (MIGRATION_PLAN Batch 3) — return singleton yang sama.
+// Backward compat: api/health.ts tetap pakai named export `supabase`.
+export function getSupabase() {
+  return supabase;
+}

@@ -2972,3 +2972,109 @@ Mitigasi (keputusan di MIGRATION_PLAN.md):
 Referensi:
 - MIGRATION_PLAN.md §0
 - task_2_1_0.log
+
+===
+TD-MIGRATE-003: Contract /api/doctors serverless vs Express/frontend belum identik
+Status: ⚠️ OPEN (2026-09-12), by design
+
+Kontek: Task 2.1.1 menetapkan response serverless { success, data: { count,
+doctors: [...] } } dengan field isAvailable. Express (doctorsList.handler.ts)
+& frontend (dentflow-web/src/lib/api/doctors.ts getDoctors) mengharapkan
+data sebagai flat ARRAY dengan field isActive (+ alias snake_case).
+
+Risiko:
+- Saat switch frontend ke serverless, response.data.data di-frontend bukan
+  array → contract patah (kode di-return per task ini, belum integrasi
+  frontend).
+- queueCount hardcoded 0 (Supabase) vs Express menghitung queue WAITING.
+
+Mitigasi:
+- Task selanjutnya (2.1.x/phase integrasi): tambahkan flat-array data +
+  isActive + snake_case alias + queueCount real (query queues table).
+
+Referensi:
+- task_2_1_1.log
+- MIGRATION_PLAN.md §3 Batch 1
+
+===
+TD-MIGRATE-004: rootDirectory project berubah dentflow-serverless → null
+Status: ⚠️ OPEN (2026-09-12) — SUPERSEDED, lihat UPDATE di bawah (RESOLVED)
+
+Kontek: vercel --prod dari dalam dentflow-serverless gagal dengan
+"Root Directory dentflow-serverless does not exist" karena setting project
+rootDirectory=dentflow-serverless bertabrakan dengan source dir deploy
+(CLI deploy dari folder itu sendiri). Fix: rootDirectory dihapus (null) via
+Vercel API sehingga deploy dari dalam dentflow-serverless jalan.
+
+Risiko:
+- Update setting di dashboard Vercel bisa mengembalikan rootDirectory.
+- Deploy dari parent akan berubah behavior (harus pakai CLI biasa + link).
+
+Mitigasi:
+- Selalu deploy dengan `cd dentflow-serverless && vercel --prod`.
+- Kalau setting diubah manual, ingat constraint ini.
+
+Referensi:
+- task_2_1_1.log
+
+===
+TD-MIGRATE-005: Seed user Express test hilang di production DB (login tidak bisa)
+Status: ⚠️ OPEN (2026-09-12), env issue — bukan bug endpoint
+
+Kontek: Login patient@test.com/Patient123! (dan admin/doctor seed) terhadap
+Express prod selalu "Invalid username or password". Seed (seeds/001_test_users.sql)
+tidak ada / password beda di DB prod. Verifikasi Task 2.1.1 memakai token
+HS256 self-signed dengan JWT_SECRET yang sama dengan Express prod.
+
+Risiko:
+- Task 2.1.x berikutnya sulit memverifikasi auth end-to-end via login asli.
+
+Mitigasi:
+- Seed ulang test user di prod DB (perlu akses DB) ATAU gunakan mekanisme
+  generate token dengan JWT_SECRET untuk tes (jangan pernah log value).
+
+Referensi:
+- task_2_1_1.log
+
+===
+TD-MIGRATE-004 (UPDATE): rootDirectory dikembalikan ke "dentflow-serverless"
+Status: ✅ RESOLVED (2026-09-12)
+
+Kontek: Task 2.1.1 awalnya set rootDirectory=null supaya `vercel --prod` dari
+dalam folder jalan. TAPI ini merusak git auto-deploy (build dari repo root,
+gak ada api/*.ts -> empty lambda -> 404 = TD-VERCEL-008 kambuh).
+
+Modus operandi CLI deploy (verified 2026-09-12):
+- CLI upload file EXACTLY dari cwd (atau --cwd). rootDirectory project di-resolve
+  RELATIF terhadap upload root.
+- `cd dentflow-serverless && vercel --prod` dengan rootDirectory=dentflow-serverless
+  => server cari dentflow-serverless/dentflow-serverless => error (REG-001).
+- `cd repo-root && vercel --prod --cwd dentflow-serverless` SAMA SAJA (cwd jadi
+  dentflow-serverless) => error yang sama. Flag --cwd TIDAK berarti "deploy
+  subfolder dari root", dia chdir beneran.
+- `--project <id>` dari repo root akan upload SELURUH repo (1.3GB, termasuk
+  dentflow-mobile/build) => tidak praktis.
+- Konsekuensi: selama rootDirectory=dentflow-serverless, CLI deploy yang benar
+  hanya via upload tree yang MENGANDUNG path dentflow-serverless (i.e. dari
+  repo root full-repo) ATAU toggle (lihat Constraint permanen).
+
+Fix yang dipakai (verified working):
+1. PATCH rootDirectory=null (API v9) — window singkat (<60 detik)
+2. `cd dentflow-serverless && vercel deploy --prod --yes` — sukses, aliased
+   https://dentflow-serverless.vercel.app (deployment n3dj2qv21)
+3. PATCH rootDirectory="dentflow-serverless" — RESTORE (git auto-deploy aman)
+
+Constraint permanen:
+- Git auto-deploy: rootDirectory=dentflow-serverless (sudah benar otomatis).
+- CLI deploy MANUAL: pakai toggle 3-langkah di atas (REG-001 membuat
+  `cd dentflow-serverless && vercel --prod` gagal selagi rootDirectory set).
+- JANGAN pakai `--cwd dentflow-serverless` dari root — itu CHDIR, bukan scope
+  subfolder, tetap kena REG-001.
+- Alternatif manual deploy tanpa toggle: git push commit ke main (auto-deploy).
+
+Verifikasi 2026-09-12:
+- /api/health -> HTTP 200, body status ok, database ok, region sin1
+- /api/doctors (no token) -> HTTP 401 (auth ok)
+- rootDirectory after -> dentflow-serverless
+
+Referensi: fix_rootdir.log
