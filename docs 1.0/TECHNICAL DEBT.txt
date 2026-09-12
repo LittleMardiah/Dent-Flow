@@ -2843,3 +2843,83 @@ Perbaikan (Phase 2):
 
 Estimasi: 2-3 hari
 Prioritas: MEDIUM
+
+===
+TD-VERCEL-005: Root Directory Vercel Monorepo (Root ".")
+Status: ✅ FIXED (2026-09-12)
+
+Masalah: Semua project Vercel team littlemardiahs-projects di-set rootDirectory="."
+padahal kode Next.js/Express ada di subfolder (dentflow-web/, dentflow-backend/).
+Akibat: build ERROR "Couldn't find any pages or app directory" / build kosong 4s -> 404.
+
+Fix: PATCH /v9/projects/{id} { rootDirectory: "dentflow-web" | "dentflow-backend" }
+
+Catatan: dentflow-serverless ikut di-fix di TD-VERCEL-008 (rootDirectory kehilangan
+nilai & ke-reset ke null).
+
+File: (Vercel project settings, bukan repo)
+
+===
+TD-VERCEL-006: Serverless 500 - @supabase/supabase-js Butuh Native WebSocket (Node >=22)
+Status: ✅ FIXED (2026-09-12)
+
+Masalah: Vercel runtime Node 20 -> createClient() throw di module-load
+(karena lib butuh native WebSocket yang hanya ada di Node 22+).
+Gejala: FUNCTION_INVOCATION_FAILED 500 dengan error message ambigu.
+
+Fix: tambah ws + @types/ws ke package.json, passthrough realtime.transport = ws
+di lib/supabase.ts (commit 080f9bd).
+
+Catatan tambahan: commit 24f95c5 hapus "engines": {"node": ">=18.0.0"} dari
+package.json serverless - engines bikin Vercel node-version instability
+(24.x -> 22.x -> invalid). Sekarang pakai default project setting 24.x.
+
+File: dentflow-serverless/package.json, dentflow-serverless/lib/supabase.ts
+
+===
+TD-VERCEL-007: MIDTRANS_SERVER_KEY & MIDTRANS_CLIENT_KEY Kosong di Vercel Backend
+Status: ⚠️ OPEN
+
+Masalah: env dentflow-backend di Vercel tidak ada MIDTRANS_SERVER_KEY dan
+MIDTRANS_CLIENT_KEY. Payment webhook gagal verify signature di production.
+
+Impact: Payment gateway tidak fully functional di production.
+
+Fix: Set env di Vercel dashboard (butuh Midtrans sandbox keys dari developer).
+
+===
+TD-VERCEL-008: dentflow-serverless rootDirectory Hilang (null) -> Empty Lambda -> 404
+Status: ✅ FIXED (2026-09-12)
+
+Masalah: Setelah auto-deploy git commit 080f9bd, dentflow-serverless.vercel.app
+404 di SEMUA path (/ , /api/health, dll). Deployment "READY" tapi lambda output KOSONG.
+Investigation:
+- deployment lambdas.output = [] (backend/web punya __fn_*), build cloud 350-430ms.
+- Gejala mirip build cache poisoning, tapi akar masalah: rootDirectory project = null
+  -> build berjalan di repo ROOT (tidak ada api/* atau vercel.json di root)
+  -> tidak ada fungsi yang di-build -> tidak ada route -> 404.
+- Ubah package.json/vercel.json/api source TIDAK men-bust (input build emang root-repo).
+
+Fix:
+1. PATCH /v9/projects/prj_r2ZEQzOORH7pJmQNmmKyTZsYSwMw { rootDirectory: "dentflow-serverless" }
+2. vercel redeploy <deployment> --target production
+3. Verifikasi: dentflow-serverless.vercel.app/api/health -> 200 { status: ok, branches: 3 }
+
+Lessons:
+- rootDirectory bisa ke-reset (mis. saat link git/dashboard diubah). Cek ulang tiap auto-deploy.
+- Diagnostik: "Build Completed <500ms" + lambda output []; bandingkan proyek yg jalan.
+
+File: (Vercel project settings) + dentflow-serverless/vercel.json
+
+===
+TD-VERCEL-009: vercel.json Serverless - Pinned functions.runtime @vercel/node@3.2.0
+Status: ✅ CLOSED (2026-09-12)
+
+Masalah: vercel.json serverless pakai top-level "functions" dgn pinned runtime
+@vercel/node@3.2.0. Tidak ada nilai tambah; berpotensi konflik dgn sistem
+function baru (fluid/zeroConfig) dan bikin build tidak konsisten.
+
+Fix: commit 24f95c5 -> vercel.json jadi { version: 2, regions: ["sin1"] }.
+Zero-config Vercel sudah otomatis build api/*.ts via @vercel/node.
+
+File: dentflow-serverless/vercel.json
