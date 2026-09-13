@@ -43,8 +43,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 
-  const escSearch = (value: string) => value.replace(/[\\*,()]/g, '\\$&');
-  const pattern = search ? `*${escSearch(search)}*` : '';
+  // Search pakai `%` wildcard (PostgREST ilike). `*` itu selector, bukan wildcard.
+  // NOTE: email search via cross-table OR TIDAK di-support PostgREST v2 di sini.
+  // Deviation dari Express (full_name OR phone OR email) -> hanya full_name OR phone.
+  // Flag: TD-MIGRATE-008.
+  const likePattern = search ? `%${search}%` : '';
 
   try {
     const supabase = getSupabase();
@@ -71,7 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (search) {
       query = query.or(
-        `full_name.ilike.${pattern},phone.ilike.${pattern},user_id.email.ilike.${pattern}`
+        `full_name.ilike.${likePattern},phone.ilike.${likePattern}`
       );
     }
 

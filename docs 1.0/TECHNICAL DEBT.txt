@@ -3131,3 +3131,21 @@ Mitigasi: Keep serverless approach. Update frontend saat migrasi.
 Low priority karena devToken cuma dipakai di development.
 
 Referensi: task_2_2_6.log
+
+===
+TD-MIGRATE-008: /api/patients search tidak include email (PostgREST limitation)
+Status: ⚠️ OPEN (2026-09-13), LOW priority
+
+Kontek: Express listPatients search by full_name OR phone OR email
+(JOIN users.email ILIKE). Serverless versi awal coba .or() dengan
+user_id.email — menyebabkan HTTP 500 (PostgREST v2 tidak support
+cross-table OR via nested select syntax).
+
+Fix: drop email search dari .or(), hanya full_name + phone.
+Deviation kecil dari Express.
+
+Upgrade path (kalau perlu parity 100%):
+- 2-query: cari user_ids via email ILIKE, lalu .or() dengan user_id.in.(...)
+- Atau SQL RPC custom
+
+Referensi: task_2_3_1b.log

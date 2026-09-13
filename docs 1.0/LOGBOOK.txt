@@ -3982,3 +3982,30 @@ Next Action:
 Referensi:
 - MIGRATION_PLAN.md §3 Batch 3
 - task_2_3_1.log
+
+========================================================
+Task 2.3.1b - FIX search 500 di /api/patients
+Status: ✅ SELESAI (code) - pending deploy verify
+Tanggal: 2026-09-13
+========================================================
+
+Root cause search 500:
+1. pattern pakai `*${search}*` — PostgREST pakai `%` untuk ILIKE
+2. .or() reference user_id.email — cross-table OR tidak support di
+   PostgREST v2 via nested select
+
+Fix:
+- Ganti `*${search}*` -> `%${search}%`
+- Drop email dari .or(), hanya full_name + phone
+- Catat deviation di TD-MIGRATE-008
+
+Hasil:
+- tsc --noEmit: PASS
+
+Next Action:
+- Commit + push
+- Verify: search Test, search 08123, no match
+- Lanjut Task 2.3.2 (/api/patients/:id)
+
+Referensi:
+- task_2_3_1.log (bug found), task_2_3_1b.log (fix)
