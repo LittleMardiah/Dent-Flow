@@ -3883,3 +3883,40 @@ Next Action:
 Referensi:
 - MIGRATION_PLAN.md §3 Batch 2
 - task_2_2_5.log
+
+========================================================
+Task 2.2.6 - Migrate /api/auth/forgot-password + reset-password
+Status: ✅ SELESAI (code) - pending deploy verify
+Tanggal: 2026-09-13
+========================================================
+
+Fungsi:
+- Migrate forgot-password + reset-password ke serverless
+- Batch 2 auth CLOSED (login + register + forgot + reset)
+
+Apa yang dilakukan:
+1. CEK Express forgotPassword + resetPassword (parity shape)
+2. Bikin api/auth/forgot-password.ts:
+   - Body { email }, generate crypto token (32 bytes hex)
+   - Insert reset_tokens (expiry 15 min, used=false)
+   - Mock email (log, devToken di development)
+   - Security: tidak reveal user existence
+3. Bikin api/auth/reset-password.ts:
+   - Body { token, newPassword }
+   - Validate password strength regex
+   - Cek reset_tokens (exists, not used, not expired)
+   - Update users.password_hash + mark token used
+4. TSC check pipefail
+
+Hasil:
+- tsc --noEmit: PASS
+
+Next Action:
+- Commit + push
+- Verify E2E: forgot -> reset -> login dengan password baru
+- Batch 2 auth CLOSED
+- Lanjut Batch 3 (read endpoints)
+
+Referensi:
+- MIGRATION_PLAN.md §3 Batch 2
+- task_2_2_6.log
