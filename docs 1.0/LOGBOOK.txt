@@ -4280,3 +4280,54 @@ Next Action:
 - Task 2.3.5: close Batch 3
 
 Referensi: task_2_3_4b.log (diagnostic), task_2_3_4c.log
+
+========================================================
+Task 2.3.5 - CLOSE Batch 3 (Core Read)
+Status: ✅ SELESAI
+Tanggal: 2026-09-13
+========================================================
+
+Batch 3 (Core Read) CLOSED. 6 domain live di serverless.
+
+Task recap:
+- 2.3.1  GET /api/patients (list)           — 358adfc
+- 2.3.1b Search fix (PostgREST wildcard)     — db03fb0
+- 2.3.2  /:id + branches + audit-trail       — 8f5bcaf (deploy failed: limit 12)
+- 2.3.2b Verify 404 root cause               — task_2_3_2b.log
+- 2.3.2c Verify 3 routing approaches         — task_2_3_2c.log
+- 2.3.2d Consolidate patients (4→1)          — 6379b91
+- 2.3.2e Consolidate doctors (2→1)           — a529b45
+- 2.3.2f Consolidate auth (7→1)              — 838770e
+- 2.3.2z Close 2.3.2 series (docs)           — b137808
+- 2.3.3  Consolidate encounters (read)       — c8ca685
+- 2.3.4  Consolidate invoices (read)         — 533e98c
+- 2.3.4b Diagnostic invoice_date phantom     — task_2_3_4b.log
+- 2.3.4c Fix invoice_date phantom            — 774b43a (serverless) + 0efb4c0 (express)
+- 2.3.5  Close Batch 3 (this task)
+
+ARCHITECTURE FINAL:
+- 6 function: health + patients + doctors + auth + encounters + invoices
+- Pattern: B (rewrites) + C (Express router mount)
+- 1 function per domain (MODULITH preserved)
+- Function count: 14 (failed) → 6 (safe, below Vercel Hobby limit 12)
+
+VERIFIED PRODUCTION (final):
+- All 6 domain: list endpoint return 200
+- Auth: 7 endpoint live
+- Regression: semua domain masih jalan
+- Function count: 6
+
+TD-MIGRATE-009: CRLF .env.local (LOW)
+TD-MIGRATE-010: invoice_date phantom (FIXED)
+
+Next: Batch 4 — Core Write
+- POST/PUT patient bookings
+- POST/PUT encounters (write)
+- POST invoices mark-paid + undo
+- POST invoices payments
+
+Referensi:
+- task_2_3_2c.log (routing pattern)
+- task_2_3_2d/e/f.log (rollout)
+- task_2_3_3.log, task_2_3_4.log, task_2_3_4b.log, task_2_3_4c.log
+- task_2_3_5.log (this task)

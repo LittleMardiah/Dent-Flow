@@ -303,43 +303,55 @@ Total: **8 endpoint** (7 auth + 1 health).
 
 **Next: Batch 3 — Read endpoints**
 
-### Batch 3: Core Read (Task 2.3.x) — 🟡 IN PROGRESS
+### Batch 3: Core Read (Task 2.3.x) — ✅ DONE
 
-**Task 2.3.1 s/d 2.3.2f — DONE (patients + doctors + auth consolidation):**
+**Task 2.3.1 s/d 2.3.5 — DONE (all read endpoints consolidated):**
 
 - [x] `/api/patients` GET list (Task 2.3.1, commit 358adfc)
 - [x] `/api/patients` search fix (Task 2.3.1b, commit db03fb0)
-- [x] `/api/patients/:id` + `/branches` + `/audit-trail` (Task 2.3.2, commit 8f5bcaf — DEPLOY FAILED: limit 12)
+- [x] `/api/patients/:id` + `/branches` + `/audit-trail` (Task 2.3.2, commit 8f5bcaf — deploy FAILED: limit 12)
 - [x] Verify 404 root cause (Task 2.3.2b, log task_2_3_2b.log)
 - [x] Verify 3 routing approaches (Task 2.3.2c, log task_2_3_2c.log)
 - [x] **Consolidate patients** (Task 2.3.2d, commit 6379b91) — 4 → 1 function
 - [x] **Consolidate doctors** (Task 2.3.2e, commit a529b45) — 2 → 1 function
 - [x] **Consolidate auth** (Task 2.3.2f, commit 838770e) — 7 → 1 function
 - [x] **ARCHITECTURE LOCKED:** B+C pattern = 4 function total
+- [x] `/api/encounters` read (Task 2.3.3, commit c8ca685) — 5 function
+- [x] `/api/invoices` read (Task 2.3.4, commit 533e98c) — 6 function
+- [x] **invoice_date phantom fix** (Task 2.3.4c, commits 774b43a + 0efb4c0)
+- [x] **Close Batch 3** (Task 2.3.5) — this task
 
-**ARCHITECTURE STANDARD (LOCKED):**
+**ARCHITECTURE STANDARD (LOCKED, reused Batch 4-8):**
 
 **Problem:** Vercel Hobby limit 12 serverless functions per deployment.
 **Fix:** B+C pattern — 1 function per DOMAIN (MODULITH preserved).
 
 | Approach | Status | Detail |
 |---|---|---|
-| A: Catch-all `api/[...path].ts` | ❌ TIDAK VIABLE | Vercel compile non-recursive `^/api/([^/]+)$` — nested 404 |
-| B: `vercel.json` rewrites | ✅ VIABLE | Recursive route `^/api/<domain>(?:/((?:[^/]+?)(?:/...)*))?$` |
-| C: Express Router mount prefix | ✅ VIABLE | Vercel kirim FULL URL → `app.use('/api/<domain>', router)` |
+| A: Catch-all `api/[...path].ts` | ❌ TIDAK VIABLE | Vercel compile non-recursive, nested 404 |
+| B: `vercel.json` rewrites | ✅ VIABLE | Recursive route semua depth → 1 function |
+| C: Express Router mount prefix | ✅ VIABLE | Vercel kirim FULL URL, mount at '/api/<domain>' |
 
 **Pattern final per domain:**
 1. File `api/<domain>.ts` = Express app + `express.json()` + `app.use('/api/<domain>', router)` + 404 fallback JSON
 2. `vercel.json` rewrites: `{ "source": "/api/<domain>/:path*", "destination": "/api/<domain>?path=$1" }`
-3. Auth middleware di level router (kecuali auth domain — public endpoint)
-4. Route order: static SEBELUM dynamic (`/branches` sebelum `/:id`)
+3. Auth middleware di level router (kecuali auth domain — public)
+4. Route order: static SEBELUM dynamic (`/summary` sebelum `/:id`, `/branches` sebelum `/:id`)
 
-**Hasil:** 14 function → **4 function** (health, patients, doctors, auth). Aman, ~8 slot spare.
+**Function count progression:**
+- Sebelum konsolidasi: 14 function (limit crossed, deploy 8f5bcaf FAILED)
+- Setelah patients: 11
+- Setelah doctors: 10
+- Setelah auth: 4
+- Setelah encounters: 5
+- Setelah invoices: **6** (current)
 
-**Next task (belum mulai):**
-- [ ] `/api/encounters` (GET list + GET /:id) — Task 2.3.3
-- [ ] `/api/invoices` (GET list + summary + /:id) — Task 2.3.4
-- [ ] Close Batch 3 docs — Task 2.3.5
+**TD-MIGRATE-009:** CRLF .env.local (LOW, debug only)
+**TD-MIGRATE-010:** invoice_date phantom (FIXED, legacy schema mismatch)
+
+**Next: Batch 4 — Core Write (Task 2.4.x)**
+
+---
 
 ### Batch 4: Core Write (Task 2.4.x)
 - [ ] `/api/patient/bookings` (POST create, PUT cancel)
