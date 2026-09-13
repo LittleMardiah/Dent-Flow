@@ -4090,3 +4090,39 @@ Referensi:
 - task_2_3_2d.log (pilot patients)
 - commit 6379b91 (pilot patients)
 - task_2_3_2e.log
+
+========================================================
+Task 2.3.2f - Consolidate Auth Domain (8 -> 1) — Final B+C Rollout
+Status: ✅ SELESAI (code) - pending deploy verify
+Tanggal: 2026-09-13
+========================================================
+
+Consolidate 7 file auth menjadi 1 function (Express router).
+
+Apa yang dilakukan:
+1. Baca semua file auth existing + backup (dentflow-serverless/.backup-auth-232f/)
+2. Tulis ulang api/auth.ts (consolidated):
+   - Express router mount /api/auth
+   - 7 route: /login, /patient/login, /patient/register, /admin/login,
+     /doctor/login, /forgot-password, /reset-password
+   - express.json() body parser
+   - NO auth middleware (public endpoints)
+3. Hapus folder api/auth/ lama
+4. Update vercel.json: + rewrites /api/auth/:path* -> /api/auth?path=$1
+5. TSC check + vercel build + func count
+
+Hasil:
+- tsc --noEmit: PASS (TSC_EXIT=0)
+- TOTAL_FUNCS: 4 (health + patients + doctors + auth)
+
+Next Action:
+- Commit + push
+- Verify production: 7 auth endpoint works
+- Verifikasi regression: patients + doctors masih jalan
+- Batch 3 lanjut: 2.3.3 encounters
+
+Referensi:
+- task_2_3_2c.log (routing pattern)
+- task_2_3_2d.log (pilot patients)
+- task_2_3_2e.log (rollout doctors)
+- task_2_3_2f.log
