@@ -1,70 +1,125 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import express, { Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
 import { getSupabase } from '../lib/supabase';
-import { success, error } from '../lib/response';
-import { extractBearerToken, verifyJwt, requireRole } from '../lib/auth';
+import { extractBearerToken, verifyJwt, requireRole, enforceTenant, AuthUser } from '../lib/auth';
 
 const ALLOWED_ROLES = ['ADMIN_BRANCH', 'DOCTOR'];
 
-/**
- * GET /api/patients?search=&page=&limit=
- * List pasien (scoped ke branch user).
- * Parity Express: dentflow-backend/src/handlers/patient.handler.ts -> listPatients
- * Response shape Express: { success, data: { data, total, page, totalPages } }
- */
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET') {
-    return error(res, 'Method not allowed', 405, 'METHOD_NOT_ALLOWED');
-  }
+// ============================================================
+// Consolidated /api/patients — B+C pattern (MODULITH pilot)
+// - Approach B: vercel.json rewrites /api/patients/:path* -> /api/patients
+// - Approach C: Express router di-mount prefix '/api/patients'
+//   (Vercel kirim FULL URL ke lambda, terbukti di task 2.3.2c)
+// Parity Express: dentflow-backend/src/routes/patients.routes.ts
+//   (scope serverless saat ini: 4 endpoint GET)
+// ============================================================
 
+// Response helpers — shape IDENTIK dengan lib/response (success/error).
+const ok = (res: Response, data: unknown, status = 200) =>
+  res.status(status).json({ success: true, data, timestamp: new Date().toISOString() });
+const fail = (res: Response, message: string, status = 400, code = 'ERROR') =>
+  res.status(status).json({ success: false, error: code, message, timestamp: new Date().toISOString() });
+
+interface AuthedRequest extends Request {
+  user: AuthUser;
+}
+
+const router: Router = express.Router();
+
+// ---------- Auth + env guard (level router, parity 4 file lama) ----------
+router.use((req: Request, res: Response, next: NextFunction) => {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return error(res, 'ENV_MISSING: SUPABASE_* belum di-set.', 500, 'ENV_MISSING');
+    return fail(res, 'ENV_MISSING: SUPABASE_* belum di-set.', 500, 'ENV_MISSING');
   }
   if (!process.env.JWT_SECRET) {
-    return error(res, 'ENV_MISSING: JWT_SECRET belum di-set.', 500, 'ENV_MISSING');
+    return fail(res, 'ENV_MISSING: JWT_SECRET belum di-set.', 500, 'ENV_MISSING');
   }
 
   const authHeader = req.headers['authorization'];
   const token = extractBearerToken(typeof authHeader === 'string' ? authHeader : undefined);
-  if (!token) return error(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+  if (!token) return fail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
 
-  let user;
   try {
-    user = verifyJwt(token);
+    const user = verifyJwt(token);
     requireRole(user, ALLOWED_ROLES);
+    (req as AuthedRequest).user = user;
+    next();
   } catch (err: unknown) {
     const e = err as { statusCode?: number; message?: string };
-    if (e.statusCode === 403) return error(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
-    return error(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+    if (e.statusCode === 403) return fail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
+    return fail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
   }
+});
 
-  const search = String(req.query.search || '').trim();
-  const page = parseInt(String(req.query.page || '1'), 10) || 1;
-  const limit = Math.min(parseInt(String(req.query.limit || '20'), 10) || 20, 100);
-  const from = (page - 1) * limit;
-  const to = from + limit - 1;
+// GET-only guard (parity: metode selain GET => 405 METHOD_NOT_ALLOWED).
+const getOnly =
+  (handler: (req: AuthedRequest, res: Response) => unknown) =>
+  (req: Request, res: Response) => {
+    if (req.method !== 'GET') {
+      return fail(res, 'Method not allowed', 405, 'METHOD_NOT_ALLOWED');
+    }
+    return handler(req as AuthedRequest, res);
+  };
 
-  // Search pakai `%` wildcard (PostgREST ilike). `*` itu selector, bukan wildcard.
-  // NOTE: email search via cross-table OR TIDAK di-support PostgREST v2 di sini.
-  // Deviation dari Express (full_name OR phone OR email) -> hanya full_name OR phone.
-  // Flag: TD-MIGRATE-008.
-  const likePattern = search ? `%${search}%` : '';
-
+// ---------- GET /api/patients/branches ----------
+// HARUS SEBELUM /:id (kalau kebalik, "branches" akan match :id).
+router.all('/branches', getOnly(async (req, res) => {
+  const user = req.user;
   try {
     const supabase = getSupabase();
 
+    // Parity Express listAccessibleBranches:
+    // SELECT DISTINCT b.id, b.name FROM branches b
+    // WHERE b.is_active = true AND (b.id = own OR b.id IN (user_branch_access)) ORDER BY b.name
+    // Cross-table OR tidak didukung PostgREST -> dua query, kurasi di JS (sama dgn file lama).
+    const { data: branchRows, error: eb } = await supabase
+      .from('branches')
+      .select('id, name')
+      .eq('is_active', true)
+      .order('name', { ascending: true });
+    if (eb) return fail(res, `Database error: ${eb.message}`, 500, 'DB_ERROR');
+
+    const { data: grants, error: eg } = await supabase
+      .from('user_branch_access')
+      .select('branch_id')
+      .eq('user_id', user.userId);
+    if (eg) return fail(res, `Database error: ${eg.message}`, 500, 'DB_ERROR');
+
+    const accessibleIds = new Set<string>([
+      user.branchId,
+      ...(grants || []).map((g: any) => g.branch_id as string),
+    ]);
+    const branches = (branchRows || []).filter((b: any) => accessibleIds.has(b.id));
+
+    return ok(res, branches);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
+
+// ---------- GET /api/patients (list) ----------
+router.all('/', getOnly(async (req, res) => {
+  const user = req.user;
+  try {
+    const search = String(req.query.search || '').trim();
+    const page = parseInt(String(req.query.page || '1'), 10) || 1;
+    const limit = Math.min(parseInt(String(req.query.limit || '20'), 10) || 20, 100);
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    // Search pakai `%` wildcard (PostgREST ilike). `*` itu selector, bukan wildcard.
+    // NOTE: email search via cross-table OR TIDAK di-support PostgREST v2 di sini.
+    // Deviation dari Express (full_name OR phone OR email) -> hanya full_name OR phone.
+    // Flag: TD-MIGRATE-008.
+    const likePattern = search ? `%${search}%` : '';
+
+    const supabase = getSupabase();
     let query = supabase
       .from('patients')
       .select(
-        `
-        id,
-        branch_id,
-        user_id,
-        full_name,
-        phone,
-        created_at,
-        updated_at,
-        users:user_id ( email )
-      `,
+        `id, branch_id, user_id, full_name, phone, created_at, updated_at, users:user_id ( email )`,
         { count: 'exact' }
       )
       .eq('branch_id', user.branchId)
@@ -73,25 +128,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .range(from, to);
 
     if (search) {
-      query = query.or(
-        `full_name.ilike.${likePattern},phone.ilike.${likePattern}`
-      );
+      query = query.or(`full_name.ilike.${likePattern},phone.ilike.${likePattern}`);
     }
 
     const { data, error: dbErr, count } = await query;
-    if (dbErr) return error(res, `Database error: ${dbErr.message}`, 500, 'DB_ERROR');
+    if (dbErr) return fail(res, `Database error: ${dbErr.message}`, 500, 'DB_ERROR');
 
     const rows = data || [];
     const patientIds = rows.map((p: any) => p.id);
 
-    // totalBookings + lastVisit (parity subquery Express)
+    // totalBookings + lastVisit (parity subquery Express).
     let bookingsCount: Record<string, number> = {};
     let lastVisits: Record<string, string> = {};
     if (patientIds.length > 0) {
-      const bookings = await supabase
-        .from('bookings')
-        .select('patient_id')
-        .in('patient_id', patientIds);
+      const bookings = await supabase.from('bookings').select('patient_id').in('patient_id', patientIds);
       if (!bookings.error) {
         bookingsCount = (bookings.data || []).reduce<Record<string, number>>((acc, b: any) => {
           acc[b.patient_id] = (acc[b.patient_id] || 0) + 1;
@@ -129,7 +179,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const total = count || 0;
 
-    return success(res, {
+    return ok(res, {
       data: patients,
       total,
       page,
@@ -137,6 +187,196 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal error';
-    return error(res, message, 500, 'INTERNAL_ERROR');
+    return fail(res, message, 500, 'INTERNAL_ERROR');
   }
+}));
+
+// ---------- GET /api/patients/:id/audit-trail ----------
+router.all('/:id/audit-trail', getOnly(async (req, res) => {
+  const user = req.user;
+  const patientId = req.params.id;
+  if (!patientId) return fail(res, 'Parameter id pasien wajib diisi', 400, 'VALIDATION_ERROR');
+
+  try {
+    const supabase = getSupabase();
+
+    // getEffectiveBranch parity: req.branchId (tenant grant) || user.branchId
+    const rawBranch = req.query.branchId;
+    const requestedBranchId = typeof rawBranch === 'string' && rawBranch.length > 0 ? rawBranch : undefined;
+    let branchId = user.branchId;
+    try {
+      branchId = await enforceTenant(supabase, user, requestedBranchId);
+    } catch (tenantErr: unknown) {
+      const e = tenantErr as { statusCode?: number; message?: string };
+      if (e.statusCode === 403) return fail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
+      throw tenantErr;
+    }
+
+    // Pastikan pasien ada di branch user (parity: 404 kalau tidak).
+    const { data: patient } = await supabase
+      .from('patients')
+      .select('id')
+      .eq('id', patientId)
+      .eq('branch_id', branchId)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (!patient) return fail(res, 'Pasien tidak ditemukan', 404, 'PATIENT_NOT_FOUND');
+
+    // Express: WHERE al.entity_id = $1 AND al.branch_id = $2 ORDER BY al.created_at DESC
+    // (tidak filter entity_type; join actors untuk username).
+    const { data, error: e1 } = await supabase
+      .from('audit_logs')
+      .select('id, event_type, description, created_at, users:user_id ( username )')
+      .eq('entity_id', patientId)
+      .eq('branch_id', branchId)
+      .order('created_at', { ascending: false });
+    if (e1) return fail(res, `Database error: ${e1.message}`, 500, 'DB_ERROR');
+
+    const logs = (data || []).map((l: any) => ({
+      id: l.id,
+      eventType: l.event_type,
+      description: l.description || '',
+      createdAt: l.created_at,
+      actorName: l.users?.username || 'System',
+    }));
+
+    return ok(res, logs);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
+
+// ---------- GET /api/patients/:id (detail) ----------
+router.all('/:id', getOnly(async (req, res) => {
+  const user = req.user;
+  const patientId = req.params.id;
+  if (!patientId) return fail(res, 'Parameter id pasien wajib diisi', 400, 'VALIDATION_ERROR');
+
+  try {
+    const supabase = getSupabase();
+
+    // getEffectiveBranch parity: req.branchId (tenant grant) || user.branchId
+    const rawBranch = req.query.branchId;
+    const requestedBranchId = typeof rawBranch === 'string' && rawBranch.length > 0 ? rawBranch : undefined;
+    let branchId = user.branchId;
+    try {
+      branchId = await enforceTenant(supabase, user, requestedBranchId);
+    } catch (tenantErr: unknown) {
+      const e = tenantErr as { statusCode?: number; message?: string };
+      if (e.statusCode === 403) return fail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
+      throw tenantErr;
+    }
+
+    // Patient + email user (parity query utama Express getPatientDetail).
+    const { data: patient, error: e1 } = await supabase
+      .from('patients')
+      .select(`id, user_id, full_name, phone, branch_id, created_at, updated_at, users:user_id ( email )`)
+      .eq('id', patientId)
+      .eq('branch_id', branchId)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (e1) return fail(res, `Database error: ${e1.message}`, 500, 'DB_ERROR');
+    if (!patient) return fail(res, 'Pasien tidak ditemukan', 404, 'PATIENT_NOT_FOUND');
+
+    // totalBookings/lastVisit = subquery COUNT/MAX Express (tanpa filter branch).
+    const [countRes, lastRes] = await Promise.all([
+      supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('patient_id', patientId),
+      supabase.from('encounters').select('completed_at').eq('patient_id', patientId).order('completed_at', { ascending: false }).limit(1),
+    ]);
+    const totalBookings = countRes.count || 0;
+    const lastRow = (lastRes.data || [])[0];
+    const lastVisit = lastRow && lastRow.completed_at ? String(lastRow.completed_at) : '';
+
+    // Bookings + encounters + invoices (branch-scoped, paralel).
+    const [bookingsRes, encountersRes, invoicesRes] = await Promise.all([
+      supabase
+        .from('bookings')
+        .select('id, booking_date, booking_time, status, doctors:doctor_id ( full_name )')
+        .eq('patient_id', patientId)
+        .eq('branch_id', branchId)
+        .order('booking_date', { ascending: false })
+        .order('booking_time', { ascending: false }),
+      supabase
+        .from('encounters')
+        .select('id, created_at, diagnosis, doctors:doctor_id ( full_name )')
+        .eq('patient_id', patientId)
+        .eq('branch_id', branchId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('invoices')
+        .select('id, invoice_number, amount_due, status')
+        .eq('patient_id', patientId)
+        .eq('branch_id', branchId)
+        .order('created_at', { ascending: false }),
+    ]);
+    if (bookingsRes.error) return fail(res, `Database error: ${bookingsRes.error.message}`, 500, 'DB_ERROR');
+    if (encountersRes.error) return fail(res, `Database error: ${encountersRes.error.message}`, 500, 'DB_ERROR');
+    if (invoicesRes.error) return fail(res, `Database error: ${invoicesRes.error.message}`, 500, 'DB_ERROR');
+
+    const bookings = (bookingsRes.data || []).map((b: any) => ({
+      id: b.id,
+      bookingDate: b.booking_date ? `${b.booking_date} ${b.booking_time || ''}`.trim() : '',
+      doctorName: b.doctors?.full_name || '',
+      status: b.status,
+    }));
+    const encounters = (encountersRes.data || []).map((e: any) => ({
+      id: e.id,
+      createdAt: e.created_at,
+      doctorName: e.doctors?.full_name || '',
+      diagnosis: e.diagnosis || '',
+    }));
+    const invoices = (invoicesRes.data || []).map((i: any) => ({
+      id: i.id,
+      invoiceNumber: i.invoice_number || '',
+      totalAmount: Number(i.amount_due) || 0,
+      status: i.status,
+    }));
+
+    return ok(res, {
+      id: patient.id,
+      userId: patient.user_id,
+      fullName: patient.full_name,
+      phone: patient.phone || '',
+      email: (patient as any).users?.email || '',
+      branchId: patient.branch_id,
+      totalBookings,
+      lastVisit,
+      createdAt: patient.created_at,
+      updatedAt: patient.updated_at,
+      bookings,
+      encounters,
+      invoices,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
+
+// ---------- 404 fallback domain patients ----------
+router.use((req: Request, res: Response) => {
+  return fail(res, 'Route tidak ditemukan di domain patients.', 404, 'NOT_FOUND');
+});
+
+// ============================================================
+// Vercel handler: mount router di prefix '/api/patients'
+// ============================================================
+const app = express();
+app.use('/api/patients', router);
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Vercel kirim FULL URL ke lambda (terbukti di 2.3.2c), jadi Express mount
+  // prefix '/api/patients' match semua sub-path. Safeguard: kalau runtime strip
+  // URL jadi destination saja (/api/patients) dan suffix masuk ?path=, rekonstruksi.
+  const r = req as any;
+  const captured = r.query && r.query.path ? r.query.path : undefined;
+  if (captured) {
+    const suffix = Array.isArray(captured) ? captured[0] : String(captured);
+    const url = String(r.url || '');
+    if (suffix && !url.includes(`/${suffix}`)) {
+      r.url = `/api/patients/${suffix}`;
+    }
+  }
+  return app(r, res as any);
 }
