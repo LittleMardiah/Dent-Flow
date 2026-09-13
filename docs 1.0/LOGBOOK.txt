@@ -4009,3 +4009,42 @@ Next Action:
 
 Referensi:
 - task_2_3_1.log (bug found), task_2_3_1b.log (fix)
+
+========================================================
+Task 2.3.2 - Migrate GET /api/patients/:id + audit-trail + branches
+Status: ✅ SELESAI (code) - pending deploy verify
+Tanggal: 2026-09-13
+========================================================
+
+3 endpoint:
+1. api/patients/branches.ts
+2. api/patients/[id]/index.ts
+3. api/patients/[id]/audit-trail.ts
+
+Apa yang dilakukan:
+1. CEK Express parity:
+   - listAccessibleBranches, getPatientDetail, getPatientAuditTrail
+   - KETEMU ROOT CAUSE: draft template response shape mismatch semua
+     a. branches template: id,name,address,phone + tanpa is_active filter -> Express hanya id,name + is_active
+     b. detail template: missing invoices + totalBookings/lastVisit + salah field (identity_*, date_of_birth)
+     c. audit template: filter entity_type='PATIENTS' tidak ada di Express (hanya entity_id+branch_id), missing actor join
+2. branches.ts: SELECT id,name WHERE is_active=true AND (id=own OR granted) ORDER BY name
+   - Cross-table OR tidak didukung PostgREST -> dua query (branches + user_branch_access), filter JS
+3. [id]/index.ts: patient+email, count bookings (totalBookings), max completed_at (lastVisit),
+   bookings (JSON embed doctors), encounters, invoices - semua branch-scoped paralel
+4. [id]/audit-trail.ts: 404 check patient di branch, audit_logs entity_id+branch_id
+   order created_at DESC + embed users(username) -> actorName || 'System'
+5. getEffectiveBranch parity: ?branchId= via enforceTenant (403 kalau tanpa grant) || user.branchId
+6. TSC check pipefail
+
+Hasil:
+- tsc --noEmit: PASS (exit 0)
+
+Next Action:
+- Commit + push
+- Verify: 401 no token, 200 admin, 404 not found, 404 cross-branch
+- Task 2.3.3: /api/encounters
+
+Referensi:
+- MIGRATION_PLAN.md Batch 3
+- task_2_3_2.log
