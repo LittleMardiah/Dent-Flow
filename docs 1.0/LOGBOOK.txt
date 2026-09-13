@@ -3813,3 +3813,37 @@ Next Action:
 Referensi:
 - MIGRATION_PLAN.md §3 Batch 2
 - task_2_2_3.log
+
+========================================================
+Task 2.2.4 - Migrate /api/auth/login (auto-detect role)
+Status: ✅ SELESAI (code) - pending deploy verify
+Tanggal: 2026-09-13
+========================================================
+
+Fungsi:
+- Migrate POST /api/auth/login (auto-detect role) ke serverless
+- Dipakai web frontend untuk unified login
+
+Apa yang dilakukan:
+1. CEK detectRoleAndLogin + /login route di Express
+2. VALIDASI draft template vs Express: ketemu 1 beda ->
+   redirectUrl default (Express: non ADMIN/DOCTOR -> /patient/dashboard)
+   -> diperbaiki di login.ts
+3. Bikin dentflow-serverless/api/auth/login.ts:
+   - Body: { email?, username?, password }
+   - Query by email fallback username, TANPA filter role (auto-detect)
+   - comparePassword + sign token
+   - Response: { user, token, refreshToken, role, redirectUrl }
+4. TSC check pipefail
+
+Hasil:
+- tsc --noEmit: PASS
+
+Next Action:
+- Commit + push
+- Verify: patient/admin/doctor login via /api/auth/login semua 200
+- Task 2.2.5: /api/auth/patient/register
+
+Referensi:
+- MIGRATION_PLAN.md §3 Batch 2
+- task_2_2_4.log
