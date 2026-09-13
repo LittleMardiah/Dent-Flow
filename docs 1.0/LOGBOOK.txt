@@ -3945,3 +3945,40 @@ Next: Batch 3 — Read endpoints (patients, encounters, invoices).
 Referensi:
 - MIGRATION_PLAN.md §3 Batch 2 (updated)
 - task_2_2_6.log, task_2_2_7.log
+
+========================================================
+Task 2.3.1 - Migrate GET /api/patients (list) — Batch 3 Kickoff
+Status: ✅ SELESAI (code) - pending deploy verify
+Tanggal: 2026-09-13
+========================================================
+
+Fungsi:
+- Migrate GET /api/patients (list) ke serverless
+- Endpoint baca PERTAMA Batch 3
+
+Apa yang dilakukan:
+1. CEK Express listPatients (parity shape)
+   - KETEMU ROOT CAUSE: draft awal salah shape + missing field totalBookings/lastVisit
+   - Response Express: { success, data: { data, total, page, totalPages } }
+2. Bikin dentflow-serverless/api/patients.ts:
+   - Role: ADMIN_BRANCH, DOCTOR
+   - Branch scope: .eq('branch_id', user.branchId)
+   - Search: full_name ILIKE OR phone ILIKE OR email ILIKE (parity 3 kolom)
+   - Pagination: page default 1, limit default 20 (max 100), order created_at DESC
+   - Soft delete filter: deleted_at IS NULL
+   - Join users(email) via users:user_id(email)
+   - totalBookings + lastVisit dihitung via 2 query tambahan (parity subquery Express)
+   - Response: success(data: { data: [...mapPatientRow], total, page, totalPages })
+3. TSC check pipefail
+
+Hasil:
+- tsc --noEmit: PASS (exit 0)
+
+Next Action:
+- Commit + push
+- Verify: 401 no token, 200 admin/doctor token, cek search + pagination + totalBookings/lastVisit
+- Task 2.3.2: /api/patients/:id
+
+Referensi:
+- MIGRATION_PLAN.md §3 Batch 3
+- task_2_3_1.log
