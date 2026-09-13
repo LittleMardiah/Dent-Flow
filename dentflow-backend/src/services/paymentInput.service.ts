@@ -195,7 +195,7 @@ export class PaymentInputService {
         p.created_at as webhook_created_at
       FROM invoices i
       LEFT JOIN payment_webhooks p ON i.invoice_number = p.order_id
-      WHERE i.invoice_date = $1
+      WHERE i.created_at = $1
       ORDER BY i.created_at DESC`,
       [dateStr]
     );
@@ -213,7 +213,7 @@ export class PaymentInputService {
         SUM(CASE WHEN status = 'PAID' THEN paid_amount ELSE 0 END) as total_paid,
         COUNT(CASE WHEN status = 'UNPAID' THEN 1 END) as unpaid_count
       FROM invoices
-      WHERE invoice_date BETWEEN $1 AND $2 AND branch_id = $3`,
+      WHERE created_at BETWEEN $1 AND $2 AND branch_id = $3`,
       [dateFrom, dateTo, branchId]
     );
     return result.rows[0] || { total_invoices: 0, total_amount: 0, total_paid: 0, unpaid_count: 0 };

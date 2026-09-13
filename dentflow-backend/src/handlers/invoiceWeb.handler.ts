@@ -9,7 +9,7 @@ import { pool } from '../config/database';
 const SORT_MAP: Record<string, string> = {
   createdAt: 'i.created_at',
   amount: 'i.amount_due',
-  dueDate: 'i.invoice_date',
+  dueDate: 'i.created_at',
 };
 
 function formatDateOnly(d: any): string {
@@ -29,7 +29,7 @@ function mapInvoice(row: any) {
     patientName: row.patient_name,
     amount: Number(row.amount_due) || 0,
     status: row.status,
-    dueDate: row.invoice_date ? formatDateOnly(row.invoice_date) : '',
+    dueDate: row.created_at ? formatDateOnly(row.created_at) : '',
     createdAt: row.created_at,
     paidAt: row.paid_at,
     paymentMethod: row.payment_method,
@@ -150,11 +150,11 @@ export const getInvoiceList = async (req: Request, res: Response) => {
       params.push(status);
     }
     if (dateFrom) {
-      whereClauses.push(`i.invoice_date >= $${params.length + 1}`);
+      whereClauses.push(`i.created_at >= $${params.length + 1}`);
       params.push(dateFrom);
     }
     if (dateTo) {
-      whereClauses.push(`i.invoice_date <= $${params.length + 1}`);
+      whereClauses.push(`i.created_at <= $${params.length + 1}`);
       params.push(dateTo);
     }
 
