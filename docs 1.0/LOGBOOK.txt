@@ -3778,3 +3778,38 @@ Next Action:
 Referensi:
 - MIGRATION_PLAN.md §3 Batch 2
 - task_2_2_2.log
+
+========================================================
+Task 2.2.3 - Migrate /api/auth/admin/login + /api/auth/doctor/login
+Status: ✅ SELESAI (code + tsc + seed) - pending deploy verify
+Tanggal: 2026-09-13
+========================================================
+
+Fungsi:
+- Migrate 2 endpoint login (admin + doctor) dari Express ke serverless
+- Pattern sama dengan patient login (task 2.2.2), beda role filter
+
+Apa yang dilakukan:
+1. CEK response shape Express admin/doctor login (verifikasi parity)
+2. api/auth/admin/login.ts + api/auth/doctor/login.ts (sudah ada dari run
+   sebelumnya, isinya VALID parity: loginId email->username fallback,
+   role ADMIN_BRANCH / DOCTOR). TIDAK ditimpa versi draft (username-only)
+   karena itu regresi parity vs Express.
+3. TSC check dengan pipefail -> PASS
+4. Seed admin_001 + dr_test_a (with doctors row) -> PASS
+5. ROOT CAUSE yang ditemukan: parser env inline gagal kena CRLF di
+   .env.local (regex (.*)$ gak match \r). Di-fix dengan trimEnd + parse
+   robust -> seed jalan.
+
+Hasil (pending deploy verify):
+- tsc --noEmit: PASS (exit 0)
+- Seed: PASS (admin_001 updated, dr_test_a + doctors row present, SEED: PASS)
+
+Next Action:
+- Commit + push via PowerShell
+- Verify: admin/doctor login 200 + token usage
+- Task 2.2.4: /api/auth/login (auto-detect role)
+
+Referensi:
+- MIGRATION_PLAN.md §3 Batch 2
+- task_2_2_3.log
