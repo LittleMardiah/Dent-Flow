@@ -4048,3 +4048,45 @@ Next Action:
 Referensi:
 - MIGRATION_PLAN.md Batch 3
 - task_2_3_2.log
+
+========================================================
+Task 2.3.2e - ROLLOUT: Consolidate Doctors Domain
+Status: ✅ SELESAI (code) - pending deploy verify
+Tanggal: 2026-09-13
+========================================================
+
+Replikasi pattern B+C (dari pilot patients Task 2.3.2d) ke domain doctors.
+
+Apa yang dilakukan:
+1. Baca 2 file existing (doctors.ts, doctors/[id]/patients.ts) + backup
+2. Tulis ulang api/doctors.ts (consolidated) sebagai Express app:
+   - Auth middleware level router (env guard + JWT + requireRole super-set)
+   - getOnly guard -> 405 METHOD_NOT_ALLOWED untuk non-GET (parity file lama)
+   - GET / (list doctors, branchId query fallback user.branchId)
+   - GET /:id/patients (role guard DOCTOR/ADMIN_BRANCH + cross-branch prevention)
+   - 404 fallback in-router + app.use('/api/doctors', router) mount prefix
+   - Safeguard ?path= re-konstruksi URL (sama persis dgn patients.ts produk)
+3. Hapus folder api/doctors/ (berisi [id]/patients.ts)
+4. Update vercel.json: + rewrites /api/doctors/:path* -> /api/doctors?path=$1
+   (PRESERVE rewrite patients ?path=$1 yang proven di production)
+5. TSC check + vercel build + func count
+
+Hasil:
+- tsc --noEmit: PASS (exit 0)
+- Total function: 10 (dari sebelumnya 11, target skrip 10)
+- config.json: routes /api/patients + /api/doctors recursive match ?path=$1
+
+Catatan validasi (ROOT CAUSE ditemukan saat CEK):
+- Skrip awal task menulis vercel.json destination tanpa ?path=$1, padahal pattern
+  produksi yang SUKSES pakai ?path=$1 + re-konstruksi di handler (cek commit 6379b91).
+  -> DIPERTAHANKAN pola ?path=$1 untuk menghindari regresi patients produksi.
+
+Next Action:
+- Commit + push
+- Verify: 4 endpoint (list, [id]/patients, 404, cross-branch)
+- Kalau sukses: rollout ke domain auth (8 function -> 1)
+
+Referensi:
+- task_2_3_2d.log (pilot patients)
+- commit 6379b91 (pilot patients)
+- task_2_3_2e.log

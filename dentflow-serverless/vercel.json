@@ -5,6 +5,10 @@
     {
       "source": "/api/patients/:path*",
       "destination": "/api/patients?path=$1"
+    },
+    {
+      "source": "/api/doctors/:path*",
+      "destination": "/api/doctors?path=$1"
     }
   ]
 }
