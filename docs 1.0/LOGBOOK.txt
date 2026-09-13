@@ -4170,3 +4170,45 @@ Referensi:
 - task_2_3_2c.log (routing verified)
 - task_2_3_2d/e/f.log (rollout)
 - task_2_3_2z.log
+
+========================================================
+Task 2.3.3 - Consolidate /api/encounters (READ only)
+Status: ✅ SELESAI (code) - pending deploy verify
+Tanggal: 2026-09-13
+========================================================
+
+Consolidate GET /api/encounters + GET /api/encounters/:id.
+Write endpoint (POST/PUT/complete) SKIP — Batch 4.
+
+Apa yang dilakukan:
+1. CEK Express encounter.handler + encounter.routes + schema
+2. Bikin api/encounters.ts (Express router mount /api/encounters)
+   - 2 route: GET / (list + filter), GET /:id (detail)
+   - Auth router ALLOWED_ROLES = DOCTOR+ADMIN_BRANCH+PATIENT
+     (GET /:id tanpa roleMiddleware di Express -> semua role;
+      GET / restriksi ulang DOCTOR+ADMIN_BRANCH per-route)
+   - List: branch scope user.branchId, filter doctor_id (admin) / own
+     (doctor resolved via doctors.user_id), status, date_from, date_to,
+     pagination page/limit (max 100), order started_at DESC
+   - List parity: route order static SEBELUM dynamic (hanya '/' + '/:id')
+   - Response shape parity Express: { success, data, pagination }
+     (handler Express TIDAK kirim timestamp -> ditulis manual)
+   - Detail parity mapEncounter camelCase (bookingId, doctorId,...)
+   - Deviasi: DOCTOR detail di-resolve via doctors.user_id (Express punya
+     bug bandingkan doctor_id dengan userId) -> biar E2E 200 DOCTOR lulus
+3. Update vercel.json: + rewrites /api/encounters/:path* -> /api/encounters?path=$1
+4. TSC + build + func count
+
+Hasil:
+- tsc --noEmit: PASS
+- TOTAL_FUNCS: 5 (auth, doctors, encounters, health, patients)
+
+Next Action:
+- Commit + push
+- Verify: 401 no token, 200 doctor/admin, 404 fake id, regression patients/doctors/auth
+- Task 2.3.4: /api/invoices
+
+Referensi:
+- task_2_3_2c.log (routing pattern)
+- task_2_3_2d/e/f.log (consolidation pattern)
+- task_2_3_3.log
