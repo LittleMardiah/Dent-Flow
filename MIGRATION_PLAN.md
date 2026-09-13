@@ -279,12 +279,29 @@ Total: **8 endpoint** (7 auth + 1 health).
 
 **Next:** Batch 2 — Auth Foundation (`/auth/login`, `/auth/register` + lib/auth middleware helper lanjutan)
 
-### Batch 2: Auth Foundation (Task 2.2.x)
-- [ ] Middleware → helper functions (`lib/auth.ts`):
-  - [ ] `extractBearerToken` / `verifyJwt`
-  - [ ] `requireRole(allowedRoles[])`
-  - [ ] `enforceTenant(user, requestedBranch)` (ganti tenant.middleware.ts → user_branch_access check)
-- [ ] `/auth/login` + `/auth/register` (`auth.service.detectRoleAndLogin`, JWT sama)
+### Batch 2: Auth Foundation (Task 2.2.x) — ✅ DONE
+- [x] lib/auth.ts extended: `extractBearerToken`, `verifyJwt`, `requireRole`, `enforceTenant`, `signAccessToken`, `signRefreshToken`, `comparePassword`, `hashPassword` (Task 2.2.1, commit 8f74f0d)
+- [x] `/api/auth/patient/login` (Task 2.2.2, commit 2a4773e)
+- [x] `/api/auth/admin/login` + `/api/auth/doctor/login` (Task 2.2.3, commit 3b45a90)
+- [x] `/api/auth/login` (auto-detect role) (Task 2.2.4, commit 964976a)
+- [x] `/api/auth/patient/register` (Task 2.2.5, commit b831954)
+- [x] `/api/auth/forgot-password` + `/api/auth/reset-password` (Task 2.2.6, commit 6e3e86f)
+
+**Endpoints live: 8** (patient/admin/doctor login, auto-login, register, forgot, reset)
+**Total endpoint serverless: 11** (health + 2 doctors + 8 auth)
+
+**Pattern established:**
+- Zod validation → 400 (parity PatientRegisterSchema)
+- Duplicate email → 409 EMAIL_ALREADY_EXISTS
+- Wrong password → 401 INVALID_CREDENTIALS
+- Token reset flow: crypto hex 32-byte + reset_tokens table (IMPROVEMENT vs Express JWT-based)
+- Security: forgot-password tidak reveal user existence
+- Token single-use: reset_tokens.used = true
+
+**Parity deviations (documented):**
+- TD-MIGRATE-007: Express forgotPassword pakai JWT tanpa tabel; serverless pakai reset_tokens (single-use). Serverless lebih baik, tapi devToken format berbeda (JWT vs hex).
+
+**Next: Batch 3 — Read endpoints**
 
 ### Batch 3: Core Read (Task 2.3.x)
 - [ ] `/api/patients` (GET, GET /:id, branches, audit-trail)

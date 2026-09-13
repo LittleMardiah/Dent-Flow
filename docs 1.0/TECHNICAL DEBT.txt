@@ -3109,3 +3109,25 @@ Masih pending:
 - Update seed-multi-branch.ts agar include user password (bukan cuma patient marker)
 
 Referensi: task_2_2_1.log
+
+===
+TD-MIGRATE-007: forgotPassword parity — JWT vs crypto token
+Status: ⚠️ OPEN (2026-09-13), LOW priority
+
+Kontek: Express forgotPassword() pakai JwtService.generateToken dengan
+branchId='system'. Serverless pakai crypto.randomBytes(32).hex + tabel
+reset_tokens (single-use, expiry checkable).
+
+Serverless approach lebih baik:
+- Token single-use (Express JWT stateless, tidak bisa di-mark used)
+- Expiry explicit di tabel (Express rely on JWT exp)
+- Gak butuh branchId='system' fake
+
+Trade-off:
+- devToken format beda (Express: JWT, serverless: 64-char hex)
+- Kalau frontend expect format JWT, butuh adjustment kecil
+
+Mitigasi: Keep serverless approach. Update frontend saat migrasi.
+Low priority karena devToken cuma dipakai di development.
+
+Referensi: task_2_2_6.log

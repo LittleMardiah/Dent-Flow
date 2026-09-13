@@ -3920,3 +3920,28 @@ Next Action:
 Referensi:
 - MIGRATION_PLAN.md §3 Batch 2
 - task_2_2_6.log
+
+========================================================
+Task 2.2.7 - CLOSE Batch 2 Auth Foundation
+Status: ✅ SELESAI
+Tanggal: 2026-09-13
+========================================================
+
+Batch 2 Auth Foundation CLOSED. 8 endpoint live:
+1. /api/auth/patient/login (2a4773e)
+2. /api/auth/admin/login (3b45a90)
+3. /api/auth/doctor/login (3b45a90)
+4. /api/auth/login auto-detect (964976a)
+5. /api/auth/patient/register (b831954)
+6. /api/auth/forgot-password (6e3e86f)
+7. /api/auth/reset-password (6e3e86f)
+8. lib/auth.ts helpers (8f74f0d)
+
+Full E2E verified: register → login → reset → login-new-password.
+All regression (health + doctors) PASS.
+
+Next: Batch 3 — Read endpoints (patients, encounters, invoices).
+
+Referensi:
+- MIGRATION_PLAN.md §3 Batch 2 (updated)
+- task_2_2_6.log, task_2_2_7.log
