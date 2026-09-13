@@ -4255,3 +4255,28 @@ Next Action:
 Referensi:
 - task_2_3_3.log (pattern reference)
 - task_2_3_4.log
+
+========================================================
+Task 2.3.4c - FIX invoice_date phantom column
+Status: ✅ SELESAI (code) - pending deploy verify
+Tanggal: 2026-09-13
+========================================================
+
+Root cause (Task 2.3.4b): invoice_date = kolom phantom.
+
+Fix: ganti invoice_date -> created_at di 3 file:
+1. dentflow-serverless/api/invoices.ts
+2. dentflow-backend/src/handlers/invoiceWeb.handler.ts
+3. dentflow-backend/src/services/paymentInput.service.ts
+
+Hasil:
+- tsc --noEmit serverless: PASS
+- tsc --noEmit Express: PASS
+- TOTAL_FUNCS: 6
+
+Next Action:
+- Commit + push
+- Verify: serverless list (200), Express filter (200)
+- Task 2.3.5: close Batch 3
+
+Referensi: task_2_3_4b.log (diagnostic), task_2_3_4c.log

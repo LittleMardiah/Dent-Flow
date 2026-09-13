@@ -72,11 +72,11 @@ const getOnly =
 
 // ---------- Helpers (parity invoiceWeb.handler.ts) ----------
 
-// SORT_MAP Express: { createdAt: 'i.created_at', amount: 'i.amount_due', dueDate: 'i.invoice_date' }
+// SORT_MAP Express: { createdAt: 'i.created_at', amount: 'i.amount_due', dueDate: 'i.created_at' }
 const SORT_MAP: Record<string, string> = {
   createdAt: 'created_at',
   amount: 'amount_due',
-  dueDate: 'invoice_date',
+  dueDate: 'created_at',
 };
 
 function formatDateOnly(d: string): string {
@@ -97,7 +97,7 @@ function mapInvoice(row: any): any {
     patientName: row.patients?.full_name || row.patient_name || '',
     amount: Number(row.amount_due) || 0,
     status: row.status,
-    dueDate: row.invoice_date ? formatDateOnly(String(row.invoice_date)) : '',
+    dueDate: row.created_at ? formatDateOnly(String(row.created_at)) : '',
     createdAt: row.created_at,
     paidAt: row.paid_at || null,
     paymentMethod: row.payment_method || null,
@@ -209,7 +209,7 @@ router.all('/', getOnly(async (req, res) => {
     let query = supabase
       .from('invoices')
       .select(
-        `id, invoice_number, patient_id, amount_due, status, invoice_date, created_at, paid_at, payment_method, payment_notes, patients:patient_id ( full_name )`,
+        `id, invoice_number, patient_id, amount_due, status, created_at, paid_at, payment_method, payment_notes, patients:patient_id ( full_name )`,
         { count: 'exact' }
       )
       .eq('branch_id', branchId);
@@ -218,10 +218,10 @@ router.all('/', getOnly(async (req, res) => {
       query = query.eq('status', status);
     }
     if (dateFrom) {
-      query = query.gte('invoice_date', dateFrom);
+      query = query.gte('created_at', dateFrom);
     }
     if (dateTo) {
-      query = query.lte('invoice_date', dateTo);
+      query = query.lte('created_at', dateTo);
     }
 
     query = query.order(sortBy, { ascending }).range(from, to);

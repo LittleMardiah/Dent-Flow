@@ -3165,3 +3165,30 @@ dotenv package yang handle CRLF otomatis.
 Impact: Debugging script yang butuh env lokal (probe function, seed script).
 
 Referensi: task_2_2_1.log, task_2_2_6.log, task_2_3_2d.log
+
+===
+TD-MIGRATE-010: invoice_date column PHANTOM (legacy schema mismatch)
+Status: ✅ FIXED (2026-09-13)
+
+Kontek: code Express (invoiceWeb.handler.ts) + serverless (api/invoices.ts)
++ service (paymentInput.service.ts) reference `invoice_date` — kolom yang
+TIDAK PERNAH ADA di schema Supabase (18 kolom aktual). Migration 011
+trigger juga salah ref kolom yang sama.
+
+Impact:
+- Serverless: LIST /api/invoices SELALU 500 (karena invoice_date ada di
+  .select() PostgREST)
+- Express: default list 200, tapi filter dateFrom/sortBy=dueDate -> 500
+- Legacy bug (bukan regression serverless)
+
+Fix: ganti semua `invoice_date` -> `created_at` (semantic match, no
+migration needed). Fix di 3 file:
+1. dentflow-serverless/api/invoices.ts
+2. dentflow-backend/src/handlers/invoiceWeb.handler.ts
+3. dentflow-backend/src/services/paymentInput.service.ts
+
+Catatan: migration 011 trigger tetap ada tapi gak dipakai (retired trigger).
+Kalau future butuh invoice_date sebagai kolom terpisah (business reason),
+add migration ALTER TABLE + backfill.
+
+Referensi: task_2_3_4b.log (diagnostic), task_2_3_4c.log (fix)
