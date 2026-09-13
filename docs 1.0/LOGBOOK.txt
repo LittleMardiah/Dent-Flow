@@ -4212,3 +4212,46 @@ Referensi:
 - task_2_3_2c.log (routing pattern)
 - task_2_3_2d/e/f.log (consolidation pattern)
 - task_2_3_3.log
+
+========================================================
+Task 2.3.4 - Consolidate /api/invoices (READ only)
+Status: ✅ SELESAI (code) - pending deploy verify
+Tanggal: 2026-09-13
+========================================================
+
+Consolidate GET /api/invoices/summary + GET /api/invoices + GET /api/invoices/:id.
+Write (payments, mark-paid, undo) SKIP — Batch 4.
+
+Apa yang dilakukan:
+1. CEK Express invoiceWeb.routes.ts + invoiceWeb.handler.ts + schema (001 + 005)
+2. Bikin api/invoices.ts (Express router mount /api/invoices)
+   - 3 route GET: /summary, /, /:id (route order: /summary SEBELUM /:id)
+   - Auth router: ADMIN_BRANCH + DOCTOR (parity roleMiddleware Express)
+   - GET-only guard -> metode lain 405 METHOD_NOT_ALLOWED
+   - Summary: branchId wajib (400); today/thisMonth/yearToDate/outstanding/
+     totalInvoices/paidCount/unpaidCount
+     (agregasi di JS karena PostgREST tidak support CASE-WHEN SUM)
+   - List: branchId wajib; filter status, dateFrom, dateTo, sortBy (SORT_MAP
+     createdAt/amount/dueDate), sortOrder, page/limit; pagination
+     { data, total, page, totalPages } (parity Express)
+   - Detail: invoice + payment history (invoice_payments ORDER BY paid_at ASC)
+     404 kalau INVOICE_NOT_FOUND; maps invoice camelCase + payments
+   - Response shape parity Express: success manual tanpa timestamp;
+     error pakai fail (parity lib/response, pola encounters.ts)
+   - Deviasi: invoice_payments tidak punya kolom created_by (cek migrasi 005),
+     join users di-omit; adminName fallback 'Admin' (parity Express fallback)
+3. Update vercel.json: + rewrites /api/invoices/:path* -> /api/invoices?path=$1
+4. TSC + build + func count
+
+Hasil:
+- tsc --noEmit: PASS
+- TOTAL_FUNCS: 6 (auth, doctors, encounters, health, invoices, patients)
+
+Next Action:
+- Commit + push
+- Verify: 401 no token, 200 admin/doctor, 404 fake id, regression semua domain
+- Task 2.3.5: close Batch 3 docs
+
+Referensi:
+- task_2_3_3.log (pattern reference)
+- task_2_3_4.log

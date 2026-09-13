@@ -5,6 +5,7 @@
     { "source": "/api/patients/:path*", "destination": "/api/patients?path=$1" },
     { "source": "/api/doctors/:path*", "destination": "/api/doctors?path=$1" },
     { "source": "/api/auth/:path*", "destination": "/api/auth?path=$1" },
-    { "source": "/api/encounters/:path*", "destination": "/api/encounters?path=$1" }
+    { "source": "/api/encounters/:path*", "destination": "/api/encounters?path=$1" },
+    { "source": "/api/invoices/:path*", "destination": "/api/invoices?path=$1" }
   ]
 }
