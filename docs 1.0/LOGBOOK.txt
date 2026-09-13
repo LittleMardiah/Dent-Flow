@@ -4126,3 +4126,47 @@ Referensi:
 - task_2_3_2d.log (pilot patients)
 - task_2_3_2e.log (rollout doctors)
 - task_2_3_2f.log
+
+========================================================
+Task 2.3.2z - CLOSE Task 2.3.2 Series (B+C Pattern Locked)
+Status: ✅ SELESAI
+Tanggal: 2026-09-13
+========================================================
+
+MILESTONE: Serverless architecture locked at 4 functions (14 → 4).
+
+Task 2.3.1 s/d 2.3.2f selesai:
+- 2.3.1  GET /api/patients (list)          — commit 358adfc
+- 2.3.1b Search fix (PostgREST wildcard)    — commit db03fb0
+- 2.3.2  /:id + branches + audit-trail      — commit 8f5bcaf (deploy FAILED)
+- 2.3.2b Verify 404 root cause              — task_2_3_2b.log
+- 2.3.2c Verify 3 routing approaches        — task_2_3_2c.log
+- 2.3.2d Consolidate patients (4→1)         — commit 6379b91
+- 2.3.2e Consolidate doctors (2→1)          — commit a529b45
+- 2.3.2f Consolidate auth (7→1)             — commit 838770e
+
+ARCHITECTURE FINAL (LOCKED):
+- Pattern: B (vercel.json rewrites) + C (Express router mount prefix)
+- 1 function per DOMAIN (MODULITH preserved)
+- File: api/<domain>.ts (Express app + router mount)
+- Rewrite: /api/<domain>/:path* -> /api/<domain>?path=$1
+- Total: 4 function (health + patients + doctors + auth)
+
+Fungsi consolidation: 14 → 4, target achieved. Well below Vercel Hobby limit (12).
+
+Verified:
+- All 7 auth endpoint: 200/409/400 ✅
+- Regression patients + doctors: 200 ✅
+- Deploy 838770e: src=git READY ✅
+
+TD-MIGRATE-009: CRLF .env.local issue (LOW, env-specific).
+
+Next:
+- Task 2.3.3: /api/encounters (read endpoints)
+- Task 2.3.4: /api/invoices (read endpoints)
+- Task 2.3.5: Close Batch 3 docs
+
+Referensi:
+- task_2_3_2c.log (routing verified)
+- task_2_3_2d/e/f.log (rollout)
+- task_2_3_2z.log

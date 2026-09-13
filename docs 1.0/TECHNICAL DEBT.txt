@@ -3149,3 +3149,19 @@ Upgrade path (kalau perlu parity 100%):
 - Atau SQL RPC custom
 
 Referensi: task_2_3_1b.log
+
+===
+TD-MIGRATE-009: CRLF di .env.local gagal parse di Node script
+Status: ⚠️ OPEN (2026-09-13), LOW priority
+
+Kontek: Semua task debug (Task 2.2.1, 2.2.6, 2.3.2d) yang baca .env.local
+langsung via Node gagal karena regex `^([A-Z_]+)=(.*)$` gak match `\r`.
+File .env.local punya line ending CRLF (Windows).
+
+Fix sementara: setiap script harus pakai `trimEnd()` atau `.replace(/\r$/, '')`.
+Fix permanen (belum): normalisasi line ending .env.local ke LF ATAU pakai
+dotenv package yang handle CRLF otomatis.
+
+Impact: Debugging script yang butuh env lokal (probe function, seed script).
+
+Referensi: task_2_2_1.log, task_2_2_6.log, task_2_3_2d.log
