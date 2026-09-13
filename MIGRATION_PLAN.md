@@ -353,16 +353,51 @@ Total: **8 endpoint** (7 auth + 1 health).
 
 ---
 
-### Batch 4: Core Write (Task 2.4.x)
-- [ ] `/api/patient/bookings` (POST create, PUT cancel)
-- [ ] `/api/encounters` (POST, PUT, POST complete)
-- [ ] `/api/admin/invoices/:id/mark-paid` + undo-payment
-- [ ] `/api/patients/:id` PUT + DELETE (soft delete) + `/api/patients/merge`
-- [ ] Walk-in endpoints (rate-limit: `@upstash/ratelimit` atau vercel kv tanpa log value)
+### Batch 4: Core Write (Task 2.4.x) — 📋 PLANNED (audit Task 2.4.0)
 
-### Batch 4.5: Notification (Task 2.4.5) — NEW dari verdict orphan
-- [ ] `/api/admin/bookings/:id/send-reminder` (POST)
-- [ ] `/api/admin/bookings/:id/send-confirmation` (POST)
+**Detail:** lihat `BATCH_4_PLAN.md` untuk full task breakdown (v1.0, 2026-09-13).
+
+**Summary hasil audit (Task 2.4.0):**
+- Total write endpoint Express: 34 (7 auth sudah live → scope Batch 4 = 27 non-auth)
+- Klasifikasi: A=5, B=3, C=15, D=0, E=2, F=2
+- Decision lock D1-D5 → lihat §DECISION LOCK di `BATCH_4_PLAN.md`
+- Task: 2.4.1 s/d 2.4.8 (Batch 4a) + 2.4.9 s/d 2.4.13 (Batch 4b)
+- Estimasi total: ~11.5 hari (4a = 8 hari, 4b = 3.5 hari)
+
+**DECISION LOCK (ringkas):**
+
+| ID | Topic | Decision | Rationale |
+|---|---|---|---|
+| D1 | Redis Queue | **B: Postgres sequence** — mini-migration `CREATE SEQUENCE` + `nextval()` | Atomic, no race; pattern final Batch 5; konsisten |
+| D2 | Transaction | **B: Postgres RPC function** — `rpc()` untuk multi-statement tx | Atomic by default; solve nested-tx (E3, D4) |
+| D3 | Trigger DB | **A: Biarkan trigger** — serverless cuma UPDATE status, trigger generate invoice | Trigger sudah live di Supabase; single responsibility |
+| D4 | Audit Log | **A: INSERT langsung** di handler serverless | Pattern established; simple untuk demo |
+| D5 | Scope | **C: Split 4a (core write, 8 hari) + 4b (payment+webhook, 3.5 hari)** | 27 endpoint terlalu banyak 1 batch |
+
+**Task list:**
+- [ ] **Batch 4a (Core Write):**
+  - [ ] Task 2.4.1 — Simple writes: D2 removeLeave, W1 createTempProfile, B2 cancelBooking, N1+N2 notification (orphan) — 0.5 hari
+  - [ ] Task 2.4.2 — Simple tx writes: D0 updateDoctorProfile, D1 setLeave, P1 updatePatient, P2 softDelete, S1 markNoShow — 1 hari
+  - [ ] Task 2.4.3 — Queue + check-in: C1 adminCheckin, C2 adminWalkInCheckin, W2 bookWalkInAppointment + Postgres sequence — 1.5 hari
+  - [ ] Task 2.4.4 — W3 convertTemporaryToPatient — 0.5 hari
+  - [ ] Task 2.4.5 — E1 startEncounter + E2 updateEncounter — 1 hari
+  - [ ] Task 2.4.6 — E3 completeEncounter (trigger strategy, HIGH RISK nested tx) — 1.5 hari
+  - [ ] Task 2.4.7 — B1 createScheduledBooking (tx + notification side-effect) — 1 hari
+  - [ ] Task 2.4.8 — P3 mergePatients + D3 readyNext + D4 queue check-in (nested tx) — 1.5 hari
+- [ ] **Batch 4b (Payment & Webhook):**
+  - [ ] Task 2.4.9 — I3 invoicePayment markPaid (state machine) — 1 hari
+  - [ ] Task 2.4.10 — I1 markPaid + I2 undoPayment (admin) — 0.5 hari
+  - [ ] Task 2.4.11 — I4 addInvoicePayment (state machine + post-commit fix) — 0.5 hari
+  - [ ] Task 2.4.12 — S2 midtransWebhook (HMAC verify) — 1 hari
+  - [ ] Task 2.4.13 — S3 adminWebhookReplay (skip validation) — 0.5 hari
+
+**Pattern:** B+C (rewrites + Express router mount) — sama seperti Batch 3.
+**Tech debt baru:** TD-2.4.0 s/d TD-2.4.5 → lihat `BATCH_4_PLAN.md` §4.
+
+---
+
+### Batch 4.5: Notification (Task 2.4.5) — MERGED ke Batch 4a Task 2.4.1
+- [x] Verdict orphan: N1 send-reminder + N2 send-confirmation → **masuk Task 2.4.1** (BATCH_4_PLAN.md Group 9)
 - Source: `notification.routes.ts` (orphan) — handler + service aktif.
 
 ### Batch 5: Redis Replacement (Task 2.7)

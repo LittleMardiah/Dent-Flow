@@ -4331,3 +4331,75 @@ Referensi:
 - task_2_3_2d/e/f.log (rollout)
 - task_2_3_3.log, task_2_3_4.log, task_2_3_4b.log, task_2_3_4c.log
 - task_2_3_5.log (this task)
+
+========================================================
+Task 2.4.0 - Pre-Decision Audit Batch 4 (Core Write)
+Status: ✅ SELESAI
+Tanggal: 2026-09-13
+========================================================
+
+Pre-decision audit untuk Batch 4 (Core Write):
+- Audit write endpoint Express (klasifikasi A-F)
+- Decision lock D1-D5 (Redis, transaction, trigger, audit, scope)
+- BATCH_4_PLAN.md (task breakdown + risk + estimasi)
+- Update MIGRATION_PLAN Batch 4
+- Update ROADMAP TAMBAHAN (progress tracking)
+
+Hasil audit:
+- Total write endpoint Express: 34 (auth 7 sudah live Batch 3)
+- Non-auth write endpoint Batch 4 scope: 27
+- Klasifikasi: A=5, B=3, C=15, D=0, E=2, F=2
+  (D=0: invoice di-generate programmatic, bukan DB trigger)
+- Tech debt baru: TD-2.4.0 (E3 nested tx), TD-2.4.1 (D4 nested tx),
+  TD-2.4.2 (Redis key collision), TD-2.4.3 (DB COUNT vs Redis counter),
+  TD-2.4.4 (notification orphan routes), TD-2.4.5 (B1 notif side-effect)
+
+Decision lock:
+- D1 (Redis Queue): B — Postgres sequence (nextval)
+- D2 (Transaction): B — Postgres RPC function (atomic multi-statement)
+- D3 (Trigger): A — Biarkan DB trigger handle invoice gen
+- D4 (Audit Log): A — INSERT langsung di handler serverless
+- D5 (Scope): C — Split: Batch 4a Core Write (8 hari) + 4b Payment & Webhook (3.5 hari)
+
+Next Action:
+- Task 2.4.1: Simple writes (D2 W1 B2 N1 N2) — 0.5 hari
+- Estimasi Batch 4 total: 11.5 hari (4a = 8, 4b = 3.5)
+
+Referensi:
+- BATCH_4_PLAN.md
+- MIGRATION_PLAN.md (updated)
+- ROADMAP TAMBAHAN.txt (updated)
+- task_2_4_0.log
+
+========================================================
+Task 2.4.0c - Update BATCH_4_PLAN dengan Trigger Status Verified
+Status: ✅ SELESAI
+Tanggal: 2026-09-13
+========================================================
+
+User verifikasi manual via SQL `pg_trigger` di Supabase:
+- trg_generate_invoice_on_encounter_complete | encounters | O (AKTIF)
+- invoice_status_reversal_trigger | invoices | O (AKTIF)
+- trg_log_invoice_payment | invoices | O (AKTIF)
+- trg_invoice_payments_immutable | invoice_payments | O
+
+Implikasi:
+- Klasifikasi D: 0 -> 1 (E3 depends trigger)
+- D3 rationale: update dengan flow konkret (trigger fire -> shell -> enrich)
+- Batch 4b undo-payment: invoice_status_reversal_trigger AKTIF -> handle carefully
+
+Update BATCH_4_PLAN.md v1.1 -> v1.2:
+- Row D klasifikasi (0 -> 1)
+- D3 section rewrite (verified flow)
+- TD-2.4.6 baru (trigger dependency E3)
+- Version bump
+CATATAN VERIFIKASI (task_2_4_0c run): Dokumen sudah berada di v1.2 lengkap
+(pola semua 5 fix terverifikasi) ketika task dijalankan ulang; diverifikasi ulang
+tanpa re-apply untuk hindari duplikasi/regresi. Semua konsisten dengan hasil verify SQL user.
+
+Next Action:
+- Commit (docs only)
+- Task 2.4.1: Simple writes
+
+Referensi:
+- task_2_4_0c.log

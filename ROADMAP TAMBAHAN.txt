@@ -215,15 +215,17 @@ MONITORING:
 ## 📊 PROGRESS TRACKING
 ================================================================
 
-| Phase | Status | Start | End | Notes |
-|-------|--------|-------|-----|-------|
-| Phase 0: Bersih-bersih | ✅ Selesai | 2026-09-10 | 2026-09-10 | Done |
-| Phase 1: Baseline | ✅ Selesai | 2026-09-11 | 2026-09-11 | Done |
-| Phase 2: Serverless | 🔴 Belum | - | - | - |
-| Phase 3: Landing | 🔴 Belum | - | - | - |
-| Phase 4: Demo | 🔴 Belum | - | - | - |
+| Phase | Status | Start | Notes |
+|-------|--------|-------|-------|
+| Phase 0: Bersih-bersih | ✅ Selesai | 2026-09-10 | Done |
+| Phase 1: Baseline | ✅ Selesai | 2026-09-11 | Done |
+| Phase 2: Serverless | 🟡 Partial | 2026-09-12 | Batch 1-3 DONE (6 function live). Batch 4 PLANNED (audit Task 2.4.0). Detail: MIGRATION_PLAN.md |
+| Phase 3: Landing | 🔴 Belum | - | - |
+| Phase 4: Demo | 🔴 Belum | - | - |
 
 Legend: 🔴 Belum | 🟡 In Progress | ✅ Selesai
+
+**Detail Phase 2 progress:** lihat `MIGRATION_PLAN.md` (living document, updated per task) + `BATCH_4_PLAN.md` (Batch 4 detail, v1.0).
 
 ================================================================
 ## 🎯 MILESTONE
