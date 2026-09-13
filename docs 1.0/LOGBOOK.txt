@@ -3847,3 +3847,39 @@ Next Action:
 Referensi:
 - MIGRATION_PLAN.md §3 Batch 2
 - task_2_2_4.log
+
+========================================================
+Task 2.2.5 - Migrate /api/auth/patient/register
+Status: ✅ SELESAI (code) - pending deploy verify
+Tanggal: 2026-09-13
+========================================================
+
+Fungsi:
+- Migrate POST /api/auth/patient/register
+- Endpoint terakhir Batch 2 core
+
+Apa yang dilakukan:
+1. CEK registerPatient (Express) - transaction, username gen, audit log
+2. Bikin dentflow-serverless/api/auth/patient/register.ts:
+   - Zod validation (parity PatientRegisterSchema)
+   - Cek duplicate email -> 409 EMAIL_ALREADY_EXISTS
+   - Generate username dari email (parity Express: local part + counter)
+   - Insert users + patients (compensating rollback kalau insert gagal)
+   - Audit log USER_REGISTERED (best-effort)
+   - Sign tokens
+   - Response: { userId, username, token, refreshToken } status 201
+3. TSC check pipefail
+
+Hasil:
+- tsc --noEmit: PASS
+
+Next Action:
+- Commit + push
+- Verify: register dengan email baru -> 201
+- Verify: register dengan email existing -> 409
+- Verify: password lemah -> 400
+- Optional: Batch 2 CLOSED (login + register selesai)
+
+Referensi:
+- MIGRATION_PLAN.md §3 Batch 2
+- task_2_2_5.log
