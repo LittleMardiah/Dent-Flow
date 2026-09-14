@@ -4545,3 +4545,24 @@ Func count: 10/12 (unchanged, no new files).
 Belum diverifikasi:
 - D1 fix E2E setelah deploy (curl).
 - S1 jalur 200: butuh booking PAYMENT_CONFIRMED (seed semua COMPLETED → 409).
+
+--- Task 2.4.2d E2E Re-Verify (setelah fix 2.4.2c) ---
+Status: ✅ PASS (S1 SKIP, verify-pending)
+
+Hasil:
+- D0 PUT /doctors/me -> 200
+- D1 PUT /doctors/:id/leave -> 200 (FIXED, sebelumnya 500 FK)
+- D1b DELETE /doctors/:id/leave -> 200 (D2 bonus fix)
+- P1 PUT /patients/:id -> 200 (FIXED, sebelumnya 405)
+- P2 DELETE /patients/:id -> 200 (FIXED, sebelumnya 405)
+- S1 PUT /no-shows/.../mark-no-show -> SKIP (semua seed booking COMPLETED)
+
+S1 verify-pending notes:
+- Discovery BOOK_ID via /api/admin/bookings?status=PAYMENT_CONFIRMED -> 404.
+- Root cause: vercel.json rewrite /api/admin/bookings/:path* -> notifications domain
+  (N1/N2), tidak ada GET list admin bookings di serverless.
+- Probe PUT ke booking COMPLETED -> 409 (guard logic OK, jalur 200 pending data).
+- TD-2.4.9 (BARU): serverless list admin bookings belum dimigrate -> discovery
+  booking untuk E2E terhambat. Bukan blocker Task 2.4.2, tapi needed untuk E2E penuh.
+
+Task 2.4.2 STATUS: ✅ SELESAI (dengan S1 verify-pending).

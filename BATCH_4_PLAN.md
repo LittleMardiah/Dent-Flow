@@ -361,11 +361,11 @@
 | B2 | PUT `/patient/bookings/:id/cancel` | `bookings.ts` | Extend | 2.4.1 | ~130 | ✅ DONE |
 | N1 | POST `/bookings/:id/send-reminder` | `notifications.ts` | New | 2.4.1 | ~30 | ✅ DONE |
 | N2 | POST `/bookings/:id/send-confirmation` | `notifications.ts` | New | 2.4.1 | ~30 | ✅ DONE |
-| D0 | PUT `/doctors/me` | `doctors.ts` | Extend | 2.4.2 | ~80 | pending |
-| D1 | PUT `/doctors/:id/leave` | `doctors.ts` | Extend | 2.4.2 | ~80 | pending |
-| P1 | PUT `/patients/:id` | `patients.ts` | Extend | 2.4.2 | ~60 | pending |
-| P2 | DELETE `/patients/:id` | `patients.ts` | Extend | 2.4.2 | ~60 | pending |
-| S1 | PUT `/no-shows/admin/bookings/:id/mark-no-show` | `bookings.ts` | Extend | 2.4.2 | ~60 | pending |
+| D0 | PUT `/doctors/me` | `doctors.ts` | Extend | 2.4.2 | ~80 | ✅ DONE (2.4.2c fix) |
+| D1 | PUT `/doctors/:id/leave` | `doctors.ts` | Extend | 2.4.2 | ~80 | ✅ DONE (2.4.2c fix) |
+| P1 | PUT `/patients/:id` | `patients.ts` | Extend | 2.4.2 | ~60 | ✅ DONE (2.4.2c fix) |
+| P2 | DELETE `/patients/:id` | `patients.ts` | Extend | 2.4.2 | ~60 | ✅ DONE (2.4.2c fix) |
+| S1 | PUT `/no-shows/admin/bookings/:id/mark-no-show` | `bookings.ts` | Extend | 2.4.2 | ~60 | ✅ DONE (2.4.2c fix) |
 | C1 | POST `/admin/check-in` | `checkIn.ts` (NEW) | **New (+1 func)** | 2.4.3 | ~120 | pending |
 | C2 | POST `/admin/check-in/walk-in` | `checkIn.ts` (NEW) | New | 2.4.3 | ~90 | pending |
 | W2 | POST `/walk-in/book-appointment` | `walkIn.ts` | Extend | 2.4.3 | ~120 | pending |
