@@ -368,7 +368,7 @@
 | S1 | PUT `/no-shows/admin/bookings/:id/mark-no-show` | `bookings.ts` | Extend | 2.4.2 | ~60 | ✅ DONE (2.4.2c fix) |
 | C1 | POST `/admin/check-in` | `checkIn.ts` (NEW) | **New (+1 func)** | 2.4.3 | ~120 | ✅ DONE |
 | C2 | POST `/admin/check-in/walk-in` | `checkIn.ts` (NEW) | New | 2.4.3 | ~90 | ✅ DONE |
-| W2 | POST `/walk-in/book-appointment` | `walkIn.ts` | Extend | 2.4.3 | ~120 | pending |
+| W2 | POST `/walk-in/book-appointment` | `walkIn.ts` | Extend | 2.4.3 | ~120 | ✅ DONE |
 | W3 | POST `/walk-in/convert-to-patient` | `walkIn.ts` | Extend | 2.4.4 | ~100 | pending |
 | E1 | POST `/encounters/` | `encounters.ts` | Extend | 2.4.5 | ~80 | pending |
 | E2 | PUT `/encounters/:id` | `encounters.ts` | Extend | 2.4.5 | ~80 | pending |

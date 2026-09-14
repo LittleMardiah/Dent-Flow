@@ -4744,3 +4744,22 @@ Slot capacity SKIP (parity catatan task: Express ignore sessionSlotId).
 Func count: 11/12 (unchanged, extend existing).
 
 Next: commit -> deploy -> E2E W2.
+
+--- Task 2.4.3b-W2 COMPLETE (E2E verified R2) ---
+Status: ✅ PASS
+
+Hasil E2E R2 (task_2_4_3b_w2_e2e_r2.log):
+- W1 create-profile: 201 (TEMP_ID=82d0db2a...)
+- W2 book-appointment: 201, BOOKING_ID=2a877715..., queueNumber=2
+- Negatives (R1): no-token=401, GET=405
+
+Fix chain W2:
+1. W2 coding (commit 0d8fe90) — auth inline + booking_time + check_in_code
+2. W2-FIX (commit 63fc4f7) — status 'CONFIRMED' -> 'PAYMENT_CONFIRMED'
+   RC: migration 015 redefine bookings_status_check tanpa 'CONFIRMED'.
+   LESSON: enum value WAJIB verify migration constraint, bukan asumsi.
+
+Task 2.4.3b STATUS: ✅ SELESAI (C1 + C2 + W2 all E2E verified).
+Func count: 11/12.
+
+Next: Task 2.4.4 (W3 convert-to-patient, extend walkIn.ts).
