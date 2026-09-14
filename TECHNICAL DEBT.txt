@@ -75,3 +75,23 @@ Status: FIXED by migration 033 (schema). Express W2 code TIDAK perlu diubah.
 
 Referensi: task_2_4_3b_prep.log, task_2_4_3b_prep2.log.
 ===
+
+===
+TD-2.4.12: temporary_patients.branch_id legacy VARCHAR(1) (BARU 2026-09-14)
+Status: ✅ FIXED by migration 034
+
+Deskripsi: migration 014 declared temporary_patients.branch_id VARCHAR(1) CHECK
+IN ('A','B','C') — legacy char-based, inkonsisten dengan tabel lain (UUID).
+Akibat: serverless C2 walk-in insert UUID -> PG error 22001 (value too long
+for type character varying(1)).
+
+Fix: migration 034 — mapping legacy 'A'/'B'/'C' ke UUID branches real, lalu
+ALTER TYPE VARCHAR(1) -> UUID, drop CHECK legacy, tambah FK REFERENCES
+branches(id) ON DELETE RESTRICT. Non-destructive (1 row test "Task 2.4.1
+Verify" di-mapping ke Cabang A, bukan dihapus).
+
+Status: FIXED (row count temp = 1, mapped 'A' -> 494a607c-...; schema verify
+branch_id uuid NOT NULL + FK fk_temp_patients_branch ok).
+
+Referensi: task_2_4_3c.log, task_2_4_3b_fix2.log.
+===

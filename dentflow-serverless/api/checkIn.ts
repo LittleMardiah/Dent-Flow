@@ -103,7 +103,6 @@ router.post('/', async (req: Request, res: Response) => {
       doctor_id: booking.doctor_id,
       queue_number: queueNumber,
       status: 'WAITING',
-      queue_date: todayWIB(),
     });
     if (qErr) return fail(res, 'Internal server error', 500);
 
@@ -238,7 +237,6 @@ router.post('/walk-in', async (req: Request, res: Response) => {
       doctor_id: body.doctor_id,
       queue_number: queueNumber,
       status: 'WAITING',
-      queue_date: todayWIB(),
     });
     if (qErr) return fail(res, 'Internal server error', 500);
 

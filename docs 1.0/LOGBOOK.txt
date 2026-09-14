@@ -4655,3 +4655,24 @@ Verifikasi:
 - TSC: PASS
 - Func count: 11
 - Simulasi URL: C1 & C2 match setelah safeguard
+
+--- Task 2.4.3b-FIX2 — Fix queue_date + temporary_patients.branch_id ---
+Status: FIXED
+
+RC1 (queue_date): checkIn.ts insert queue_date -> kolom tidak ada di queues.
+  Fix: hapus queue_date dari 2 insert (C1 & C2). Tidak tambah kolom (parity
+  Express yang pakai DATE(created_at) per TD-TEST-006 (2)).
+
+RC2 (temporary_patients.branch_id VARCHAR(1)): migration 014 legacy char-based.
+  Fix: migration 034 — mapping 'A'/'B'/'C' -> UUID branches, ALTER TYPE -> UUID,
+  drop CHECK legacy, + FK branches(id). Precheck unmappable abort. 1 row test
+  di-mapping ke Cabang A (non-destructive).
+
+RC3 (C2 secondary queue_date): fixed di baris walk-in insert yang sama.
+
+Files changed: checkIn.ts (code), migrations/034 (new), TECHNICAL DEBT.txt, LOGBOOK.
+
+Verifikasi: TSC serverless PASS, TSC backend PASS, schema branch_id uuid NOT NULL
++ FK ok, no VARCHAR branch_id remaining, queue_date 0 refs.
+
+Next: re-verify E2E C1 C2 (Task 2.4.3c R2).
