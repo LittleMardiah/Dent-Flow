@@ -4467,3 +4467,57 @@ Referensi:
 - BATCH_4_PLAN.md section 7
 - task_2_4_2a.log
 - migrations/032_queue_sequence.sql.draft
+
+========================================================
+Task 2.4.2 - Simple Transaction Writes (D0 D1 P1 P2 S1)
+Status: PENDING VERIFY (deploy)
+Tanggal: 2026-09-14
+========================================================
+
+5 endpoint simple transaction writes:
+- D0: PUT /api/doctors/me (update profile dokter)
+- D1: PUT /api/doctors/:id/leave (set leave)
+- P1: PUT /api/patients/:id (update patient)
+- P2: DELETE /api/patients/:id (soft delete patient)
+- S1: PUT /api/no-shows/admin/bookings/:id/mark-no-show
+
+Apa yang dilakukan:
+1. CEK Express parity (handler + response shape) - D0 doctorProfile.handler,
+   D1 doctorSchedule.handler/service, P1+P2 patient.handler,
+   S1 noShow.handler/routes + audit BOOKING_NO_SHOW_MARKED
+2. Extend 2 file serverless: doctors.ts (D0+D1), patients.ts (P1+P2)
+3. S1 = OPSI B: file baru noShows.ts (extend bookings.ts TIDAK dipilih;
+   Express mount no-show router terpisah di /api/no-shows, ADMIN_BRANCH-only)
+4. Update vercel.json: +rewrite /api/no-shows/:path* -> /api/noShows?path=$1
+   (semua rewrite existing dipertahankan)
+5. TSC + func count check
+
+Hasil (isi setelah verify):
+- tsc: 0 (PASS, TSC_EXIT=0)
+- Func count: 10/12
+- S1 placement: new noShows.ts
+- Endpoint verified: 0/5 (PENDING deploy)
+
+Next Action:
+- Deploy + E2E verify 5 endpoint
+- Task 2.4.3: apply migration 032 + C1 C2 W2
+
+Referensi:
+- BATCH_4_PLAN.md section 7 Task 2.4.2
+- task_2_4_2.log
+
+--- CATATAN TAMBAHAN (pre-commit audit Task 2.4.2) ---
+1. FUNC COUNT: 10/12 (bukan 9/12). S1 = noShows.ts (OPSI B, mount terpisah
+   /api/no-shows ADMIN_BRANCH-only). Proyeksi riil:
+   - Sekarang: 10/12
+   - Setelah checkIn.ts (C1 C2 D4): 11/12
+   - Batch 4b (S2 S3 webhook): WAJIB masuk file existing -> 12/12 AT LIMIT
+   Update plan section 7.2 (9->10 jadi 10->11).
+2. TD-2.4.7 (BARU): patients/doctors write (D1 set-leave, P1 update, P2 soft-delete)
+   TIDAK ada audit log. Parity Express (Express juga tidak audit). Bukan bug
+   migrasi, tapi pre-existing gap -> improvement opportunity.
+3. LESSON: `npx tsc` di env lokal install `tsc@2.0.4` (BUKAN TypeScript compiler).
+   Selalu pakai `node node_modules/typescript/bin/tsc` atau pastikan typescript
+   ada di devDependencies.
+
+--- END CATATAN ---

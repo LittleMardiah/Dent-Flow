@@ -8,6 +8,7 @@
     { "source": "/api/encounters/:path*", "destination": "/api/encounters?path=$1" },
     { "source": "/api/invoices/:path*", "destination": "/api/invoices?path=$1" },
     { "source": "/api/patient/bookings/:path*", "destination": "/api/bookings?path=$1" },
+    { "source": "/api/no-shows/:path*", "destination": "/api/noShows?path=$1" },
     { "source": "/walk-in/:path*", "destination": "/api/walkIn?path=$1" },
     { "source": "/api/admin/bookings/:path*", "destination": "/api/notifications?path=$1" }
   ]

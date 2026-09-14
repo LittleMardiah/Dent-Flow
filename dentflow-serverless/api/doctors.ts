@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import express, { Request, Response, NextFunction } from 'express';
 import { Router } from 'express';
 import { getSupabase } from '../lib/supabase';
-import { extractBearerToken, verifyJwt, requireRole, AuthUser } from '../lib/auth';
+import { extractBearerToken, verifyJwt, requireRole, enforceTenant, AuthUser } from '../lib/auth';
 
 const ALLOWED_ROLES = ['ADMIN_BRANCH', 'PATIENT', 'DOCTOR'];
 
@@ -210,6 +210,103 @@ router.all('/:id/patients', getOnly(async (req, res) => {
   }
 }));
 
+// ---------- PUT /api/doctors/me ----------
+// D0 — parity Express: doctorProfile.handler.ts updateDoctorProfile.
+// Auth: DOCTOR only (parity roleMiddleware(['DOCTOR'])).
+router.put('/me', async (req: Request, res: Response) => {
+  const authedReq = req as AuthedRequest;
+  const user = authedReq.user;
+
+  // Parity: endpoint ini khusus DOCTOR (dipakai dokter untuk update profil sendiri).
+  if (user.role !== 'DOCTOR') {
+    return fail(res, 'Forbidden: role tidak diizinkan untuk endpoint ini.', 403, 'FORBIDDEN');
+  }
+
+  const userId = user.userId;
+  if (!userId) {
+    return fail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+  }
+
+  const { phone, email } = (req.body || {}) as { phone?: string; email?: string };
+  if (phone === undefined && email === undefined) {
+    return fail(res, 'Minimal satu field (phone / email) harus diisi', 400, 'VALIDATION_ERROR');
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // Parity fetchDoctorProfile: doctors JOIN users (email/phone/is_active) LEFT JOIN branches.
+    const profileQuery = () =>
+      supabase
+        .from('doctors')
+        .select(`
+          id,
+          user_id,
+          full_name,
+          specialization,
+          license_number,
+          branch_id,
+          created_at,
+          updated_at,
+          users:user_id ( email, phone, is_active ),
+          branches:branch_id ( name )
+        `)
+        .eq('user_id', userId)
+        .maybeSingle();
+    const mapProfile = (d: any) => ({
+      id: d.id,
+      userId: d.user_id,
+      fullName: d.full_name,
+      email: d.users?.email || '',
+      phone: d.users?.phone || '',
+      specialization: d.specialization || '',
+      licenseNumber: d.license_number || '',
+      isActive: d.users?.is_active ?? true,
+      branchId: d.branch_id,
+      branchName: d.branches?.name || '',
+      createdAt: d.created_at,
+      updatedAt: d.updated_at,
+    });
+
+    const { data: profile, error: profileErr } = await profileQuery();
+    if (profileErr) return fail(res, `Database error: ${profileErr.message}`, 500, 'DB_ERROR');
+    if (!profile) return fail(res, 'Profil dokter tidak ditemukan', 404, 'DOCTOR_PROFILE_NOT_FOUND');
+
+    if (email !== undefined) {
+      if (typeof email !== 'string' || !String(email).trim()) {
+        return fail(res, 'Format email tidak valid', 400, 'VALIDATION_ERROR');
+      }
+      const { data: dup, error: dupErr } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', String(email).trim())
+        .neq('id', userId)
+        .maybeSingle();
+      if (dupErr) return fail(res, `Database error: ${dupErr.message}`, 500, 'DB_ERROR');
+      if (dup) return fail(res, 'Email sudah digunakan oleh pengguna lain', 400, 'EMAIL_TAKEN');
+    }
+
+    // Parity: UPDATE users SET email=COALESCE(...), phone=COALESCE(...), updated_at=NOW() WHERE id=$3.
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (email !== undefined) updates.email = String(email).trim();
+    if (phone !== undefined) updates.phone = String(phone);
+    const { error: updErr } = await supabase.from('users').update(updates).eq('id', userId);
+    if (updErr) return fail(res, `Database error: ${updErr.message}`, 500, 'DB_ERROR');
+
+    const { data: updated, error: refetchErr } = await profileQuery();
+    if (refetchErr) return fail(res, `Database error: ${refetchErr.message}`, 500, 'DB_ERROR');
+
+    return res.status(200).json({
+      success: true,
+      data: mapProfile(updated),
+      message: 'Profil dokter berhasil diperbarui',
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+});
+
 // ---------- DELETE /api/doctors/:id/leave ----------
 // D2 — parity Express: doctorSchedule.handler.ts removeLeave
 // Auth: router-level (ADMIN_BRANCH, PATIENT, DOCTOR) — sama dengan Express roleMiddleware.
@@ -249,6 +346,79 @@ router.delete('/:id/leave', async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       message: `Doctor ${doctorId} leave removed from ${body.start_date} to ${body.end_date}`,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_SERVER_ERROR');
+  }
+});
+
+// ---------- PUT /api/doctors/:id/leave ----------
+// D1 — parity Express: doctorSchedule.handler.ts setLeave + service setDoctorLeave.
+// Branch scope wajib: branch_id body di-resolve via enforceTenant, dan target
+// dokter divalidasi ada di branch tsb (cegah cross-branch write + 404 yang jelas).
+router.put('/:id/leave', async (req: Request, res: Response) => {
+  const authedReq = req as AuthedRequest;
+  const user = authedReq.user;
+  const doctorId = req.params.id as string;
+  const body = (req.body || {}) as {
+    branch_id?: string;
+    start_date?: string;
+    end_date?: string;
+    reason?: string;
+  };
+  const adminId = user?.userId;
+
+  if (!adminId) {
+    return fail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+  }
+
+  if (!body.branch_id || !body.start_date || !body.end_date) {
+    return fail(res, 'branch_id, start_date, end_date are required', 400, 'VALIDATION_ERROR');
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // getEffectiveBranch parity: req.branchId (tenant grant) || user.branchId.
+    let branchId = user.branchId;
+    try {
+      branchId = await enforceTenant(supabase, user, body.branch_id);
+    } catch (tenantErr: unknown) {
+      const e = tenantErr as { statusCode?: number; message?: string };
+      if (e.statusCode === 403) return fail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
+      throw tenantErr;
+    }
+
+    // Branch scope: pastikan dokter ada di branch tsb (parity GET /:id/patients).
+    const { data: doctorRow, error: doctorErr } = await supabase
+      .from('doctors')
+      .select('id')
+      .eq('id', doctorId)
+      .eq('branch_id', branchId)
+      .maybeSingle();
+    if (doctorErr) return fail(res, `Database error: ${doctorErr.message}`, 500, 'DB_ERROR');
+    if (!doctorRow) return fail(res, 'Dokter tidak ditemukan di branch ini', 404, 'DOCTOR_NOT_FOUND');
+
+    // Parity Express service setDoctorLeave: INSERT INTO doctor_leaves.
+    const startStr = new Date(body.start_date).toISOString().split('T')[0];
+    const endStr = new Date(body.end_date).toISOString().split('T')[0];
+
+    const { error: insErr } = await supabase
+      .from('doctor_leaves')
+      .insert({
+        doctor_id: doctorId,
+        branch_id: branchId,
+        start_date: startStr,
+        end_date: endStr,
+        reason: body.reason || '',
+        created_by: adminId,
+      });
+    if (insErr) return fail(res, 'Gagal set leave', 500, 'LEAVE_SET_FAILED');
+
+    return res.status(200).json({
+      success: true,
+      message: `Doctor ${doctorId} leave set from ${body.start_date} to ${body.end_date}`,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal error';
