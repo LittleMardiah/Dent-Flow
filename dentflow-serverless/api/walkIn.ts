@@ -195,7 +195,7 @@ router.all('/book-appointment', postOnly(async (req, res) => {
         doctor_id: body.doctorId,
         booking_date: body.bookingDate,
         booking_time: bookingTime,
-        status: 'CONFIRMED',  // walk-in confirmed booking
+        status: 'PAYMENT_CONFIRMED',  // parity Express walkIn.service.ts:143 (constraint migration 015)
         booking_code: bookingCode,
         check_in_code: bookingCode,
         is_walk_in: true,
