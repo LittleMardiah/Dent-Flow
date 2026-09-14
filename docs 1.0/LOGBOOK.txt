@@ -4521,3 +4521,27 @@ Referensi:
    ada di devDependencies.
 
 --- END CATATAN ---
+
+--- Task 2.4.2c FIX (D1 FK + P1/P2 route shadow) ---
+Status: CODING DONE — pending commit + deploy + verify
+
+Root cause & fix:
+1. D1 PUT /:id/leave: serverless insert doctors.id ke FK doctor_leaves.doctor_id
+   yang mengacu ke users(id) → 500 FK violation. Fix: resolve doctors.id → user_id
+   via SELECT, insert dengan user_id. Verdict: Express JUGA broken (pre-existing,
+   insert req.params.id tanpa resolve) → TD-2.4.8.
+
+2. D2 DELETE /:id/leave: same root cause — delete match pakai doctors.id, tidak match
+   record yang di-insert user_id. Fix sekalian (serverless-only).
+
+3. P1 PUT /:id + P2 DELETE /:id: route patients.ts order salah —
+   router.all('/:id', getOnly) di line 251 shadow put (359) + delete (450) → 405.
+   Fix: REORDER put + delete ke atas (line 106 / 199), sebelum all('/:id').
+   getOnly TIDAK diubah (kontrak 405 dipertahankan, 15 pemakai di 4 file).
+
+TSC: PASS (node_modules/typescript/bin/tsc).
+Func count: 10/12 (unchanged, no new files).
+
+Belum diverifikasi:
+- D1 fix E2E setelah deploy (curl).
+- S1 jalur 200: butuh booking PAYMENT_CONFIRMED (seed semua COMPLETED → 409).

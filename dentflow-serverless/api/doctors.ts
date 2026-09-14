@@ -327,6 +327,18 @@ router.delete('/:id/leave', async (req: Request, res: Response) => {
   try {
     const supabase = getSupabase();
 
+    // Resolve doctors.id -> users.id: doctor_leaves.doctor_id FK -> users(id)
+    // (sama seperti PUT D1). Delete harus match dgn user_id biar record
+    // yang di-insert via PUT ketemu (task 2.4.2c D2, same root cause).
+    const { data: doctorRow, error: doctorErr } = await supabase
+      .from('doctors')
+      .select('user_id')
+      .eq('id', doctorId)
+      .maybeSingle();
+    if (doctorErr) return fail(res, `Database error: ${doctorErr.message}`, 500, 'DB_ERROR');
+    if (!doctorRow) return fail(res, 'Dokter tidak ditemukan', 404, 'DOCTOR_NOT_FOUND');
+    const doctorUserId = doctorRow.user_id as string;
+
     // Parity Express removeDoctorLeave: DELETE FROM doctor_leaves
     // WHERE doctor_id=$1 AND start_date=$2 AND end_date=$3 (dates di-normalisasi ke YYYY-MM-DD).
     const startStr = new Date(body.start_date).toISOString().split('T')[0];
@@ -335,7 +347,7 @@ router.delete('/:id/leave', async (req: Request, res: Response) => {
     const { error: dbErr } = await supabase
       .from('doctor_leaves')
       .delete()
-      .eq('doctor_id', doctorId)
+      .eq('doctor_id', doctorUserId)
       .eq('start_date', startStr)
       .eq('end_date', endStr);
 
@@ -391,23 +403,28 @@ router.put('/:id/leave', async (req: Request, res: Response) => {
     }
 
     // Branch scope: pastikan dokter ada di branch tsb (parity GET /:id/patients).
+    // Ambil user_id juga: doctor_leaves.doctor_id FK -> users(id) (migration 007),
+    // sama seperti doctor_schedules.dokter_id -> users(id). doctors.id adalah UUID
+    // terpisah (gen_random_uuid), JANGAN dipakai untuk kolom doctor_id (task 2.4.2c D1).
     const { data: doctorRow, error: doctorErr } = await supabase
       .from('doctors')
-      .select('id')
+      .select('id, user_id')
       .eq('id', doctorId)
       .eq('branch_id', branchId)
       .maybeSingle();
     if (doctorErr) return fail(res, `Database error: ${doctorErr.message}`, 500, 'DB_ERROR');
     if (!doctorRow) return fail(res, 'Dokter tidak ditemukan di branch ini', 404, 'DOCTOR_NOT_FOUND');
+    const doctorUserId = doctorRow.user_id as string;
 
     // Parity Express service setDoctorLeave: INSERT INTO doctor_leaves.
+    // doctor_id di-isi user_id dokter (bukan doctors.id) supaya FK users(id) valid.
     const startStr = new Date(body.start_date).toISOString().split('T')[0];
     const endStr = new Date(body.end_date).toISOString().split('T')[0];
 
     const { error: insErr } = await supabase
       .from('doctor_leaves')
       .insert({
-        doctor_id: doctorId,
+        doctor_id: doctorUserId,
         branch_id: branchId,
         start_date: startStr,
         end_date: endStr,

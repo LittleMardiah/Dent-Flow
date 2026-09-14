@@ -99,6 +99,155 @@ router.all('/branches', getOnly(async (req, res) => {
   }
 }));
 
+// ---------- PUT /api/patients/:id ----------
+// P1 — parity Express: patient.handler.ts updatePatient.
+// WRITE ROUTE: WAJIB SEBELUM router.all('/:id', getOnly) supaya tidak
+// shadow oleh GET-only guard (task 2.4.2c P1/P2 route shadow).
+router.put('/:id', async (req: Request, res: Response) => {
+  const user = (req as AuthedRequest).user;
+  const patientId = req.params.id;
+  if (!patientId) return fail(res, 'Parameter id pasien wajib diisi', 400, 'VALIDATION_ERROR');
+
+  const { fullName, phone, email } = (req.body || {}) as {
+    fullName?: string;
+    phone?: string;
+    email?: string;
+  };
+  if (!fullName || typeof fullName !== 'string' || !String(fullName).trim()) {
+    return fail(res, 'Nama lengkap wajib diisi', 400, 'VALIDATION_ERROR');
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // getEffectiveBranch parity: req.branchId (tenant grant) || user.branchId.
+    const rawBranch = req.query.branchId;
+    const requestedBranchId = typeof rawBranch === 'string' && rawBranch.length > 0 ? rawBranch : undefined;
+    let branchId = user.branchId;
+    try {
+      branchId = await enforceTenant(supabase, user, requestedBranchId);
+    } catch (tenantErr: unknown) {
+      const e = tenantErr as { statusCode?: number; message?: string };
+      if (e.statusCode === 403) return fail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
+      throw tenantErr;
+    }
+
+    // Branch scope: pasien harus ada di branch user.
+    const { data: patient, error: e1 } = await supabase
+      .from('patients')
+      .select('id, user_id')
+      .eq('id', patientId)
+      .eq('branch_id', branchId)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (e1) return fail(res, `Database error: ${e1.message}`, 500, 'DB_ERROR');
+    if (!patient) return fail(res, 'Pasien tidak ditemukan', 404, 'PATIENT_NOT_FOUND');
+    const userId = patient.user_id;
+
+    if (email && typeof email === 'string') {
+      const { data: dup, error: dupErr } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .neq('id', userId)
+        .maybeSingle();
+      if (dupErr) return fail(res, `Database error: ${dupErr.message}`, 500, 'DB_ERROR');
+      if (dup) return fail(res, 'Email sudah digunakan oleh pengguna lain', 400, 'EMAIL_TAKEN');
+    }
+
+    // Parity: UPDATE patients SET full_name=$1, phone=COALESCE($2, phone), updated_at=NOW().
+    const updates: Record<string, unknown> = { full_name: String(fullName).trim(), updated_at: new Date().toISOString() };
+    if (phone !== undefined) updates.phone = String(phone);
+    const { data: row, error: updErr } = await supabase
+      .from('patients')
+      .update(updates)
+      .eq('id', patientId)
+      .eq('branch_id', branchId)
+      .is('deleted_at', null)
+      .select('id, user_id, full_name, phone, branch_id, created_at, updated_at')
+      .maybeSingle();
+    if (updErr) return fail(res, `Database error: ${updErr.message}`, 500, 'DB_ERROR');
+    if (!row) return fail(res, 'Pasien tidak ditemukan', 404, 'PATIENT_NOT_FOUND');
+
+    if (email && typeof email === 'string') {
+      const { error: uErr } = await supabase.from('users').update({ email }).eq('id', userId);
+      if (uErr) return fail(res, `Database error: ${uErr.message}`, 500, 'DB_ERROR');
+    }
+
+    const { data: emailRow } = await supabase.from('users').select('email').eq('id', userId).maybeSingle();
+
+    return ok(res, {
+      id: row.id,
+      userId: row.user_id,
+      fullName: row.full_name,
+      phone: row.phone || '',
+      email: (emailRow as any)?.email || '',
+      branchId: row.branch_id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+});
+
+// ---------- DELETE /api/patients/:id ----------
+// P2 — parity Express: patient.handler.ts softDeletePatient (soft delete).
+// WRITE ROUTE: WAJIB SEBELUM router.all('/:id', getOnly) supaya tidak
+// shadow oleh GET-only guard (task 2.4.2c P1/P2 route shadow).
+router.delete('/:id', async (req: Request, res: Response) => {
+  const user = (req as AuthedRequest).user;
+  const patientId = req.params.id;
+  if (!patientId) return fail(res, 'Parameter id pasien wajib diisi', 400, 'VALIDATION_ERROR');
+
+  try {
+    const supabase = getSupabase();
+
+    // getEffectiveBranch parity: req.branchId (tenant grant) || user.branchId.
+    const rawBranch = req.query.branchId;
+    const requestedBranchId = typeof rawBranch === 'string' && rawBranch.length > 0 ? rawBranch : undefined;
+    let branchId = user.branchId;
+    try {
+      branchId = await enforceTenant(supabase, user, requestedBranchId);
+    } catch (tenantErr: unknown) {
+      const e = tenantErr as { statusCode?: number; message?: string };
+      if (e.statusCode === 403) return fail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
+      throw tenantErr;
+    }
+
+    // Parity Express: UPDATE patients SET deleted_at=NOW(), updated_at=NOW()
+    // WHERE id=$1 AND branch_id=$2 AND deleted_at IS NULL RETURNING id, user_id.
+    const now = new Date().toISOString();
+    const { data: deleted, error: dErr } = await supabase
+      .from('patients')
+      .update({ deleted_at: now, updated_at: now })
+      .eq('id', patientId)
+      .eq('branch_id', branchId)
+      .is('deleted_at', null)
+      .select('id, user_id')
+      .maybeSingle();
+    if (dErr) return fail(res, `Database error: ${dErr.message}`, 500, 'DB_ERROR');
+    if (!deleted) return fail(res, 'Pasien tidak ditemukan', 404, 'PATIENT_NOT_FOUND');
+
+    // Parity Express: nonaktifkan akun user pasien.
+    const { error: uErr } = await supabase
+      .from('users')
+      .update({ is_active: false })
+      .eq('id', deleted.user_id);
+    if (uErr) return fail(res, `Database error: ${uErr.message}`, 500, 'DB_ERROR');
+
+    return res.status(200).json({
+      success: true,
+      data: { id: patientId },
+      message: 'Pasien berhasil dihapus',
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+});
+
 // ---------- GET /api/patients (list) ----------
 router.all('/', getOnly(async (req, res) => {
   const user = req.user;
@@ -353,151 +502,6 @@ router.all('/:id', getOnly(async (req, res) => {
     return fail(res, message, 500, 'INTERNAL_ERROR');
   }
 }));
-
-// ---------- PUT /api/patients/:id ----------
-// P1 — parity Express: patient.handler.ts updatePatient.
-router.put('/:id', async (req: Request, res: Response) => {
-  const user = (req as AuthedRequest).user;
-  const patientId = req.params.id;
-  if (!patientId) return fail(res, 'Parameter id pasien wajib diisi', 400, 'VALIDATION_ERROR');
-
-  const { fullName, phone, email } = (req.body || {}) as {
-    fullName?: string;
-    phone?: string;
-    email?: string;
-  };
-  if (!fullName || typeof fullName !== 'string' || !String(fullName).trim()) {
-    return fail(res, 'Nama lengkap wajib diisi', 400, 'VALIDATION_ERROR');
-  }
-
-  try {
-    const supabase = getSupabase();
-
-    // getEffectiveBranch parity: req.branchId (tenant grant) || user.branchId.
-    const rawBranch = req.query.branchId;
-    const requestedBranchId = typeof rawBranch === 'string' && rawBranch.length > 0 ? rawBranch : undefined;
-    let branchId = user.branchId;
-    try {
-      branchId = await enforceTenant(supabase, user, requestedBranchId);
-    } catch (tenantErr: unknown) {
-      const e = tenantErr as { statusCode?: number; message?: string };
-      if (e.statusCode === 403) return fail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
-      throw tenantErr;
-    }
-
-    // Branch scope: pasien harus ada di branch user.
-    const { data: patient, error: e1 } = await supabase
-      .from('patients')
-      .select('id, user_id')
-      .eq('id', patientId)
-      .eq('branch_id', branchId)
-      .is('deleted_at', null)
-      .maybeSingle();
-    if (e1) return fail(res, `Database error: ${e1.message}`, 500, 'DB_ERROR');
-    if (!patient) return fail(res, 'Pasien tidak ditemukan', 404, 'PATIENT_NOT_FOUND');
-    const userId = patient.user_id;
-
-    if (email && typeof email === 'string') {
-      const { data: dup, error: dupErr } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', email)
-        .neq('id', userId)
-        .maybeSingle();
-      if (dupErr) return fail(res, `Database error: ${dupErr.message}`, 500, 'DB_ERROR');
-      if (dup) return fail(res, 'Email sudah digunakan oleh pengguna lain', 400, 'EMAIL_TAKEN');
-    }
-
-    // Parity: UPDATE patients SET full_name=$1, phone=COALESCE($2, phone), updated_at=NOW().
-    const updates: Record<string, unknown> = { full_name: String(fullName).trim(), updated_at: new Date().toISOString() };
-    if (phone !== undefined) updates.phone = String(phone);
-    const { data: row, error: updErr } = await supabase
-      .from('patients')
-      .update(updates)
-      .eq('id', patientId)
-      .eq('branch_id', branchId)
-      .is('deleted_at', null)
-      .select('id, user_id, full_name, phone, branch_id, created_at, updated_at')
-      .maybeSingle();
-    if (updErr) return fail(res, `Database error: ${updErr.message}`, 500, 'DB_ERROR');
-    if (!row) return fail(res, 'Pasien tidak ditemukan', 404, 'PATIENT_NOT_FOUND');
-
-    if (email && typeof email === 'string') {
-      const { error: uErr } = await supabase.from('users').update({ email }).eq('id', userId);
-      if (uErr) return fail(res, `Database error: ${uErr.message}`, 500, 'DB_ERROR');
-    }
-
-    const { data: emailRow } = await supabase.from('users').select('email').eq('id', userId).maybeSingle();
-
-    return ok(res, {
-      id: row.id,
-      userId: row.user_id,
-      fullName: row.full_name,
-      phone: row.phone || '',
-      email: (emailRow as any)?.email || '',
-      branchId: row.branch_id,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Internal error';
-    return fail(res, message, 500, 'INTERNAL_ERROR');
-  }
-});
-
-// ---------- DELETE /api/patients/:id ----------
-// P2 — parity Express: patient.handler.ts softDeletePatient (soft delete).
-router.delete('/:id', async (req: Request, res: Response) => {
-  const user = (req as AuthedRequest).user;
-  const patientId = req.params.id;
-  if (!patientId) return fail(res, 'Parameter id pasien wajib diisi', 400, 'VALIDATION_ERROR');
-
-  try {
-    const supabase = getSupabase();
-
-    // getEffectiveBranch parity: req.branchId (tenant grant) || user.branchId.
-    const rawBranch = req.query.branchId;
-    const requestedBranchId = typeof rawBranch === 'string' && rawBranch.length > 0 ? rawBranch : undefined;
-    let branchId = user.branchId;
-    try {
-      branchId = await enforceTenant(supabase, user, requestedBranchId);
-    } catch (tenantErr: unknown) {
-      const e = tenantErr as { statusCode?: number; message?: string };
-      if (e.statusCode === 403) return fail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
-      throw tenantErr;
-    }
-
-    // Parity Express: UPDATE patients SET deleted_at=NOW(), updated_at=NOW()
-    // WHERE id=$1 AND branch_id=$2 AND deleted_at IS NULL RETURNING id, user_id.
-    const now = new Date().toISOString();
-    const { data: deleted, error: dErr } = await supabase
-      .from('patients')
-      .update({ deleted_at: now, updated_at: now })
-      .eq('id', patientId)
-      .eq('branch_id', branchId)
-      .is('deleted_at', null)
-      .select('id, user_id')
-      .maybeSingle();
-    if (dErr) return fail(res, `Database error: ${dErr.message}`, 500, 'DB_ERROR');
-    if (!deleted) return fail(res, 'Pasien tidak ditemukan', 404, 'PATIENT_NOT_FOUND');
-
-    // Parity Express: nonaktifkan akun user pasien.
-    const { error: uErr } = await supabase
-      .from('users')
-      .update({ is_active: false })
-      .eq('id', deleted.user_id);
-    if (uErr) return fail(res, `Database error: ${uErr.message}`, 500, 'DB_ERROR');
-
-    return res.status(200).json({
-      success: true,
-      data: { id: patientId },
-      message: 'Pasien berhasil dihapus',
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Internal error';
-    return fail(res, message, 500, 'INTERNAL_ERROR');
-  }
-});
 
 // ---------- 404 fallback domain patients ----------
 router.use((req: Request, res: Response) => {
