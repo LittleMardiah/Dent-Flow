@@ -4617,3 +4617,41 @@ TD updates:
 - TD-2.4.11: Express W2 broken (FIXED by migration 033)
 
 Next: Task 2.4.3b-C1+C2 (coding checkIn.ts).
+
+--- Task 2.4.3b-C1+C2 Create checkIn.ts ---
+Status: PASS (TSC clean, func count 11)
+
+File baru: dentflow-serverless/api/checkIn.ts
+- C1: POST /api/admin/check-in (auth ADMIN_BRANCH + enforceTenant)
+- C2: POST /api/admin/check-in/walk-in (auth ADMIN_BRANCH + enforceTenant)
+
+Mekanisme queue: supabase.rpc('get_next_queue_number', { p_branch_id, p_doctor_id, p_date: todayWIB() }).
+- p_doctor_id = doctors.id (verified pre-audit)
+- p_date = WIB lokal, bukan CURRENT_DATE
+
+Parity:
+- C1 audit BOOKING_CHECKED_IN (parity Express)
+- C2 NO AUDIT (replicate gap Express, TD-2.4.10)
+- C1 alreadyCheckedIn: 200 idempotent dengan queue_number
+- Response shape C1/C2 snake_case (parity Express)
+
+vercel.json: + /api/admin/check-in/:path* -> /api/checkIn?path=$1 (preserve existing).
+
+Func count: 10 -> 11.
+
+Next: commit -> deploy -> E2E verify (Task 2.4.3c).
+
+--- Task 2.4.3b-C1+C2-FIX Double Prefix Route ---
+Status: FIXED (verified locally)
+
+Root cause: route C1/C2 di checkIn.ts absolute ('/admin/check-in',
+'/admin/check-in/walk-in') TAPI mount '/api/admin/check-in' -> double prefix
+-> C1 & C2 akan 404 di deploy.
+
+Fix: route RELATIF ke mount ('/' & '/walk-in'), + safeguard '?path=' rekonstruksi
+URL `/api/admin/check-in/<path>` (pattern sama patients.ts/doctors.ts).
+
+Verifikasi:
+- TSC: PASS
+- Func count: 11
+- Simulasi URL: C1 & C2 match setelah safeguard

@@ -10,6 +10,7 @@
     { "source": "/api/patient/bookings/:path*", "destination": "/api/bookings?path=$1" },
     { "source": "/api/no-shows/:path*", "destination": "/api/noShows?path=$1" },
     { "source": "/walk-in/:path*", "destination": "/api/walkIn?path=$1" },
+    { "source": "/api/admin/check-in/:path*", "destination": "/api/checkIn?path=$1" },
     { "source": "/api/admin/bookings/:path*", "destination": "/api/notifications?path=$1" }
   ]
 }
