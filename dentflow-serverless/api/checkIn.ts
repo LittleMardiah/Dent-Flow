@@ -48,6 +48,12 @@ function todayWIB(): string {
   return wib.toISOString().split('T')[0];
 }
 
+function nowTimeWIB(): string {
+  const now = new Date();
+  const wib = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  return wib.toISOString().slice(11, 19);
+}
+
 // ---------- POST / (C1) — relative to mount '/api/admin/check-in' ----------
 router.post('/', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
@@ -219,8 +225,10 @@ router.post('/walk-in', async (req: Request, res: Response) => {
         temp_patient_id: tempPatientId,
         doctor_id: body.doctor_id,
         booking_date: todayWIB(),
+        booking_time: nowTimeWIB(),
         status: 'CHECKED_IN',
         booking_code: bookingCode,
+        check_in_code: bookingCode,
         is_walk_in: true,
         queue_number: queueNumber,
         checked_in_at: new Date().toISOString(),

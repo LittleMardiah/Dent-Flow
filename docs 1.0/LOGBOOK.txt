@@ -4676,3 +4676,26 @@ Verifikasi: TSC serverless PASS, TSC backend PASS, schema branch_id uuid NOT NUL
 + FK ok, no VARCHAR branch_id remaining, queue_date 0 refs.
 
 Next: re-verify E2E C1 C2 (Task 2.4.3c R2).
+
+--- Task 2.4.3b-FIX3 — Audit bookings schema + fix C2 booking_time ---
+Status: FIXED
+
+RC-NEW-1: bookings.booking_time TIME NOT NULL (no default), C2 insert (checkIn.ts
+  /walk-in) TIDAK set kolom tsb -> INSERT gagal + history pasien/antrian tanpa
+  booking_time (patient.handler, patients.ts, booking.handler baca & ORDER BY).
+Fix: tambah booking_time: nowTimeWIB() (HH:MM:SS WIB, helper baru sejajar todayWIB())
+  di C2 insert payload. Tambahan parity: check_in_code = bookingCode (konsisten
+  dengan W2 walkIn.service.ts yang set booking_code == check_in_code, agar C1
+  lookup by check_in_code tidak NULL).
+
+Audit keseluruhan schema bookings (query information_schema live):
+  REQUIRED_FIELDS_NO_DEFAULT = branch_id, doctor_id, booking_date, booking_time, booking_code.
+  C2 sudah set 4/5; satu-satunya missing = booking_time. Tidak whack-a-mole:
+  seluruh field REQUIRED diverifikasi via diff schema vs payload.
+  session_start/session_end/check_in_code nullable -> check_in_code diisi utk parity,
+  session_* dibiarkan NULL (walk-in tanpa sesi).
+
+Files: checkIn.ts (2 tambahan: helper nowTimeWIB + 2 field di insert), LOGBOOK.
+Verifikasi: audit schema live PASS, TSC serverless PASS (exit 0), TSC backend unaffected.
+
+Next: re-deploy -> E2E R3.
