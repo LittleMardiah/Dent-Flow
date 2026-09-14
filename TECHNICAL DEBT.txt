@@ -134,3 +134,25 @@ Estimasi: 30 menit. Prioritas: LOW (non-blocker).
 
 Referensi: task_2_4_4a.log (STEP 1 verdict).
 ===
+
+===
+TD-2.4.15: bookings.status default 'PENDING' tidak ada di constraint (BARU 2026-09-14)
+Status: ⚠️ OPEN
+
+Deskripsi: column bookings.status DEFAULT 'PENDING'. Tapi bookings_status_check
+(migration 015) TIDAK mengizinkan 'PENDING' (hanya PENDING_PAYMENT,
+PAYMENT_CONFIRMED, CHECKED_IN, COMPLETED, NO_SHOW, CANCELLED).
+Akibat: INSERT booking tanpa explicit status -> default 'PENDING' -> constraint violation.
+
+Dampak: latent bug. Kalau ada code/serverless yang INSERT booking tanpa
+set status explicitly, akan 500 (check constraint).
+
+Perbaikan: (a) migration ALTER default ke 'PENDING_PAYMENT', atau
+(b) tambah 'PENDING' ke constraint (kurang ideal - semantic overlap).
+Rekomendasi: (a) karena PENDING lama tidak dipakai.
+
+Estimasi: 30 menit. Prioritas: MEDIUM (latent, belum trigger karena
+semua code set status explicit).
+
+Referensi: task_2_4_4a.log (temuan OpenCode).
+===
