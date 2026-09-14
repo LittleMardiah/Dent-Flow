@@ -4699,3 +4699,25 @@ Files: checkIn.ts (2 tambahan: helper nowTimeWIB + 2 field di insert), LOGBOOK.
 Verifikasi: audit schema live PASS, TSC serverless PASS (exit 0), TSC backend unaffected.
 
 Next: re-deploy -> E2E R3.
+
+--- Task 2.4.3b-C1+C2 COMPLETE (E2E verified R3) ---
+Status: ✅ PASS
+
+Hasil E2E R3 (task_2_4_3c_r3.log):
+- C1 full: 200, queue 6, booking CHECKED_IN
+- C1 idempotent: 200 already_checked_in (code WARUPX)
+- C2 full: 201
+- C2 idempotency: TEMP reused by phone (same temp_patient_id), new queue (8 vs 9)
+- Negatives: 401/401
+
+Fix chain (3 iterasi):
+1. FIX (2.4.3b): double prefix route -> relative ('/', '/walk-in') + safeguard
+2. FIX2 (2.4.3b-FIX2): queue_date removed + temp_patients.branch_id VARCHAR->UUID (mig 034)
+3. FIX3 (2.4.3b-FIX3): booking_time: nowTimeWIB() + check_in_code: bookingCode
+
+Commit: f3c9a4b. Func count: 11/12. TSC PASS.
+
+LESSON: test harness bash nested quoting (dalam heredoc) rapuh untuk payload
+JSON dengan $(cmd). Pakai python -c 'json.dumps' ATAU jq -n untuk payload test.
+
+Next: Task 2.4.3b-W2 (extend walkIn.ts, W2 book-appointment).
