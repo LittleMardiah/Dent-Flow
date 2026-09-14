@@ -4566,3 +4566,33 @@ S1 verify-pending notes:
   booking untuk E2E terhambat. Bukan blocker Task 2.4.2, tapi needed untuk E2E penuh.
 
 Task 2.4.2 STATUS: ✅ SELESAI (dengan S1 verify-pending).
+
+--- Task 2.4.3a Apply + Verify Migration 032 (queue_sequence) ---
+Status: ✅ PASS
+
+Apa yang dilakukan:
+1. CEK migrate.ts: auto-detect .sql (readdirSync + endsWith), track di
+   tabel `migrations` kolom `name` (BUKAN `filename`).
+2. State sebelum apply: table queue_sequences=false, 2 functions=false → clean.
+3. Draft validation 6/6 PASS (branch_id UUID, PK composite, ON CONFLICT
+   DO UPDATE RETURNING, get_current read-only, p_date DEFAULT CURRENT_DATE,
+   SECURITY DEFINER + GRANT).
+4. Rename 032_queue_sequence.sql.draft -> .sql (auto-detected).
+5. Apply: MIGRATE_EXIT=0. Log: "Migration 032 completed successfully".
+6. Verify: table + 2 functions ada, schema cocok draft.
+   Tracked: MIGRATIONS_032=[{"name":"032_queue_sequence.sql"}].
+7. Standalone test 4/4 PASS:
+   - TEST1 SEQUENTIAL: 3x call -> 1,2,3
+   - TEST2 READONLY: get_current 2x -> 3,3 (no increment)
+   - TEST3 COMPOSITE: beda doctor -> counter reset 1 (PK composite OK)
+   - TEST4 PARALLEL100: 100 concurrent -> 100 unique 1..100 (atomic upsert verified)
+8. Cleanup temp scripts.
+
+Log: task_2_4_3a.log (279 baris, LOG_CLEAN dari secret).
+
+Catatan:
+- Import config pakai ../src/config (ts-node resolve dari scripts/ folder).
+- get_current_queue_number untuk counter yang BELUM ADA belum di-test
+  (edge case endpoint, defer ke Task 2.4.3b verify).
+
+Next: commit via PS -> Task 2.4.3b (coding C1 C2 W2 + create checkIn.ts).
