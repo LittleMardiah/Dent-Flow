@@ -4811,3 +4811,26 @@ JWT access { userId: user_id, branchId, role, email } (24h), refresh { userId } 
 Func count: 11/12 (extend).
 
 Next: commit -> deploy -> E2E (2.4.4c).
+
+--- Task 2.4.4 W3 convert-to-patient COMPLETE (E2E verified) ---
+Status: ✅ PASS
+
+Chain:
+- 2.4.4 pre-audit: multi-table audit + Opsi 3 decision (hash di lambda)
+- 2.4.4a (commit 4781ecf): migration 035 RPC convert_walk_in_temp_to_patient
+- 2.4.4b (commit 4a127fd): extend walkIn.ts route /convert-to-patient
+
+E2E verify (task_2_4_4c.log):
+- W1 201 -> TEMP_ID
+- W3 happy 200, patientId=dc18fe73..., tokens signed
+- Login email baru 200 ROLE=PATIENT (bcrypt+JWT verified)
+- W3 idempotent 409, fake temp 404, email dup 409
+- Negatives: no-body=400, GET=405
+
+Lesson: OpenCode koreksi draft gua `patientId: row.user_id` -> `row.patient_id`
+(patients.id) via trace Express handler. FK column target wajib di-trace,
+jangan asumsi.
+
+Task 2.4.4 STATUS: ✅ SELESAI. Func count: 11/12.
+
+Next: Task 2.4.5 (E1 startEncounter + E2 updateEncounter, extend encounters.ts).
