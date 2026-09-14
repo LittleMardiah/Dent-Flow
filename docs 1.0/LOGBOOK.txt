@@ -4721,3 +4721,26 @@ LESSON: test harness bash nested quoting (dalam heredoc) rapuh untuk payload
 JSON dengan $(cmd). Pakai python -c 'json.dumps' ATAU jq -n untuk payload test.
 
 Next: Task 2.4.3b-W2 (extend walkIn.ts, W2 book-appointment).
+
+--- Task 2.4.3b-W2 Extend walkIn.ts (book-appointment) ---
+Status: DONE (TSC pass, func count 11/12 unchanged)
+
+Extend walkIn.ts dengan POST /walk-in/book-appointment (W2).
+Auth ADMIN_BRANCH (inline JWT verify + requireRole — router-level tidak
+bisa karena W1 create-profile public/no-auth). Body: tempPatientId,
+doctorId, branchId, bookingDate (sessionSlotId opsional, Express ignores).
+Flow: enforceTenant -> resolve doctor (doctors.id, branch scope) -> verify
+temporary_patients -> rpc get_next_queue_number -> INSERT booking + queue
+(WAITING) -> audit WALK_IN_ADDED -> 201 camelCase (bookingId, queueNumber).
+
+FIX yang diterapkan vs draft task (ROOT CAUSE validated):
+1. AUTH: draft baca (req as any).user tanpa ada yang set → selalu 401.
+   Perbaiki: inline extractBearerToken + verifyJwt + requireRole.
+2. fail() signature 3 arg vs draft panggil 4 arg (UNAUTHORIZED/dst) → TSC error.
+   Perbaiki: fail() kini { message, error, timestamp } parity patients.ts.
+3. booking_time NOT NULL (lesson FIX3) → nowTimeWIB(). check_in_code SET.
+
+Slot capacity SKIP (parity catatan task: Express ignore sessionSlotId).
+Func count: 11/12 (unchanged, extend existing).
+
+Next: commit -> deploy -> E2E W2.
