@@ -4403,3 +4403,34 @@ Next Action:
 
 Referensi:
 - task_2_4_0c.log
+
+========================================================
+Task 2.4.1 - First Write Migration (Simple Writes)
+Status: ✅ SELESAI (code) - pending deploy verify
+Tanggal: 2026-09-14
+========================================================
+
+4 endpoint first write:
+- D2: DELETE /api/doctors/:id/leave (extend doctors.ts)
+- W1: POST /walk-in/create-profile (new walkIn.ts)
+- B2: PUT /api/patient/bookings/:id/cancel (new bookings.ts)
+- N1 N2: POST /api/admin/bookings/:id/send-reminder + send-confirmation (new notifications.ts)
+
+Apa yang dilakukan:
+1. CEK Express route/handler tiap endpoint
+2. Implement 3 new files + extend 1
+3. Update vercel.json (3 domain rewrite)
+4. TSC + build + func count
+
+Hasil:
+- tsc --noEmit: PASS
+- TOTAL_FUNCS: 9 (target 9)
+
+Next Action:
+- Commit + push
+- Verify E2E semua 4 endpoint
+- Task 2.4.2: next simple writes
+
+Referensi:
+- BATCH_4_PLAN.md Task 2.4.1
+- task_2_4_1.log

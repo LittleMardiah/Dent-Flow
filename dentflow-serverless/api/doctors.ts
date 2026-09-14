@@ -210,6 +210,52 @@ router.all('/:id/patients', getOnly(async (req, res) => {
   }
 }));
 
+// ---------- DELETE /api/doctors/:id/leave ----------
+// D2 — parity Express: doctorSchedule.handler.ts removeLeave
+// Auth: router-level (ADMIN_BRANCH, PATIENT, DOCTOR) — sama dengan Express roleMiddleware.
+router.delete('/:id/leave', async (req: Request, res: Response) => {
+  const authedReq = req as AuthedRequest;
+  const doctorId = req.params.id as string;
+  const body = (req.body || {}) as { start_date?: string; end_date?: string };
+  const adminId = authedReq.user?.userId;
+
+  if (!adminId) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+
+  if (!body.start_date || !body.end_date) {
+    return res.status(400).json({ success: false, error: 'start_date and end_date are required' });
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // Parity Express removeDoctorLeave: DELETE FROM doctor_leaves
+    // WHERE doctor_id=$1 AND start_date=$2 AND end_date=$3 (dates di-normalisasi ke YYYY-MM-DD).
+    const startStr = new Date(body.start_date).toISOString().split('T')[0];
+    const endStr = new Date(body.end_date).toISOString().split('T')[0];
+
+    const { error: dbErr } = await supabase
+      .from('doctor_leaves')
+      .delete()
+      .eq('doctor_id', doctorId)
+      .eq('start_date', startStr)
+      .eq('end_date', endStr);
+
+    if (dbErr) {
+      return res.status(500).json({ success: false, error: 'INTERNAL_SERVER_ERROR', message: 'Server error' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Doctor ${doctorId} leave removed from ${body.start_date} to ${body.end_date}`,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_SERVER_ERROR');
+  }
+});
+
 // ---------- 404 fallback domain doctors ----------
 router.use((req: Request, res: Response) => {
   return fail(res, 'Route tidak ditemukan di domain doctors.', 404, 'NOT_FOUND');
@@ -219,6 +265,7 @@ router.use((req: Request, res: Response) => {
 // Vercel handler: mount router di prefix '/api/doctors'
 // ============================================================
 const app = express();
+app.use(express.json({ limit: '1mb' }));
 app.use('/api/doctors', router);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
