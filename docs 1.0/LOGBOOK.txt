@@ -4763,3 +4763,38 @@ Task 2.4.3b STATUS: ✅ SELESAI (C1 + C2 + W2 all E2E verified).
 Func count: 11/12.
 
 Next: Task 2.4.4 (W3 convert-to-patient, extend walkIn.ts).
+
+--- Task 2.4.4a Migration 035 convert_walk_in_temp_to_patient ---
+Status: ✅ SELESAI (migration applied + function verified + smoke pass)
+
+RPC function untuk convert temp_patient -> full patient atomically.
+Opsi 3 (hash di lambda, function terima p_password_hash TEXT).
+Alasan: password plaintext TIDAK masuk Supabase logs.
+
+Function handle 9 steps: SELECT+lock -> cek converted -> cek email
+-> username collision loop -> INSERT users -> INSERT patients
+-> UPDATE bookings -> UPDATE temp -> INSERT audit WALK_IN_CONVERTED.
+
+Return: user_id, branch_id, role, email, patient_id (untuk sign JWT).
+
+ROOT CAUSE fix saat pembuatan (draft -> final):
+- bookings.patient_id SET ke patients.id (bukan users.id) — FK
+  fk_bookings_patient reference patients(id). Draft awal salah,
+  berakibat FK violation. Verified parity Express L262-266.
+- temporary_patients UPDATE tambah updated_at=NOW() (parity L271).
+- username parity Express L223: lowercase + hapus [^a-z0-9_] (bukan '_').
+
+Verifikasi (semua self-contained ROLLBACK, zero leftover):
+- Function ada: proname + args p_temp_id uuid, p_email text, p_password_hash text
+- Happy path 28 cek PASS (users/patients/bookings/temp/audit + FK fix)
+- T1 TEMP_PATIENT_NOT_FOUND PASS
+- T3 TEMP_PATIENT_ALREADY_CONVERTED PASS
+- T4 EMAIL_ALREADY_EXISTS + atomicity (temp untouched, 1 user) PASS
+
+Catatan runtime: bookings_status_check LIVE = PENDING_PAYMENT/PAYMENT_CONFIRMED/
+CHECKED_IN/COMPLETED/NO_SHOW/CANCELLED, default 'PENDING' tidak valid lagi
+(inkonsistensi lama, TIDAK disentuh 2.4.4a, booking insert harus explicit status).
+
+MIGRATE_EXIT_035=0 | SMOKE: PASS | HAPPY: PASS (28/28) | ERRORS: PASS (6/6)
+
+Next: Task 2.4.4b (extend walkIn.ts route /convert-to-patient).

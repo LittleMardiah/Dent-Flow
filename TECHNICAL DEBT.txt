@@ -115,3 +115,22 @@ Prioritas: LOW (cosmetic, tidak blocker).
 
 Referensi: task_2_4_3b_w2_verify.log (analisa CRLF), task_2_4_3b_w2_e2e_r2.log.
 ===
+
+===
+TD-2.4.14: patients.walk_in_profile_id tanpa FK / index (BARU 2026-09-14)
+Status: ⚠️ OPEN
+
+Deskripsi: kolom patients.walk_in_profile_id (migration 001) TIDAK punya FK
+ke temporary_patients(id), TIDAK ada index. Nilai = temp_patients.id.
+Risiko: kalau temp di-soft-delete/hard-delete, ref jadi dangling. Query
+by walk_in_profile_id = full scan.
+
+Catatan 2.4.4a: migration 035 convert_walk_in_temp_to_patient mengisi
+walk_in_profile_id = temp id. Semakin layak punya FK+index.
+
+Perbaikan: migration tambah FK (ON DELETE SET NULL) + index.
+
+Estimasi: 30 menit. Prioritas: LOW (non-blocker).
+
+Referensi: task_2_4_4a.log (STEP 1 verdict).
+===
