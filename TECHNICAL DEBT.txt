@@ -22,3 +22,56 @@ Prioritas: HIGH (write path broken di Express legacy, akan deprecated di Phase 4
 tapi masih dipakai frontend saat ini).
 Referensi: task_2_4_2b.log (verify FAIL), task_2_4_2c.log (fix serverless).
 ===
+
+===
+TD-2.4.9: Serverless list admin bookings belum dimigrate (BARU 2026-09-14)
+Status: ⚠️ OPEN
+
+Deskripsi: vercel.json rewrite /api/admin/bookings/:path* -> notifications domain
+(N1/N2). Tidak ada endpoint GET list admin bookings di serverless. Frontend/admin
+yang butuh filter booking per status -> 404.
+
+Dampak: E2E verify S1 (mark-no-show) terhambat karena discovery BOOK_ID via API
+tidak bisa. Frontend admin yang butuh list booking per status juga akan 404.
+
+Perbaikan: Migrate GET /api/admin/bookings (list + filter status) ke serverless
+(extend bookings.ts atau bikin file baru). Estimasi: 2 jam.
+
+Referensi: task_2_4_2b.log, task_2_4_2d.log, task_2_4_3b_prep.log.
+===
+
+===
+TD-2.4.10: Express C2 adminWalkInCheckin tidak punya audit log (BARU 2026-09-14)
+Status: ⚠️ OPEN
+
+Deskripsi: Express handler adminWalkInCheckin (C2, POST /api/admin/check-in/walk-in)
+TIDAK mencatat audit log. Gap pre-existing.
+
+Keputusan (Task 2.4.3b-PREP): A (replicate gap) — serverless replicate
+Express behavior, TIDAK audit C2. Parity 100%.
+
+Dampak: Walk-in check-in tidak ada audit trail. Compliance risk.
+
+Perbaikan: Tambah audit log event WALK_IN_CHECKED_IN di serverless C2 + Express C2.
+Estimasi: 1 jam.
+
+Referensi: task_2_4_3b_preaudit.log, task_2_4_3b_prep.log.
+===
+
+===
+TD-2.4.11: Express W2 bookAppointment broken — insert NULL ke patient_id NOT NULL (BARU 2026-09-14)
+Status: ⚠️ OPEN
+
+Deskripsi: bookings.patient_id deklarasikan NOT NULL di migration 001. Migration 014
+tambah temp_patient_id tapi TIDAK drop NOT NULL. Express W2 (bookWalkInAppointment)
+insert patient_id=NULL untuk walk-in patient (yang punya temp_patient_id) ->
+runtime FK/NOT NULL violation.
+
+Fix: migration 033 (DROP NOT NULL) applied 2026-09-14 (Task 2.4.3b-PREP2).
+
+Dampak: W2 Express broken pre-existing. Setelah migration 033, W2 Express kembali functional.
+
+Status: FIXED by migration 033 (schema). Express W2 code TIDAK perlu diubah.
+
+Referensi: task_2_4_3b_prep.log, task_2_4_3b_prep2.log.
+===
