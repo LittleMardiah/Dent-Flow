@@ -4434,3 +4434,36 @@ Next Action:
 Referensi:
 - BATCH_4_PLAN.md Task 2.4.1
 - task_2_4_1.log
+
+========================================================
+Task 2.4.2a - Pre-Audit Domain Mapping + Postgres Sequence Design
+Status: ✅ SELESAI (docs + draft, NO CODE CHANGE)
+Tanggal: 2026-09-14
+========================================================
+
+Pre-audit sebelum implementasi sisa Batch 4a (Task 2.4.2-2.4.8).
+
+Apa yang dilakukan:
+1. Audit domain mapping 21 endpoint Batch 4a -> file serverless (5 DONE, 16 pending)
+2. Func count projection (current 9 confirmed, limit 12, after 4a = 10, safe)
+3. Design Postgres sequence D1 (Option B: table + atomic upsert)
+4. Draft migration 032_queue_sequence.sql.draft (koreksi: branch_id UUID, bukan VARCHAR(1))
+5. Update BATCH_4_PLAN.md section 7 (Domain Mapping & Sequence Design)
+
+Hasil:
+- Mapping: 21 endpoint -> 6 file extend + 1 file baru (checkIn.ts: C1 C2 D4, +1 func)
+- Func count setelah Batch 4a: 10/12 (sisa 2). Batch 4b risk jadi 11-12 -> mitigate
+- Sequence: Option B dipilih, draft SQL ready (.sql.draft di-skip migrate.ts)
+- Root cause ditemukan: draft awal pakai branch_id VARCHAR(1) tapi schema asli UUID
+
+Note scheduling: sequence + check-in (C1 C2 W2) = Task 2.4.3; B1 booking create = Task 2.4.7.
+
+Next Action:
+- Commit + push (docs)
+- Task 2.4.2: D0 D1 P1 P2 S1 (extend doctors/patients/bookings.ts)
+- Task 2.4.3: apply migration 032 + C1 C2 W2
+
+Referensi:
+- BATCH_4_PLAN.md section 7
+- task_2_4_2a.log
+- migrations/032_queue_sequence.sql.draft

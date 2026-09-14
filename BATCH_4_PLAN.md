@@ -347,7 +347,94 @@
 
 ---
 
-## 7. ACCEPTANCE CRITERIA PER TASK
+## 7. DOMAIN MAPPING & SEQUENCE DESIGN (Task 2.4.2a)
+
+> Pre-audit sebelum implementasi sisa Batch 4a. Log: `task_2_4_2a.log`.
+> Audit findings: func count 9/12 (Vercel Hobby limit), draft sequence dikoreksi (branch_id UUID).
+
+### 7.1 Domain Mapping — 21 Endpoint Batch 4a
+
+| ID | Method+Path | File Serverless | Extend/New | Task | LOC est | Status |
+|---|---|---|---|---|---|---|
+| D2 | DELETE `/doctors/:id/leave` | `doctors.ts` | Extend | 2.4.1 | ~50 | ✅ DONE |
+| W1 | POST `/walk-in/create-profile` | `walkIn.ts` | New | 2.4.1 | ~50 | ✅ DONE |
+| B2 | PUT `/patient/bookings/:id/cancel` | `bookings.ts` | Extend | 2.4.1 | ~130 | ✅ DONE |
+| N1 | POST `/bookings/:id/send-reminder` | `notifications.ts` | New | 2.4.1 | ~30 | ✅ DONE |
+| N2 | POST `/bookings/:id/send-confirmation` | `notifications.ts` | New | 2.4.1 | ~30 | ✅ DONE |
+| D0 | PUT `/doctors/me` | `doctors.ts` | Extend | 2.4.2 | ~80 | pending |
+| D1 | PUT `/doctors/:id/leave` | `doctors.ts` | Extend | 2.4.2 | ~80 | pending |
+| P1 | PUT `/patients/:id` | `patients.ts` | Extend | 2.4.2 | ~60 | pending |
+| P2 | DELETE `/patients/:id` | `patients.ts` | Extend | 2.4.2 | ~60 | pending |
+| S1 | PUT `/no-shows/admin/bookings/:id/mark-no-show` | `bookings.ts` | Extend | 2.4.2 | ~60 | pending |
+| C1 | POST `/admin/check-in` | `checkIn.ts` (NEW) | **New (+1 func)** | 2.4.3 | ~120 | pending |
+| C2 | POST `/admin/check-in/walk-in` | `checkIn.ts` (NEW) | New | 2.4.3 | ~90 | pending |
+| W2 | POST `/walk-in/book-appointment` | `walkIn.ts` | Extend | 2.4.3 | ~120 | pending |
+| W3 | POST `/walk-in/convert-to-patient` | `walkIn.ts` | Extend | 2.4.4 | ~100 | pending |
+| E1 | POST `/encounters/` | `encounters.ts` | Extend | 2.4.5 | ~80 | pending |
+| E2 | PUT `/encounters/:id` | `encounters.ts` | Extend | 2.4.5 | ~80 | pending |
+| E3 | POST `/encounters/:id/complete` | `encounters.ts` | Extend | 2.4.6 | ~120 (HIGH RISK) | pending |
+| B1 | POST `/patient/bookings` | `bookings.ts` | Extend | 2.4.7 | ~150 | pending |
+| P3 | POST `/patients/merge` | `patients.ts` | Extend | 2.4.8 | ~100 | pending |
+| D3 | POST `/doctors/:id/ready-next` | `doctors.ts` | Extend | 2.4.8 | ~80 | pending |
+| D4 | POST `/queue/:id/check-in` | `checkIn.ts` (NEW) | New | 2.4.8 | ~100 | pending |
+
+**Total:** 21 endpoint — DONE 5, pending 16. **1 file baru saja: `checkIn.ts`** (C1+C2+D4, +1 func; D4 digabung ke checkIn.ts biar hemat func, bukan file `queue.ts` terpisah).
+
+### 7.2 Func Count Projection
+
+- **Current:** 9 (auth, bookings, doctors, encounters, health, invoices, notifications, patients, walkIn) — confirmed `task_2_4_1.log` `TOTAL_FUNCS=9`.
+- **Limit:** 12 (Vercel Hobby, `MIGRATION_PLAN.md:326`) → sisa slot **3**.
+- **Batch 4a projection:** extend 6 file existing (0 new func) + **`checkIn.ts` (+1)**.
+  - Setelah Batch 4a: **10 function** (sisa slot 2).
+  - Worst case (kalau D4 butuh file `queue.ts` sendiri): **11** — tetap aman.
+- **Batch 4b est:** extend `invoices.ts` (I1-I4, 0) + kemungkinan `webhooks.ts` baru (S2/S3, +1) → **11-12**.
+  - ⚠️ **Risk:** kalau Batch 4b bikin 1 file baru, angka 12 penuh. Mitigasi: S2/S3 masuk `payments.ts`/`invoices.ts` (extend) atau gabung 1 file, baru +1.
+
+### 7.3 Postgres Sequence Design (D1 Decision) — Option B
+
+**Decision:** Option B — table `queue_sequences` + atomic upsert function `get_next_queue_number()`.
+
+**Draft SQL:** `dentflow-backend/migrations/032_queue_sequence.sql.draft` (extension `.sql.draft` → **di-skip** migrate.ts karena filter `endsWith('.sql')`, jadi belum apply).
+
+**Koreksi audit 2.4.2a (draft awal → final):**
+| Item | Draft awal (prompt) | Koreksi (schema nyata) |
+|---|---|---|
+| `branch_id` | `VARCHAR(1)` | **`UUID`** (`queues.branch_id UUID NOT NULL` — migrations/001) |
+| `doctor_id` | `UUID` | `UUID` ✓ |
+| `p_date` | wajib | `DEFAULT CURRENT_DATE` (konsisten Redis key `queue:{branch}:{doctor}:{YYYYMMDD}`) |
+| query current | — | tambah `get_current_queue_number()` (parity Express `getCurrentQueueNumber`) |
+| security | — | `SECURITY DEFINER` + `GRANT EXECUTE` ke `service_role, authenticated` |
+
+**Rationale build vs ad-hoc `CREATE SEQUENCE` (Option A):**
+- `CREATE SEQUENCE` global — butuh dynamic sequence name per (branch, doctor, date) biar reset harian; rapuh.
+- Upsert `INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING` = atomic, race-safe, 1 file, gampang di-test & di-cleanup (retention 30 hari).
+
+**Serverless pattern perubahan:**
+- Sebelum: `QueueService.getNextQueueNumber()` → `redis.incr('queue:{branch}:{doctor}')`
+- Sesudah: `supabase.rpc('get_next_queue_number', { p_branch_id, p_doctor_id, p_date })`
+- Endpoint konsumen: **C1, W2** (Task 2.4.3).
+
+**Scheduling note:** MIGRATION_PLAN/BATCH_4_PLAN assign sequence ke **Task 2.4.3** (C1/C2/W2), B1 (booking create) = Task 2.4.7.
+
+### 7.4 Method Expand Pattern
+
+Migrasi dari 1 route → N route per file, tetap pakai `express.Router()` + guard (`putOnly`/`postOnly`) + auth middleware + 404 fallback:
+
+| File | Route existing → tambahan |
+|---|---|
+| `bookings.ts` | PUT `/:id/cancel` → + POST `/` (B1) + PUT `/no-shows/admin/bookings/:id/mark-no-show` (S1) |
+| `doctors.ts` | GET `/`, GET `/:id/patients`, DELETE `/:id/leave` → + PUT `/me` (D0) + PUT `/:id/leave` (D1) + POST `/:id/ready-next` (D3) |
+| `patients.ts` | GET bucket → + PUT `/:id` (P1) + DELETE `/:id` (P2) + POST `/merge` (P3) |
+| `walkIn.ts` | POST `/create-profile` → + POST `/book-appointment` (W2) + POST `/convert-to-patient` (W3) |
+| `encounters.ts` | GET `/`, GET `/:id` → + POST `/` (E1) + PUT `/:id` (E2) + POST `/:id/complete` (E3) |
+| `notifications.ts` | N1+N2 → stabil (done) |
+| `checkIn.ts` (NEW) | C1 `POST /admin/check-in`, C2 `POST /admin/check-in/walk-in`, D4 `POST /queue/:id/check-in` |
+
+**vercel.json tambahan (di task terkait):** rewrite `/api/no-shows/:path*`, `/api/admin/check-in/:path*`, `/api/queue/:path*` → ke handler masing-masing.
+
+---
+
+## 8. ACCEPTANCE CRITERIA PER TASK
 
 - Endpoint respond sesuai status (201/200/400/401/403/404/409)
 - Response shape parity Express
@@ -361,6 +448,6 @@
 
 ---
 
-**Last Updated:** 2026-09-13 (task_2_4_0c)
-**Version:** 1.2 (update Task 2.4.0c — trigger status verified)
-**Author:** Task 2.4.0 pre-decision audit + Task 2.4.0b consistency verification
+**Last Updated:** 2026-09-14 (task_2_4_2a)
+**Version:** 1.3 (Task 2.4.2a — domain mapping 21 endpoint + Postgres sequence design §7)
+**Author:** Task 2.4.0 pre-decision audit + Task 2.4.0b consistency verification + Task 2.4.2a pre-audit
