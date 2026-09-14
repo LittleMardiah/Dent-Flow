@@ -95,3 +95,23 @@ branch_id uuid NOT NULL + FK fk_temp_patients_branch ok).
 
 Referensi: task_2_4_3c.log, task_2_4_3b_fix2.log.
 ===
+
+===
+TD-2.4.13: CRLF line-ending noise recurring di dentflow-backend/src/index.ts (BARU 2026-09-14)
+Status: ⚠️ OPEN
+
+Deskripsi: git diff nunjukin dentflow-backend/src/index.ts "modified" recurring
+(2x dalam 1 jam), padahal content identical. Root cause: Windows editor/tool
+simpan dengan CRLF (\r\n), git index simpan LF (\n). Setiap file ke-sentuh ->
+CRLF lagi -> diff false positive.
+
+Dampak: git status noisy, risk commit noise bareng code change. Recurring.
+
+Perbaikan: Opsi A (cepat) - git update-index --skip-worktree file ini.
+Opsi B (proper) - .gitattributes + git add --renormalize . (commit besar sekali).
+
+Estimasi: 15-30 menit.
+Prioritas: LOW (cosmetic, tidak blocker).
+
+Referensi: task_2_4_3b_w2_verify.log (analisa CRLF), task_2_4_3b_w2_e2e_r2.log.
+===
