@@ -4798,3 +4798,16 @@ CHECKED_IN/COMPLETED/NO_SHOW/CANCELLED, default 'PENDING' tidak valid lagi
 MIGRATE_EXIT_035=0 | SMOKE: PASS | HAPPY: PASS (28/28) | ERRORS: PASS (6/6)
 
 Next: Task 2.4.4b (extend walkIn.ts route /convert-to-patient).
+
+--- Task 2.4.4b Extend walkIn.ts /convert-to-patient ---
+Status: DONE — TSC exit 0, func count 11/12 (extend walkIn.ts), no file added.
+
+Route POST /walk-in/convert-to-patient. Auth public (parity Express routes:24).
+Flow: validasi body -> hash password (bcrypt 10 rounds) -> RPC convert_walk_in_temp_to_patient atomic -> sign JWT -> response 200.
+Parity dicek penuh dr Express handler/service/utils:
+  body camelCase (tempPatientId, email, password); response { data: { patientId: row.patient_id, token, refreshToken }, message 'Akun berhasil dibuat! Selamat datang di DentFlow.' }.
+Error mapping: 400 VALIDATION / 404 TEMP_PATIENT_NOT_FOUND / 409 TEMP_PATIENT_ALREADY_CONVERTED / 409 EMAIL_ALREADY_EXISTS / 500 RPC_ERROR.
+JWT access { userId: user_id, branchId, role, email } (24h), refresh { userId } (7d).
+Func count: 11/12 (extend).
+
+Next: commit -> deploy -> E2E (2.4.4c).

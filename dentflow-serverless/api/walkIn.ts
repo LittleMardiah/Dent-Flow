@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import express, { Request, Response } from 'express';
 import { Router } from 'express';
 import { getSupabase } from '../lib/supabase';
-import { extractBearerToken, verifyJwt, requireRole, enforceTenant, AuthUser } from '../lib/auth';
+import { extractBearerToken, verifyJwt, requireRole, enforceTenant, AuthUser, hashPassword, signAccessToken, signRefreshToken } from '../lib/auth';
 
 // ============================================================
 // Consolidated /walk-in — Task 2.4.1 (W1, FIRST WRITE)
@@ -232,6 +232,85 @@ router.all('/book-appointment', postOnly(async (req, res) => {
       success: true,
       data: { bookingId: booking.id, queueNumber },
       message: 'Booking walk-in berhasil dibuat',
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
+
+// ---------- POST /walk-in/convert-to-patient (W3) ----------
+// Parity Express walkIn.handler.convertTemporaryToPatient + service.
+// Auth: PUBLIC (parity Express routes:24 — no authMiddleware).
+// Flow: validasi body -> hash password -> RPC atomic -> sign JWT.
+router.all('/convert-to-patient', postOnly(async (req, res) => {
+  // Env guard
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return fail(res, 'ENV_MISSING: SUPABASE_* belum di-set.', 500, 'ENV_MISSING');
+  }
+  if (!process.env.JWT_SECRET) {
+    return fail(res, 'ENV_MISSING: JWT_SECRET belum di-set.', 500, 'ENV_MISSING');
+  }
+
+  const body = (req.body || {}) as {
+    tempPatientId?: string;
+    email?: string;
+    password?: string;
+  };
+
+  if (!body.tempPatientId || !body.email || !body.password) {
+    return fail(res, 'tempPatientId, email, and password are required', 400, 'VALIDATION_ERROR');
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // Hash password (bcrypt parity Express PasswordService, 10 rounds)
+    const passwordHash = await hashPassword(body.password);
+
+    // Call RPC — atomic multi-table conversion (migration 035)
+    const { data: rpcRows, error: rpcErr } = await supabase.rpc('convert_walk_in_temp_to_patient', {
+      p_temp_id: body.tempPatientId,
+      p_email: body.email,
+      p_password_hash: passwordHash,
+    });
+
+    if (rpcErr) {
+      // Map Postgres RAISE EXCEPTION message ke HTTP parity Express
+      const msg = String(rpcErr.message || '');
+      if (msg.includes('TEMP_PATIENT_NOT_FOUND')) {
+        return fail(res, 'Profil temporer tidak ditemukan', 404, 'TEMP_PATIENT_NOT_FOUND');
+      }
+      if (msg.includes('TEMP_PATIENT_ALREADY_CONVERTED')) {
+        return fail(res, 'Profil temporer sudah dikonversi', 409, 'TEMP_PATIENT_ALREADY_CONVERTED');
+      }
+      if (msg.includes('EMAIL_ALREADY_EXISTS')) {
+        return fail(res, 'Email sudah terdaftar', 409, 'EMAIL_ALREADY_EXISTS');
+      }
+      return fail(res, `RPC error: ${msg}`, 500, 'RPC_ERROR');
+    }
+
+    const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    if (!row) return fail(res, 'RPC returned empty', 500, 'RPC_ERROR');
+
+    // Sign tokens (parity Express JwtService)
+    const accessPayload = {
+      userId: row.user_id,
+      branchId: row.branch_id,
+      role: row.role,
+      email: row.email,
+    };
+    const token = signAccessToken(accessPayload);
+    const refreshToken = signRefreshToken(row.user_id);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        patientId: row.patient_id,
+        token,
+        refreshToken,
+      },
+      message: 'Akun berhasil dibuat! Selamat datang di DentFlow.',
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal error';
