@@ -5039,3 +5039,20 @@ Coding patients.ts route POST /merge SEBELUM getOnly('/:id') (L1).
 Func count: 11/11 (extend existing file, no new endpoint file).
 
 Next: commit -> deploy -> E2E (2.4.8a-e2e).
+
+--- Task 2.4.8a P3 mergePatients COMPLETE (E2E verified) ---
+Status: ✅ PASS
+
+Chain:
+- 2.4.8 pre-audit (task_2_4_8_preaudit.log) — CLEAR, 5 syarat
+- 2.4.8a coding (4504399) — migration 037 RPC + patients.ts /merge
+- 2.4.8a E2E (task_2_4_8a_e2e.log) — PASS
+
+E2E:
+- P3=200, mergedCount=1
+- DB: dup soft-deleted (deleted_at set), users.is_active=false, audit PATIENT_MERGED
+- Negatives: no-token=401, fake-id=404, empty-body=400
+
+Note: audit_logs row cannot be cleaned (immutable, TD-AUDIT-001) — by design.
+
+Next: 2.4.8b (D3 readyNextDoctor) + 2.4.8c (D4 queue check-in).
