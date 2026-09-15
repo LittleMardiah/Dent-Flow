@@ -5056,3 +5056,13 @@ E2E:
 Note: audit_logs row cannot be cleaned (immutable, TD-AUDIT-001) — by design.
 
 Next: 2.4.8b (D3 readyNextDoctor) + 2.4.8c (D4 queue check-in).
+
+--- Task 2.4.8b D3 readyNextDoctor (RPC + endpoint) ---
+Status: CODING DONE
+
+Migration 038 RPC call_next_patient (FOR UPDATE SKIP LOCKED).
+F4 fix: NULL::uuid AS patient_id.
+Coding doctors.ts POST /:id/ready-next (5 fixes applied).
+Deviation: websocket SKIP + audit QUEUE_CALLED added.
+
+Next: commit -> deploy -> E2E.

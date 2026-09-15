@@ -443,6 +443,66 @@ router.put('/:id/leave', async (req: Request, res: Response) => {
   }
 });
 
+// ---------- POST /api/doctors/:id/ready-next (D3) ----------
+router.post('/:id/ready-next', async (req: Request, res: Response) => {
+  const user = (req as AuthedRequest).user;
+  if (!user || user.role !== 'DOCTOR') {
+    return fail(res, 'Forbidden: endpoint ini untuk dokter', 403, 'FORBIDDEN');
+  }
+  const doctorId = req.params.id as string;
+  if (!doctorId) return fail(res, 'Parameter id dokter wajib diisi', 400, 'VALIDATION_ERROR');
+
+  try {
+    const supabase = getSupabase();
+    const { data: doctor, error: dErr } = await supabase
+      .from('doctors')
+      .select('id, user_id, branch_id')
+      .eq('id', doctorId)
+      .eq('branch_id', user.branchId)
+      .maybeSingle();
+    if (dErr) return fail(res, `Database error: ${dErr.message}`, 500, 'DB_ERROR');
+    if (!doctor) return fail(res, 'Dokter tidak ditemukan di branch ini', 404, 'DOCTOR_NOT_FOUND');
+    if (doctor.user_id !== user.userId) return fail(res, 'Forbidden: bukan data Anda', 403, 'FORBIDDEN');
+
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('call_next_patient', {
+      p_doctor_id: doctorId,
+      p_branch_id: user.branchId,
+    });
+    if (rpcErr) return fail(res, `RPC error: ${rpcErr.message}`, 500, 'RPC_ERROR');
+
+    const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+    if (!row) {
+      return res.status(200).json({
+        success: true, data: null,
+        message: 'Tidak ada pasien menunggu',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const { error: auditErr } = await supabase.from('audit_logs').insert({
+      branch_id: user.branchId, user_id: user.userId,
+      event_type: 'QUEUE_CALLED', entity_type: 'QUEUE', entity_id: row.queue_id,
+      new_values: { queue_number: row.queue_number, status: 'BEING_CALLED' },
+      description: `Queue ${row.queue_number} called`,
+    });
+    if (auditErr) console.error('QUEUE_CALLED audit failed:', auditErr.message);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: row.queue_id, queue_number: row.queue_number,
+        booking_id: row.booking_id, doctor_id: row.doctor_id,
+        status: row.status, called_at: row.called_at,
+      },
+      message: 'Pasien berikutnya dipanggil',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+});
+
 // ---------- 404 fallback domain doctors ----------
 router.use((req: Request, res: Response) => {
   return fail(res, 'Route tidak ditemukan di domain doctors.', 404, 'NOT_FOUND');
