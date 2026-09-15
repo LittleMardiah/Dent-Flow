@@ -5264,3 +5264,25 @@ Body: { payment_method, paid_amount (>0), notes? }.
 Admin only. Audit INVOICE_MARKED_PAID.
 
 Func count: 12/12.
+
+--- Task 4b-1c I1 admin mark-paid COMPLETE (E2E verified) ---
+Status: ✅ PASS
+
+Chain:
+- 4b-1 pre-audit: I1 analysis
+- 4b-1c (5e47a87): POST /admin/:id/mark-paid
+- 4b-1c E2E (task_4b_1c_e2e.log): PASS
+
+E2E:
+- I1 happy=200, idempotent=200
+- DB: status=PAID, payment_status=PAID, paid_amount=200000, CASH
+- Negatives: no-token=401, doctor-token=403 (admin-only), fake=404, no-paid_amount=400, GET=405
+
+Design:
+- Auth: ADMIN_BRANCH only (beda dari I3 yang include DOCTOR).
+- Body: { payment_method, paid_amount (>0 required), notes? }.
+- Amount explicit (bukan default amount_due seperti I3).
+
+Batch 4b-1 progress: I1 ✅ I2 ✅ I3 ✅ (I4 pending).
+
+Next: Task 4b-1d (I4 addInvoicePayment).
