@@ -5211,3 +5211,24 @@ Design:
 Func count: 12/12.
 
 Next: 4b-1b (I3 mark-paid via web state machine).
+
+--- Task 4b-1b I3 mark-paid via web ---
+Status: PASSED
+
+Route PUT /invoices/:id/mark-paid.
+State machine path (parity Express InvoiceStateMachineService.transitionToPaid).
+Body: { payment_method, transaction_id?, amount? }.
+Idempotent: 200+data when already PAID.
+Auth: ADMIN_BRANCH + DOCTOR.
+Audit INVOICE_MARKED_PAID.
+Trigger trg_log_invoice_payment auto-INSERT payment history.
+CHECK valid_paid_state: PAID -> paid_at + paid_amount NOT NULL.
+Payment method validation: CASH|TRANSFER|GATEWAY.
+
+Func count: 12/12.
+TSC: clean.
+VERIFIED live (transaction ROLLBACK):
+- UPDATE status=PAID/payment_status=PAID/paid_at/paid_amount OK (valid_paid_state CHECK pass).
+- Trigger trg_log_invoice_payment auto-INSERT invoice_payments (status=PAID, amount=amount_due).
+- invoices TIDAK punya kolom transaction_id -> trigger insert NULL (column absent);
+  transaction_id dari body dipakai untuk audit description (parity Express).
