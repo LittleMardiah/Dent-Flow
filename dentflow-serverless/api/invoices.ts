@@ -336,6 +336,154 @@ router.all('/admin/:id/undo-payment', async (req: Request, res: Response) => {
   }
 });
 
+// ---------- POST /api/admin/invoices/:id/mark-paid (I1 — admin mark-paid variant) ----------
+// Rewrite: /api/admin/invoices/:path* -> /api/invoices?path=admin/$1
+//   -> reconstruct: /api/invoices/admin/:id/mark-paid -> route POST /admin/:id/mark-paid.
+// Parity Express: invoice.handler.markPaid -> InvoiceService.markPaid (invoice.service.ts).
+//   Mount Express: /api/admin/invoices + roleMiddleware(['ADMIN_BRANCH']).
+// Body: { payment_method (required), paid_amount (>0 required), notes? }.
+// Idempotent: sudah PAID -> 200 + invoice (parity invoice.service.markPaid).
+// Audit INVOICE_MARKED_PAID (old_values + new_values).
+router.all('/admin/:id/mark-paid', async (req: Request, res: Response) => {
+  if (req.method !== 'POST') {
+    return fail(res, 'Method not allowed', 405, 'METHOD_NOT_ALLOWED');
+  }
+  const authedReq = req as AuthedRequest;
+  const user = authedReq.user;
+  if (!user || user.role !== 'ADMIN_BRANCH') {
+    return fail(res, 'Forbidden: ADMIN_BRANCH only', 403, 'FORBIDDEN');
+  }
+
+  const invoiceId = req.params.id;
+  if (!invoiceId) return fail(res, 'Parameter id invoice wajib diisi', 400, 'VALIDATION_ERROR');
+
+  const { payment_method, paid_amount, notes } = (req.body || {}) as {
+    payment_method?: string;
+    paid_amount?: number;
+    notes?: string;
+  };
+
+  if (!payment_method || !String(payment_method).trim()) {
+    return fail(res, 'payment_method is required', 400, 'VALIDATION_ERROR');
+  }
+
+  const validMethods = ['CASH', 'TRANSFER', 'GATEWAY'];
+  if (!validMethods.includes(String(payment_method).trim())) {
+    return fail(res, 'Invalid payment_method. Must be CASH, TRANSFER, or GATEWAY', 400, 'VALIDATION_ERROR');
+  }
+
+  if (!paid_amount || Number(paid_amount) <= 0) {
+    return fail(res, 'paid_amount must be > 0', 400, 'VALIDATION_ERROR');
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // 1. Load invoice (parity state machine: SELECT FOR UPDATE -> optimistic via status check)
+    const { data: invoice, error: invErr } = await supabase
+      .from('invoices')
+      .select('id, branch_id, status, amount_due, payment_status, payment_method')
+      .eq('id', invoiceId)
+      .maybeSingle();
+
+    if (invErr) return fail(res, `Database error: ${invErr.message}`, 500, 'DB_ERROR');
+    if (!invoice) return fail(res, 'Invoice not found', 404, 'INVOICE_NOT_FOUND');
+
+    // 2. Idempotent: sudah PAID -> return current (parity invoice.service.markPaid)
+    if (invoice.status === 'PAID') {
+      const { data: current } = await supabase
+        .from('invoices')
+        .select('*, patients:patient_id ( full_name )')
+        .eq('id', invoiceId)
+        .maybeSingle();
+      return res.status(200).json({
+        success: true,
+        data: current || mapInvoice(invoice),
+        message: 'Invoice already paid',
+      });
+    }
+
+    // 3. Validate transition: only UNPAID/PARTIAL -> PAID (parity InvoiceStateValidator)
+    const validFromStatuses = ['UNPAID', 'PARTIAL'];
+    if (!validFromStatuses.includes(invoice.status)) {
+      return fail(res, 'Invalid state transition', 409, 'INVALID_TRANSITION');
+    }
+
+    // 4. Update invoice (parity invoice.service.markPaid: paid_amount DIWAJIBKAN explicit)
+    //    notes: parity Express service ignore (_notes not persisted).
+    const paidAmount = Number(paid_amount);
+
+    const { error: updateErr } = await supabase
+      .from('invoices')
+      .update({
+        status: 'PAID',
+        payment_status: 'PAID',
+        paid_at: new Date().toISOString(),
+        amount_paid: paidAmount,
+        paid_amount: paidAmount,
+        payment_method: String(payment_method).trim(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', invoiceId);
+
+    if (updateErr) return fail(res, `Database error: ${updateErr.message}`, 500, 'DB_ERROR');
+
+    // 5. Audit INVOICE_MARKED_PAID (parity auditService.logEvent: oldValues + newValues)
+    const { error: auditErr } = await supabase.from('audit_logs').insert({
+      branch_id: user.branchId,
+      user_id: user.userId,
+      event_type: 'INVOICE_MARKED_PAID',
+      entity_type: 'INVOICE',
+      entity_id: invoiceId,
+      description: `Invoice ${invoiceId} marked as paid by admin ${user.userId}${notes ? ` (${notes})` : ''}`,
+      old_values: {
+        status: invoice.status,
+        payment_status: invoice.payment_status,
+      },
+      new_values: {
+        status: 'PAID',
+        payment_status: 'PAID',
+        payment_method: String(payment_method).trim(),
+        paid_amount: paidAmount,
+      },
+    });
+    if (auditErr) console.error('INVOICE_MARKED_PAID audit failed:', auditErr.message);
+
+    // 6. Re-fetch invoice + payment history (trigger trg_log_invoice_payment auto-INSERT)
+    const { data: updatedInvoice } = await supabase
+      .from('invoices')
+      .select('*, patients:patient_id ( full_name )')
+      .eq('id', invoiceId)
+      .maybeSingle();
+
+    const { data: payments } = await supabase
+      .from('invoice_payments')
+      .select('id, amount, payment_method, paid_at, transaction_id, status')
+      .eq('invoice_id', invoiceId)
+      .order('paid_at', { ascending: true });
+
+    const detail = mapInvoice(updatedInvoice || invoice);
+    detail.payments = (payments || []).map((row: any) => ({
+      id: row.id,
+      amount: Number(row.amount) || 0,
+      method: row.payment_method,
+      paidAt: row.paid_at,
+      notes: null,
+      adminName: user.userId,
+      status: row.status,
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: detail,
+      message: 'Invoice marked as paid',
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+});
+
 // ---------- PUT /api/invoices/:id/mark-paid (I3 — canonical state machine) ----------
 // Parity Express: InvoicePaymentHandler.markPaid -> InvoicePaymentService.markInvoicePaid
 //   -> InvoiceStateMachineService.transitionToPaid.

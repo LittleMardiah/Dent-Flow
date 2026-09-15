@@ -5255,3 +5255,12 @@ Func count: 12/12.
 Security note: leftover /tmp/opencode/e2e_admin_token (full token) — cleaned up.
 
 Next: 4b-1c (I1 admin mark-paid variant, terakhir I1-I4).
+
+--- Task 4b-1c I1 admin mark-paid variant ---
+Status: DONE (implemented, tsc exit 0, func 12/12)
+
+Route POST /admin/:id/mark-paid (via rewrite /api/admin/invoices).
+Body: { payment_method, paid_amount (>0), notes? }.
+Admin only. Audit INVOICE_MARKED_PAID.
+
+Func count: 12/12.
