@@ -5150,3 +5150,17 @@ Summary:
 
 Func count: 12/12 AT LIMIT.
 Next: Batch 4b (I1 I2 I3 I4 + S2 S3) — WAJIB masuk file existing.
+
+--- Task 4b-1-PREREQ migration 040 DROP duplicate trigger ---
+Status: DONE (migration 040 applied, verified)
+
+Root cause (pre-audit 4b-1 F1): 2 trigger duplikat di invoices
+(005 + 023) -> double INSERT invoice_payments -> UNIQUE violation.
+
+Fix: migration 040 DROP TRIGGER trg_invoice_payment_log.
+Verify: UPDATE status PAID -> single INSERT (delta=1).
+- Before: trg_invoice_payment_log (005) + trg_log_invoice_payment (023) AKTIF.
+- After: hanya trg_log_invoice_payment + invoice_status_reversal_trigger.
+- Rollback-test: PAYMENT_INSERT_DELTA=1, VERIFY_SINGLE_INSERT=PASS.
+
+Next: coding I2 (soft undo) -> I3 -> I1 -> I4.
