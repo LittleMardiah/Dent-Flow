@@ -5114,3 +5114,39 @@ Func count: 11 -> 12 AT LIMIT.
 Batch 4b S2/S3 WAJIB masuk file existing.
 
 Next: commit -> deploy -> E2E.
+
+--- Task 2.4.8c D4 queue check-in COMPLETE (E2E verified) ---
+Status: ✅ PASS
+
+Chain:
+- 2.4.8c pre-audit: design decision (Opsi A patient_id NULL guard)
+- 2.4.8c coding (4540ec6): migration 039 RPC + api/queue.ts (new)
+- 2.4.8c E2E (task_2_4_8c_e2e.log): PASS
+
+E2E:
+- D4=200, DB queue COMPLETED + completed_at, encounter ONGOING + patient_id
+- Audit: QUEUE_COMPLETED + ENCOUNTER_STARTED (2 rows)
+- Negatives: 401 / 403 / 404
+- Cleanup verified empty
+
+Design:
+- Opsi A (guard 409 BOOKING_WALKIN_NOT_CONVERTED, parity E1)
+- RPC doctor_checkin_patient resolve doctors.id internal (L2 fix)
+- Guard status WAITING + BEING_CALLED (bukan strict WAITING)
+
+============================================================
+BATCH 4a — CORE WRITE — COMPLETE (21/21 endpoint)
+============================================================
+
+Summary:
+- Task 2.4.1: D2 W1 B2 N1 N2 (simple writes) ✅
+- Task 2.4.2: D0 D1 P1 P2 S1 (simple tx writes) ✅
+- Task 2.4.3: C1 C2 W2 (queue + check-in, migration 032) ✅
+- Task 2.4.4: W3 (convert-to-patient, migration 035) ✅
+- Task 2.4.5: E1 E2 (encounter CRUD) ✅
+- Task 2.4.6: E3 (complete encounter, migration 036) ✅
+- Task 2.4.7: B1 (create scheduled booking) ✅
+- Task 2.4.8: P3 D3 D4 (merge, ready-next, queue check-in, migration 037-039) ✅
+
+Func count: 12/12 AT LIMIT.
+Next: Batch 4b (I1 I2 I3 I4 + S2 S3) — WAJIB masuk file existing.
