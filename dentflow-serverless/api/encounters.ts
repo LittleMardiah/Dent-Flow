@@ -410,6 +410,179 @@ router.put('/:id', putOnly(async (req, res) => {
 }));
 
 // ---------- GET /api/encounters/:id (detail) ----------
+// ---------- POST /api/encounters/:id/complete (E3) ----------
+// Parity Express completeEncounter + InvoiceGenerationService.
+// DESIGN: sequential statement (Supabase auto-commit per statement).
+// Trigger trg_generate_invoice_on_encounter_complete handle shell
+// (amount_due=0) setelah UPDATE encounters SET status='COMPLETED'.
+// Serverless ENRICH amount_due via UPDATE terpisah.
+// WAJIB SEBELUM router.all('/:id', getOnly) supaya tidak 405.
+router.post('/:id/complete', postOnly(async (req, res) => {
+  const user = req.user;
+  if (!['DOCTOR', 'ADMIN_BRANCH'].includes(user.role)) {
+    return fail(res, 'Forbidden', 403, 'FORBIDDEN');
+  }
+
+  const encounterId = req.params.id as string;
+
+  try {
+    const supabase = getSupabase();
+
+    // 1. Baca encounter + scope branch
+    const { data: enc, error: eErr } = await supabase
+      .from('encounters')
+      .select('id, branch_id, booking_id, doctor_id, patient_id, status')
+      .eq('id', encounterId)
+      .eq('branch_id', user.branchId)
+      .maybeSingle();
+    if (eErr) return fail(res, `Database error: ${eErr.message}`, 500, 'DB_ERROR');
+    if (!enc) return fail(res, 'Pemeriksaan tidak ditemukan', 404, 'ENCOUNTER_NOT_FOUND');
+
+    // Parity Express: status harus ONGOING
+    if (enc.status !== 'ONGOING') {
+      return fail(res, 'Pemeriksaan sudah selesai atau dibatalkan', 409, 'ENCOUNTER_NOT_ONGOING');
+    }
+
+    // Ownership (deviasi positive): DOCTOR harus match encounter.doctor_id
+    if (user.role === 'DOCTOR') {
+      const { data: doc, error: dErr } = await supabase
+        .from('doctors')
+        .select('id')
+        .eq('user_id', user.userId)
+        .maybeSingle();
+      if (dErr) return fail(res, `Database error: ${dErr.message}`, 500, 'DB_ERROR');
+      if (!doc || doc.id !== enc.doctor_id) {
+        return fail(res, 'Forbidden: bukan encounter Anda', 403, 'FORBIDDEN');
+      }
+    }
+
+    // 2. UPDATE encounters SET status='COMPLETED' -> trigger fire -> INSERT shell
+    const { error: updErr } = await supabase
+      .from('encounters')
+      .update({
+        status: 'COMPLETED',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', encounterId);
+    if (updErr) return fail(res, `Database error: ${updErr.message}`, 500, 'DB_ERROR');
+
+    // 3. SELECT invoice shell (sudah committed via trigger)
+    const { data: inv, error: iErr } = await supabase
+      .from('invoices')
+      .select('id, invoice_number, amount_due, amount_paid, status, booking_id, branch_id, patient_id, encounter_id, created_at')
+      .eq('encounter_id', encounterId)
+      .maybeSingle();
+    if (iErr) return fail(res, `Database error: ${iErr.message}`, 500, 'DB_ERROR');
+    if (!inv) return fail(res, 'Invoice shell tidak ter-create (trigger?)', 500, 'INVOICE_NOT_FOUND');
+
+    // 4. Hitung amount_due = dp_amount + treatment_price
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('dp_amount')
+      .eq('id', enc.booking_id)
+      .maybeSingle();
+    const dpAmount = Number(booking?.dp_amount || 0);
+
+    // Treatment price: parity InvoiceGenerationService.getTreatmentPrice
+    // (exact ILIKE dulu, fallback partial %treatment%).
+    // MATCH BY NAME — BUKAN by code.
+    const { data: encFull } = await supabase
+      .from('encounters')
+      .select('treatment')
+      .eq('id', encounterId)
+      .maybeSingle();
+    const treatmentName = encFull?.treatment || '';
+
+    let treatmentPrice = 0;
+    if (treatmentName) {
+      const { data: spExact } = await supabase
+        .from('service_pricing')
+        .select('price, name')
+        .eq('is_active', true)
+        .ilike('name', treatmentName)
+        .limit(1)
+        .maybeSingle();
+      if (spExact) {
+        treatmentPrice = Number(spExact.price || 0);
+      } else {
+        const { data: spPartial } = await supabase
+          .from('service_pricing')
+          .select('price, name')
+          .eq('is_active', true)
+          .ilike('name', '%' + treatmentName + '%')
+          .limit(1)
+          .maybeSingle();
+        treatmentPrice = Number(spPartial?.price || 0);
+      }
+    }
+
+    const finalAmount = dpAmount + treatmentPrice;
+
+    // 5. UPDATE invoices SET amount_due = finalAmount
+    const { error: enrichErr } = await supabase
+      .from('invoices')
+      .update({ amount_due: finalAmount, status: 'UNPAID' })
+      .eq('id', inv.id);
+    if (enrichErr) return fail(res, `Database error: ${enrichErr.message}`, 500, 'DB_ERROR');
+
+    // Re-select untuk response (bukan stale)
+    const { data: invFinal } = await supabase
+      .from('invoices')
+      .select('id, invoice_number, amount_due, amount_paid, status, booking_id, branch_id, patient_id, encounter_id, created_at')
+      .eq('id', inv.id)
+      .maybeSingle();
+
+    // 6. Audit
+    await supabase.from('audit_logs').insert({
+      branch_id: enc.branch_id,
+      user_id: user.userId,
+      event_type: 'ENCOUNTER_COMPLETED',
+      entity_type: 'ENCOUNTER',
+      entity_id: encounterId,
+      description: 'Pemeriksaan selesai',
+      old_values: { status: 'ONGOING' },
+      new_values: { status: 'COMPLETED' },
+    });
+
+    await supabase.from('audit_logs').insert({
+      branch_id: enc.branch_id,
+      user_id: user.userId,
+      event_type: 'INVOICE_GENERATED',
+      entity_type: 'INVOICE',
+      entity_id: inv.id,
+      description: `Invoice generated for encounter ${encounterId}`,
+      new_values: {
+        invoice_number: invFinal?.invoice_number,
+        amount_due: finalAmount,
+        status: 'UNPAID',
+        dp_amount: dpAmount,
+        treatment_price: treatmentPrice,
+        treatment: treatmentName,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        encounter: {
+          id: enc.id,
+          bookingId: enc.booking_id,
+          doctorId: enc.doctor_id,
+          patientId: enc.patient_id,
+          branchId: enc.branch_id,
+          status: 'COMPLETED',
+          completedAt: new Date().toISOString(),
+        },
+        invoice: invFinal || inv,
+      },
+      message: 'Pemeriksaan selesai, invoice dibuat',
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
+
 router.all('/:id', getOnly(async (req, res) => {
   const user = req.user;
   const encounterId = req.params.id;

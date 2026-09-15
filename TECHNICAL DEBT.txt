@@ -170,3 +170,25 @@ Pattern v2 (CEK -> VETO -> FIX -> VERIFY) valid dan tetap dipakai.
 
 Referensi: task_2_4_5_e2e.log, task_2_4_5_fix2.log, task_2_4_5_fix3.log.
 ===
+
+===
+TD-2.4.19: Express E3 completeEncounter deadlock dengan trigger live (BARU 2026-09-15)
+Status: ⚠️ OPEN (Express legacy only, deprecate Phase 4)
+
+Deskripsi: Express encounter.service.completeEncounter buka tx A (conn A),
+UPDATE status=COMPLETED -> trigger INSERT shell (uncommitted di A).
+Lalu panggil generateInvoiceForEncounter yang buka tx B (conn B) ->
+SELECT existing invoice (tidak lihat shell A via MVCC) -> INSERT invoice
+-> BLOCK on UNIQUE(encounter_id) menunggu commit A -> HANG (no statement_timeout).
+
+Dampak: Express E3 HANG kalau dipanggil (trigger live). Serverless sudah
+pakai flow sequential yang aman.
+
+Perbaikan: (a) Express: satukan tx (pass client ke generateInvoiceForEncounter)
+atau refactor jadi trigger-shell + UPDATE amount (parity serverless),
+atau (b) DROP Express legacy di Phase 4 (rekomendasi).
+
+Estimasi: 2-3 jam. Prioritas: LOW (Express akan deprecated).
+
+Referensi: task_2_4_6_preaudit.log, task_2_4_6.log.
+===

@@ -4907,3 +4907,23 @@ TD:
 Func count: 11/12.
 
 Next: Task 2.4.6 (E3 completeEncounter, HIGH RISK — trigger DB dependency).
+
+--- Task 2.4.6 E3 completeEncounter (sequential) ---
+Status: (isi setelah verify)
+
+Design: sequential statement (bukan nested tx Express yang deadlock
+dengan trigger live). Flow: UPDATE encounter -> trigger shell ->
+SELECT -> hitung dp + treatment_price -> UPDATE amount_due ->
+audit ENCOUNTER_COMPLETED + INVOICE_GENERATED -> response.
+
+CATATAN EKSEKUSI (2026-09-15):
+- VETO Q4 MISMATCH: heredoc BAGIAN 3 hanya partial match %treatment%.
+  PERBAIKI: exact-first (ILIKE treatment tanpa wildcard) lalu fallback
+  partial — parity penuh InvoiceGenerationService.getTreatmentPrice.
+- Route E3 disisipkan di baris 420 (sebelum all('/:id', getOnly) 586,
+  setelah put('/:id') 336). TSC_EXIT=0. FUNC_COUNT=11 (extend).
+
+TD-2.4.19: Express E3 deadlock (pre-existing, deprecate Phase 4).
+Func count: 11/12 (extend).
+
+Next: commit -> deploy -> E2E (2.4.6-e2e).
