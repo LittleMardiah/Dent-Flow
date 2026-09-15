@@ -631,6 +631,180 @@ router.all('/:id/mark-paid', async (req: Request, res: Response) => {
   }
 });
 
+// ---------- POST /api/invoices/:id/payments (I4 — addInvoicePayment) ----------
+// Parity Express: invoiceWeb.handler.addInvoicePayment (invoiceWeb.handler.ts)
+//   -> invoiceStateMachineService.transitionToPaid (invoiceStateMachine.service.ts)
+//   -> post-commit UPDATE invoices SET paid_by_admin_id = userId
+// Auth: ADMIN_BRANCH + DOCTOR (ALLOWED_ROLES at router level).
+// Body: { amount (>0, <= amount_due), method: CASH|TRANSFER|GATEWAY, notes? }.
+// Beda vs I3 (/mark-paid): route /payments, field name `amount` + `method`
+//   (bukan `paid_amount`/`payment_method`), validasi amount <= amount_due,
+//   post-commit update paid_by_admin_id, allow DOCTOR juga (sama seperti I3).
+// Trigger trg_log_invoice_payment auto-INSERT ke invoice_payments (append-only audit trail).
+// CHECK valid_paid_state: PAID -> paid_at + paid_amount NOT NULL.
+router.all('/:id/payments', async (req: Request, res: Response) => {
+  if (req.method !== 'POST') {
+    return fail(res, 'Method not allowed', 405, 'METHOD_NOT_ALLOWED');
+  }
+  const authedReq = req as AuthedRequest;
+  const user = authedReq.user;
+
+  const invoiceId = req.params.id;
+  if (!invoiceId) return fail(res, 'Parameter id invoice wajib diisi', 400, 'VALIDATION_ERROR');
+
+  const amount = Number((req.body || {}).amount);
+  const method = String((req.body || {}).method || 'CASH').trim().toUpperCase();
+  const notes = (req.body || {}).notes as string | undefined;
+
+  // Parity Express addInvoicePayment: nominal harus > 0
+  if (!amount || amount <= 0) {
+    return fail(res, 'Nominal harus lebih dari 0', 400, 'VALIDATION_ERROR');
+  }
+
+  // Parity CHECK constraint invoice_payments.payment_method
+  const validMethods = ['CASH', 'TRANSFER', 'GATEWAY'];
+  if (!validMethods.includes(method)) {
+    return fail(res, 'Metode pembayaran tidak valid', 400, 'VALIDATION_ERROR');
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // 1. Load invoice (parity state machine SELECT FOR UPDATE -> optimistic status check)
+    const { data: invoice, error: invErr } = await supabase
+      .from('invoices')
+      .select('id, branch_id, status, amount_due, payment_status, payment_method')
+      .eq('id', invoiceId)
+      .maybeSingle();
+
+    if (invErr) return fail(res, `Database error: ${invErr.message}`, 500, 'DB_ERROR');
+    if (!invoice) return fail(res, 'Invoice tidak ditemukan', 404, 'INVOICE_NOT_FOUND');
+
+    // 2. Validate amount <= amount_due (parity Express addInvoicePayment)
+    if (Number(invoice.amount_due) < amount) {
+      return fail(res, 'Nominal melebihi total invoice', 400, 'VALIDATION_ERROR');
+    }
+
+    // 3. Idempotent: already PAID -> return current (parity transitionToPaid)
+    if (invoice.status === 'PAID') {
+      const { data: current } = await supabase
+        .from('invoices')
+        .select('*, patients:patient_id ( full_name )')
+        .eq('id', invoiceId)
+        .maybeSingle();
+
+      const { data: payments } = await supabase
+        .from('invoice_payments')
+        .select('id, amount, payment_method, paid_at, transaction_id, status')
+        .eq('invoice_id', invoiceId)
+        .order('paid_at', { ascending: true });
+
+      const detail = mapInvoice(current || invoice);
+      detail.payments = (payments || []).map((row: any) => ({
+        id: row.id,
+        amount: Number(row.amount) || 0,
+        method: row.payment_method,
+        paidAt: row.paid_at,
+        notes: null,
+        adminName: user.userId,
+        status: row.status,
+      }));
+
+      return res.status(200).json({
+        success: true,
+        data: detail,
+        message: 'Invoice sudah dibayar',
+      });
+    }
+
+    // 4. Validate transition: only UNPAID/PARTIAL -> PAID (parity InvoiceStateValidator)
+    const validFromStatuses = ['UNPAID', 'PARTIAL'];
+    if (!validFromStatuses.includes(invoice.status)) {
+      return fail(res, 'Invalid state transition', 409, 'INVALID_TRANSITION');
+    }
+
+    // 5. Update invoice (parity transitionToPaid: status=PAID, payment_status=PAID,
+    //    paid_at=NOW(), amount_paid=..., paid_amount=..., payment_method=..., updated_at=NOW())
+    const txnId = `ADMIN-${Date.now()}`;
+
+    const { error: updateErr } = await supabase
+      .from('invoices')
+      .update({
+        status: 'PAID',
+        payment_status: 'PAID',
+        paid_at: new Date().toISOString(),
+        amount_paid: amount,
+        paid_amount: amount,
+        payment_method: method,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', invoiceId);
+
+    if (updateErr) return fail(res, `Database error: ${updateErr.message}`, 500, 'DB_ERROR');
+
+    // 6. POST-COMMIT UPDATE paid_by_admin_id (parity Express handler; tidak block response kalau gagal)
+    const { error: paidByErr } = await supabase
+      .from('invoices')
+      .update({ paid_by_admin_id: user.userId })
+      .eq('id', invoiceId);
+    if (paidByErr) console.error('paid_by_admin_id update failed:', paidByErr.message);
+
+    // 7. Audit INVOICE_MARKED_PAID (parity transitionToPaid: auditService.logEvent)
+    const { error: auditErr } = await supabase.from('audit_logs').insert({
+      branch_id: user.branchId,
+      user_id: user.userId,
+      event_type: 'INVOICE_MARKED_PAID',
+      entity_type: 'INVOICE',
+      entity_id: invoiceId,
+      description: `Invoice ${invoiceId} marked as PAID via ${method} (txn: ${txnId})${notes ? ` (${notes})` : ''}`,
+      old_values: {
+        status: invoice.status,
+        payment_status: invoice.payment_status,
+      },
+      new_values: {
+        status: 'PAID',
+        payment_status: 'PAID',
+        payment_method: method,
+        paid_amount: amount,
+      },
+    });
+    if (auditErr) console.error('INVOICE_MARKED_PAID audit failed:', auditErr.message);
+
+    // 8. Re-fetch invoice + payment history (trigger trg_log_invoice_payment auto-INSERT)
+    const { data: updatedInvoice } = await supabase
+      .from('invoices')
+      .select('*, patients:patient_id ( full_name )')
+      .eq('id', invoiceId)
+      .maybeSingle();
+
+    const { data: payments } = await supabase
+      .from('invoice_payments')
+      .select('id, amount, payment_method, paid_at, transaction_id, status')
+      .eq('invoice_id', invoiceId)
+      .order('paid_at', { ascending: true });
+
+    const detail = mapInvoice(updatedInvoice || invoice);
+    detail.payments = (payments || []).map((row: any) => ({
+      id: row.id,
+      amount: Number(row.amount) || 0,
+      method: row.payment_method,
+      paidAt: row.paid_at,
+      notes: null,
+      adminName: user.userId,
+      status: row.status,
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: detail,
+      message: 'Pembayaran berhasil dicatat',
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+});
+
 // ---------- GET /api/invoices/:id (detail) ----------
 router.all('/:id', getOnly(async (req, res) => {
   const invoiceId = req.params.id;

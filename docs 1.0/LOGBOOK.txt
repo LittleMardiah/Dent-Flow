@@ -5286,3 +5286,16 @@ Design:
 Batch 4b-1 progress: I1 ✅ I2 ✅ I3 ✅ (I4 pending).
 
 Next: Task 4b-1d (I4 addInvoicePayment).
+
+--- Task 4b-1d I4 addInvoicePayment ---
+Status: SELESAI
+
+Route POST /:id/payments (state machine + post-commit paid_by_admin_id).
+Body: { amount, method, notes? }.
+Auth: ADMIN_BRANCH + DOCTOR.
+Response: full detail (payments[] + patient_name).
+
+TSC: PASS (exit 0). Func count: 12/12.
+Parity: invoiceWeb.handler.addInvoicePayment -> transitionToPaid + paid_by_admin_id.
+Beda vs I3: route /payments, field amount/method, validasi amount <= amount_due,
+  POST-COMMIT paid_by_admin_id.
