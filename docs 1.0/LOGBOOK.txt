@@ -5327,3 +5327,20 @@ BATCH 4b-1 — INVOICE PAYMENT (I1-I4) COMPLETE
 
 Func count: 12/12 AT LIMIT.
 Next: Batch 4b-2 (S2/S3 webhook) — WAJIB masuk file existing (func limit).
+
+--- Task 4b-2 S2 + S3 webhook ---
+Status: CODING DONE (pending E2E)
+
+S2 = POST /api/webhooks/midtrans (public, no-auth).
+- HMAC-SHA256 verify + ENV GUARD 500 ENV_MISSING.
+- Idempotency x-midtrans-webhook-id.
+- 3-step invoice lookup.
+- Mount webhookRouter terpisah /api/webhooks.
+- Safeguard conditional (webhooks/ prefix).
+
+S3 = POST /api/admin/webhooks/:id/replay (admin, skip validation).
+
+vercel.json: + 2 rewrite rules.
+Func count: 12/12. TSC: PASS.
+
+Next: E2E S2/S3 (sandbox key udah di-set Vercel env).

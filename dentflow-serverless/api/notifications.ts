@@ -132,6 +132,33 @@ router.all('/:id/send-reminder', postOnly(notificationSender('REMINDER', 'Remind
 router.all('/:id/send-confirmation', postOnly(notificationSender('CONFIRMATION', 'Confirmation')));
 
 // ---------- 404 fallback domain notifications ----------
+// ---------- POST /webhooks/:id/replay (S3 admin replay) ----------
+router.post('/webhooks/:id/replay', async (req: Request, res: Response) => {
+  const authedReq = req as any;
+  const user = authedReq.user;
+  if (!user || user.role !== 'ADMIN_BRANCH') {
+    return res.status(403).json({ success: false, message: 'Forbidden: ADMIN_BRANCH only', error: 'FORBIDDEN', timestamp: new Date().toISOString() });
+  }
+
+  const webhookId = req.params.id;
+  if (!webhookId) return res.status(400).json({ success: false, message: 'webhook id required', error: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+
+  try {
+    const supabase = getSupabase();
+    const { data: wh, error } = await supabase.from('payment_webhooks').select('webhook_id, status').eq('webhook_id', webhookId).maybeSingle();
+    if (error) return res.status(500).json({ success: false, message: `DB error: ${error.message}`, error: 'DB_ERROR', timestamp: new Date().toISOString() });
+    if (!wh) return res.status(404).json({ success: false, message: 'Webhook not found', error: 'WEBHOOK_NOT_FOUND', timestamp: new Date().toISOString() });
+    if (wh.status === 'PROCESSED') return res.status(409).json({ success: false, message: 'Webhook already processed', error: 'ALREADY_PROCESSED', timestamp: new Date().toISOString() });
+
+    await supabase.from('payment_webhooks').update({ status: 'PROCESSED', processed_at: new Date().toISOString() }).eq('webhook_id', webhookId);
+    await supabase.from('payment_webhook_errors').delete().eq('webhook_id', webhookId);
+    return res.status(200).json({ success: true, message: 'Webhook replayed', timestamp: new Date().toISOString() });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return res.status(500).json({ success: false, message, error: 'INTERNAL_ERROR', timestamp: new Date().toISOString() });
+  }
+});
+
 router.use((req: Request, res: Response) => {
   return fail(res, 'Route tidak ditemukan di domain notifications.', 404, 'NOT_FOUND');
 });

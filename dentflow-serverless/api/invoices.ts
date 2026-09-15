@@ -862,9 +862,95 @@ router.use((req: Request, res: Response) => {
 // ============================================================
 // Vercel handler: mount router di prefix '/api/invoices'
 // ============================================================
+
+// ============================================================
+// S2: Webhook router (NO AUTH — public)
+// ============================================================
+const crypto = require('crypto');
+const webhookRouter = express.Router();
+
+webhookRouter.post('/midtrans', async (req: Request, res: Response) => {
+  const serverKey = process.env.MIDTRANS_SERVER_KEY;
+  if (!serverKey) {
+    return res.status(500).json({ success: false, error: 'ENV_MISSING', message: 'MIDTRANS_SERVER_KEY belum di-set', timestamp: new Date().toISOString() });
+  }
+
+  const body = (req.body || {}) as any;
+  const orderId = String(body.order_id || '');
+  const statusCode = String(body.status_code || '');
+  const grossAmount = String(body.gross_amount || '');
+  const transactionStatus = String(body.transaction_status || '');
+  const signatureKey = String(body.signature_key || '');
+  const webhookId = String(req.headers['x-midtrans-webhook-id'] || body.transaction_id || '');
+
+  if (!orderId || !statusCode || !grossAmount || !signatureKey || !webhookId) {
+    return res.status(400).json({ success: false, message: 'Missing required fields', error: 'MISSING_FIELDS', timestamp: new Date().toISOString() });
+  }
+
+  // HMAC-SHA256(serverKey, orderId + statusCode + grossAmount + serverKey)
+  const expected = crypto.createHmac('sha256', serverKey).update(orderId + statusCode + grossAmount + serverKey).digest('hex');
+  if (expected !== signatureKey) {
+    return res.status(403).json({ success: false, message: 'Invalid signature', error: 'INVALID_SIGNATURE', timestamp: new Date().toISOString() });
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // Idempotency
+    const { data: existing } = await supabase.from('payment_webhooks').select('webhook_id, status').eq('webhook_id', webhookId).maybeSingle();
+    if (existing && existing.status === 'PROCESSED') {
+      return res.status(200).json({ success: true, message: 'Webhook already processed (idempotent)', timestamp: new Date().toISOString() });
+    }
+
+    // Record webhook (branch_id null dulu)
+    if (!existing) {
+      await supabase.from('payment_webhooks').insert({
+        webhook_id: webhookId, provider: 'midtrans', order_id: orderId,
+        status: 'RECEIVED', payload: body,
+      });
+    }
+
+    // Invoice lookup 3-step
+    let invoice: any = null;
+    const { data: i1 } = await supabase.from('invoices').select('id, branch_id, status, amount_due').eq('invoice_number', orderId).maybeSingle();
+    invoice = i1;
+    if (!invoice) {
+      const { data: i2 } = await supabase.from('invoices').select('id, branch_id, status, amount_due').eq('booking_id', orderId).maybeSingle();
+      invoice = i2;
+    }
+    if (!invoice) {
+      const { data: i3 } = await supabase.from('invoices').select('id, branch_id, status, amount_due').eq('id', orderId).maybeSingle();
+      invoice = i3;
+    }
+
+    if (!invoice) {
+      await supabase.from('payment_webhooks').update({ status: 'FAILED' }).eq('webhook_id', webhookId);
+      return res.status(404).json({ success: false, message: 'Invoice not found', error: 'INVOICE_NOT_FOUND', timestamp: new Date().toISOString() });
+    }
+
+    await supabase.from('payment_webhooks').update({ branch_id: invoice.branch_id }).eq('webhook_id', webhookId);
+
+    if (['capture', 'settlement'].includes(transactionStatus)) {
+      await supabase.from('invoices').update({
+        status: 'PAID', payment_status: 'PAID',
+        paid_at: new Date().toISOString(),
+        paid_amount: Number(grossAmount), amount_paid: Number(grossAmount),
+        payment_method: 'GATEWAY',
+      }).eq('id', invoice.id);
+    }
+
+    await supabase.from('payment_webhooks').update({ status: 'PROCESSED', processed_at: new Date().toISOString() }).eq('webhook_id', webhookId);
+    return res.status(200).json({ success: true, message: 'Webhook processed', timestamp: new Date().toISOString() });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return res.status(500).json({ success: false, message, error: 'INTERNAL_ERROR', timestamp: new Date().toISOString() });
+  }
+});
+
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use('/api/invoices', router);
+app.use('/api/webhooks', webhookRouter);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Vercel kirim FULL URL ke lambda (terbukti di 2.3.2c), jadi Express mount
@@ -876,7 +962,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const suffix = Array.isArray(captured) ? captured[0] : String(captured);
     const url = String(r.url || '');
     if (suffix && !url.includes(`/${suffix}`)) {
+      // Conditional: webhooks/ -> /api/webhooks/*, else /api/invoices/*
+    if (suffix.startsWith('webhooks/')) {
+      r.url = `/api/${suffix}`;
+    } else {
       r.url = `/api/invoices/${suffix}`;
+    }
     }
   }
   return app(r, res as any);
