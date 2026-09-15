@@ -9,15 +9,15 @@ import { extractBearerToken, verifyJwt, requireRole, AuthUser } from '../lib/aut
 // - Approach B: vercel.json rewrites /api/invoices/:path* -> /api/invoices?path=$1
 // - Approach C: Express router di-mount prefix '/api/invoices'
 //   (Vercel kirim FULL URL ke lambda, terbukti di task 2.3.2c)
-// Scope serverless saat ini: 3 endpoint GET:
-//   GET /api/invoices/summary  (revenue summary)
-//   GET /api/invoices          (list + filter)
-//   GET /api/invoices/:id      (detail + payment history)
+// Scope serverless: 4 endpoint:
+//   GET  /api/invoices/summary  (revenue summary)
+//   GET  /api/invoices          (list + filter)
+//   GET  /api/invoices/:id      (detail + payment history)
+//   POST /api/invoices/admin/:id/undo-payment  (soft undo, ADMIN_BRANCH only)
 // Parity Express: dentflow-backend/src/routes/invoiceWeb.routes.ts
 //                 dentflow-backend/src/handlers/invoiceWeb.handler.ts
 //                 (getInvoiceSummary, getInvoiceList, getInvoiceDetail)
-// Route order: /summary SEBELUM /:id (WAJIB, kalau kebalik "summary" match :id).
-// Write endpoint (POST /:id/payments) SKIP -> Batch 4.
+// Route order: /summary -> /admin/:id/undo-payment -> /:id (WAJIB, kalau kebalik "summary" match :id).
 // ============================================================
 
 // Auth parity Express: router.use(authMiddleware, roleMiddleware(['ADMIN_BRANCH', 'DOCTOR']))
@@ -247,6 +247,94 @@ router.all('/', getOnly(async (req, res) => {
   }
 }));
 
+// ---------- POST /api/invoices/admin/:id/undo-payment (soft undo) ----------
+// Auth parity Express: ADMIN_BRANCH only.
+// Soft approach: INSERT UNDO row ke invoice_payments (status='UNPAID', amount=0).
+// TIDAK UPDATE invoices.status — trigger reversal tidak di-bypass.
+router.all('/admin/:id/undo-payment', async (req: Request, res: Response) => {
+  if (req.method !== 'POST') {
+    return fail(res, 'Method not allowed', 405, 'METHOD_NOT_ALLOWED');
+  }
+  const authedReq = req as AuthedRequest;
+  if (!authedReq.user || authedReq.user.role !== 'ADMIN_BRANCH') {
+    return fail(res, 'Forbidden: ADMIN_BRANCH only', 403, 'FORBIDDEN');
+  }
+
+  const invoiceId = req.params.id;
+  if (!invoiceId) return fail(res, 'Parameter id invoice wajib diisi', 400, 'VALIDATION_ERROR');
+
+  const { reason } = (req.body || {}) as { reason?: string };
+  if (!reason || !String(reason).trim()) {
+    return fail(res, 'reason is required', 400, 'VALIDATION_ERROR');
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    const { data: invoice, error: invErr } = await supabase
+      .from('invoices')
+      .select('id, branch_id, status, amount_due')
+      .eq('id', invoiceId)
+      .maybeSingle();
+
+    if (invErr) return fail(res, `Database error: ${invErr.message}`, 500, 'DB_ERROR');
+    if (!invoice) return fail(res, 'Invoice tidak ditemukan', 404, 'INVOICE_NOT_FOUND');
+
+    if (invoice.status !== 'PAID') {
+      return fail(res, 'Invoice belum dibayar, tidak bisa undo payment', 400, 'INVOICE_NOT_PAID');
+    }
+
+    // Soft approach: INSERT UNDO row (status='UNPAID', amount=0).
+    // Ini append-only audit trail — tidak UPDATE invoices.status.
+    // Trigger prevent_invoice_payments_update hanya block UPDATE, INSERT OK.
+    // UNIQUE(invoice_id, status, paid_at) tidak bentrok karena paid_at != paid_at baris PAID.
+    const { error: insertErr } = await supabase
+      .from('invoice_payments')
+      .insert({
+        invoice_id: invoiceId,
+        status: 'UNPAID',
+        amount: 0,
+        payment_method: 'CASH',
+        transaction_id: `UNDO:${String(reason).trim().substring(0, 100)}`,
+      });
+
+    if (insertErr) return fail(res, `Database error: ${insertErr.message}`, 500, 'DB_ERROR');
+
+    // Re-fetch invoice + updated payment history
+    const { data: updatedInvoice } = await supabase
+      .from('invoices')
+      .select('*, patients:patient_id ( full_name )')
+      .eq('id', invoiceId)
+      .maybeSingle();
+
+    const { data: payments } = await supabase
+      .from('invoice_payments')
+      .select('id, amount, payment_method, paid_at, transaction_id, status')
+      .eq('invoice_id', invoiceId)
+      .order('paid_at', { ascending: true });
+
+    const detail = updatedInvoice ? mapInvoice(updatedInvoice) : mapInvoice(invoice);
+    detail.payments = (payments || []).map((row: any) => ({
+      id: row.id,
+      amount: Number(row.amount) || 0,
+      method: row.payment_method,
+      paidAt: row.paid_at,
+      notes: null,
+      adminName: 'Admin',
+      status: row.status,
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: detail,
+      message: 'Payment undone (soft undo — invoice status unchanged)',
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+});
+
 // ---------- GET /api/invoices/:id (detail) ----------
 router.all('/:id', getOnly(async (req, res) => {
   const invoiceId = req.params.id;
@@ -272,7 +360,7 @@ router.all('/:id', getOnly(async (req, res) => {
     // jadi join ke users di-omit; adminName fallback default 'Admin' (parity Express fallback).
     const { data: payments, error: payErr } = await supabase
       .from('invoice_payments')
-      .select('id, amount, payment_method, paid_at, transaction_id')
+      .select('id, amount, payment_method, paid_at, transaction_id, status')
       .eq('invoice_id', invoiceId)
       .order('paid_at', { ascending: true });
 
@@ -286,6 +374,7 @@ router.all('/:id', getOnly(async (req, res) => {
       paidAt: row.paid_at,
       notes: null,
       adminName: 'Admin',
+      status: row.status,
     }));
 
     res.status(200).json({ success: true, data: detail });

@@ -21,6 +21,10 @@
       "destination": "/api/encounters?path=$1"
     },
     {
+      "source": "/api/admin/invoices/:path*",
+      "destination": "/api/invoices?path=admin/$1"
+    },
+    {
       "source": "/api/invoices/:path*",
       "destination": "/api/invoices?path=$1"
     },

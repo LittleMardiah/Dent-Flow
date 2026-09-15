@@ -5164,3 +5164,25 @@ Verify: UPDATE status PAID -> single INSERT (delta=1).
 - Rollback-test: PAYMENT_INSERT_DELTA=1, VERIFY_SINGLE_INSERT=PASS.
 
 Next: coding I2 (soft undo) -> I3 -> I1 -> I4.
+
+--- Task 4b-1a I2 undo-payment (soft approach) ---
+Status: DONE
+
+Design: soft undo (INSERT invoice_payments, bukan UPDATE status).
+- INSERT row: { invoice_id, status='UNPAID', amount=0, payment_method='CASH', transaction_id='UNDO:<reason>' }
+- TIDAK UPDATE invoices.status → trigger prevent_invoice_status_reversal tidak di-bypass.
+- UNIQUE(invoice_id, status, paid_at) aman: status='UNPAID' ≠ 'PAID' row existing.
+- Audit INVOICE_UNDO_PAYMENT (enum confirmed).
+- GET /:id detail updated: payments[] sekarang include field 'status'.
+- Route: POST /api/invoices/admin/:id/undo-payment (ADMIN_BRANCH only).
+
+DB constraints verified:
+- paid_at NOT NULL DEFAULT CURRENT_TIMESTAMP
+- invoice_payments_status_check: 'UNPAID' | 'PAID' (INSERT 'UNPAID' OK)
+- trg_invoice_payments_immutable: BEFORE UPDATE only (INSERT OK)
+- valid_paid_state CHECK: on invoices table (no UPDATE = no conflict)
+
+TSC: PASS (exit 0)
+Func count: 12/12 (extend invoices.ts, no new file)
+
+Next: E2E I2.
