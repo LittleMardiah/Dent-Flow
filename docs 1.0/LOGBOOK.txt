@@ -5066,3 +5066,31 @@ Coding doctors.ts POST /:id/ready-next (5 fixes applied).
 Deviation: websocket SKIP + audit QUEUE_CALLED added.
 
 Next: commit -> deploy -> E2E.
+
+--- Task 2.4.8b D3 readyNextDoctor COMPLETE (E2E verified) ---
+Status: ✅ PASS
+
+Chain:
+- 2.4.8 pre-audit: D3 analysis
+- 2.4.8b coding (1b30dce): migration 038 RPC call_next_patient + doctors.ts route
+- 2.4.8b E2E (task_2_4_8b_e2e.log): PASS
+
+5 spec fixes applied (dari review plan):
+F1: unique 404 marker (auth guard vs 404 fallback collision)
+F2: (req as AuthedRequest).user cast
+F3: inline res.json (ok() tidak accept message)
+F4: NULL::uuid AS patient_id (queues no patient_id)
+F5: flat data response (frontend compat)
+
+E2E:
+- D3 happy 200, queue BEING_CALLED + called_at set
+- Audit QUEUE_CALLED recorded
+- Negatives: 401 / 403 / 404
+- FIFO order verified
+
+Deviation: websocket SKIP + audit QUEUE_CALLED (Express gap)
+
+Catatan: empty-queue path tidak terisolasi (4 leftover WAITING dari E2E
+sebelumnya). Logic benar (RPC RETURN early). Track TD-2.4.21.
+
+Next: Task 2.4.8c D4 queue check-in (HIGHEST RISK).

@@ -212,3 +212,22 @@ valid (created_at/updated_at), old body refer invoice_date (tidak ada).
 
 Referensi: task_2_4_6_e2e.log, task_2_4_6_fix.log.
 ===
+
+===
+TD-2.4.21: E2E test data cleanup queue orphan (BARU 2026-09-15)
+Status: ⚠️ OPEN
+
+Deskripsi: E2E tests task-task sebelumnya insert queue WAITING tanpa cleanup
+konsisten (leftover 4+ queue untuk doctor 09baea2f). Menyebabkan test
+"empty queue" tidak terisolasi.
+
+Dampak: E2E D3/D4 yang butuh empty queue state susah diverifikasi. FIFO
+tetap works, tapi edge case tidak covered.
+
+Perbaikan: bikin script cleanup E2E (queue WAITING + booking orphan > X jam).
+Atau setiap E2E pre-setup cleanup doctor target queue.
+
+Estimasi: 30 menit. Prioritas: LOW.
+
+Referensi: task_2_4_8b_e2e.log.
+===

@@ -375,7 +375,7 @@
 | E3 | POST `/encounters/:id/complete` | `encounters.ts` | Extend | 2.4.6 | ~120 (HIGH RISK) | ✅ DONE |
 | B1 | POST `/patient/bookings` | `bookings.ts` | Extend | 2.4.7 | ~150 | ✅ DONE |
 | P3 | POST `/patients/merge` | `patients.ts` | Extend | 2.4.8 | ~100 | ✅ DONE |
-| D3 | POST `/doctors/:id/ready-next` | `doctors.ts` | Extend | 2.4.8 | ~80 | pending |
+| D3 | POST `/doctors/:id/ready-next` | `doctors.ts` | Extend | 2.4.8 | ~80 | ✅ DONE |
 | D4 | POST `/queue/:id/check-in` | `checkIn.ts` (NEW) | New | 2.4.8 | ~100 | pending |
 
 **Total:** 21 endpoint — DONE 5, pending 16. **1 file baru saja: `checkIn.ts`** (C1+C2+D4, +1 func; D4 digabung ke checkIn.ts biar hemat func, bukan file `queue.ts` terpisah).
