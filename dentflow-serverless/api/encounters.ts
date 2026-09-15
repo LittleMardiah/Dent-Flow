@@ -28,6 +28,9 @@ const ALLOWED_ROLES = ['DOCTOR', 'ADMIN_BRANCH', 'PATIENT'];
 const fail = (res: Response, message: string, status = 400, code = 'ERROR') =>
   res.status(status).json({ success: false, error: code, message, timestamp: new Date().toISOString() });
 
+const ok = (res: Response, data: unknown, message = 'OK', status = 200) =>
+  res.status(status).json({ success: true, data, message, timestamp: new Date().toISOString() });
+
 interface AuthedRequest extends Request {
   user: AuthUser;
 }
@@ -68,6 +71,165 @@ const getOnly =
     }
     return handler(req as AuthedRequest, res);
   };
+
+// POST-only guard (parity: non-POST => 405 METHOD_NOT_ALLOWED).
+const postOnly =
+  (handler: (req: AuthedRequest, res: Response) => unknown) =>
+  (req: Request, res: Response) => {
+    if (req.method !== 'POST') {
+      return fail(res, 'Method not allowed', 405, 'METHOD_NOT_ALLOWED');
+    }
+    return handler(req as AuthedRequest, res);
+  };
+
+// PUT-only guard (parity: non-PUT => 405 METHOD_NOT_ALLOWED).
+const putOnly =
+  (handler: (req: AuthedRequest, res: Response) => unknown) =>
+  (req: Request, res: Response) => {
+    if (req.method !== 'PUT') {
+      return fail(res, 'Method not allowed', 405, 'METHOD_NOT_ALLOWED');
+    }
+    return handler(req as AuthedRequest, res);
+  };
+
+// ---------- POST /api/encounters (E1 startEncounter) ----------
+// Parity: encounter.handler.startEncounter + service.startEncounter.
+// Idempotent: duplicate booking_id → UPDATE EMR (bukan 409).
+router.post('/', postOnly(async (req, res) => {
+  const user = req.user;
+  if (!['DOCTOR', 'ADMIN_BRANCH'].includes(user.role)) {
+    return fail(res, 'Forbidden', 403, 'FORBIDDEN');
+  }
+
+  const body = (req.body || {}) as Record<string, unknown>;
+
+  if (!body.bookingId || typeof body.bookingId !== 'string') {
+    return fail(res, 'bookingId wajib diisi', 400, 'VALIDATION_ERROR');
+  }
+
+  // Parity StartEncounterSchema: complaint & treatment optionalNonEmpty,
+  // diagnosis/prescription/notes optional string.
+  const fields = ['complaint', 'treatment'] as const;
+  for (const f of fields) {
+    const v = body[f];
+    if (v !== undefined && v !== null) {
+      if (typeof v !== 'string' || !v.trim()) {
+        return fail(res, `${f === 'complaint' ? 'Keluhan' : 'Tindakan'} wajib diisi`, 400, 'VALIDATION_ERROR');
+      }
+    }
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // Baca booking + scope branch
+    const { data: booking, error: bErr } = await supabase
+      .from('bookings')
+      .select('id, branch_id, doctor_id, patient_id, status')
+      .eq('id', body.bookingId as string)
+      .eq('branch_id', user.branchId)
+      .maybeSingle();
+    if (bErr) return fail(res, `Database error: ${bErr.message}`, 500, 'DB_ERROR');
+    if (!booking) return fail(res, 'Booking tidak ditemukan', 404, 'BOOKING_NOT_FOUND');
+
+    // Status harus CHECKED_IN atau PAYMENT_CONFIRMED (parity service)
+    if (!['CHECKED_IN', 'PAYMENT_CONFIRMED'].includes(booking.status)) {
+      return fail(res, 'Booking belum siap untuk pemeriksaan', 409, 'INVALID_BOOKING_STATUS');
+    }
+
+    // Idempotent: cek existing encounter by booking_id
+    const { data: existing, error: eErr } = await supabase
+      .from('encounters')
+      .select('id')
+      .eq('booking_id', booking.id)
+      .maybeSingle();
+    if (eErr) return fail(res, `Database error: ${eErr.message}`, 500, 'DB_ERROR');
+
+    const emrData = {
+      complaint: (typeof body.complaint === 'string' && body.complaint.trim()) || null,
+      treatment: (typeof body.treatment === 'string' && body.treatment.trim()) || null,
+      diagnosis: (typeof body.diagnosis === 'string' && body.diagnosis.trim()) || null,
+      prescription: (typeof body.prescription === 'string' && body.prescription.trim()) || null,
+      notes: (typeof body.notes === 'string' && body.notes.trim()) || null,
+    };
+
+    if (existing) {
+      // IDEMPOTENT: duplicate → UPDATE EMR (bukan 409) — parity service
+      const { error: updErr } = await supabase
+        .from('encounters')
+        .update({
+          complaint: emrData.complaint,
+          treatment: emrData.treatment,
+          diagnosis: emrData.diagnosis,
+          prescription: emrData.prescription,
+          notes: emrData.notes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id);
+      if (updErr) return fail(res, `Database error: ${updErr.message}`, 500, 'DB_ERROR');
+
+      await supabase.from('audit_logs').insert({
+        branch_id: booking.branch_id,
+        user_id: user.userId,
+        event_type: 'EMR_UPDATED',
+        entity_type: 'ENCOUNTER',
+        entity_id: existing.id,
+        description: `Encounter updated for booking ${booking.id}`,
+      });
+
+      return ok(res, { id: existing.id, bookingId: booking.id }, 'Pemeriksaan berhasil dimulai');
+    }
+
+    // INSERT encounter baru
+    const { data: created, error: insErr } = await supabase
+      .from('encounters')
+      .insert({
+        branch_id: booking.branch_id,
+        booking_id: booking.id,
+        doctor_id: booking.doctor_id,
+        patient_id: booking.patient_id,
+        complaint: emrData.complaint,
+        treatment: emrData.treatment,
+        diagnosis: emrData.diagnosis,
+        prescription: emrData.prescription,
+        notes: emrData.notes,
+      })
+      .select('id')
+      .maybeSingle();
+
+    if (insErr) {
+      // Race condition: UNIQUE(booking_id) violation → treat as idempotent
+      if (String(insErr.message || '').includes('duplicate key')) {
+        const { data: refetch } = await supabase
+          .from('encounters')
+          .select('id')
+          .eq('booking_id', booking.id)
+          .maybeSingle();
+        return ok(res, { id: refetch?.id, bookingId: booking.id }, 'Pemeriksaan berhasil dimulai');
+      }
+      return fail(res, `Database error: ${insErr.message}`, 500, 'DB_ERROR');
+    }
+    if (!created) return fail(res, 'Gagal membuat encounter', 500, 'DB_ERROR');
+
+    await supabase.from('audit_logs').insert({
+      branch_id: booking.branch_id,
+      user_id: user.userId,
+      event_type: 'ENCOUNTER_STARTED',
+      entity_type: 'ENCOUNTER',
+      entity_id: created.id,
+      description: `Encounter started for booking ${booking.id}`,
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: { id: created.id, bookingId: booking.id },
+      message: 'Pemeriksaan berhasil dimulai',
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
 
 // ---------- GET /api/encounters (list + filter) ----------
 router.all('/', getOnly(async (req, res) => {
@@ -150,6 +312,85 @@ router.all('/', getOnly(async (req, res) => {
         pages: Math.ceil(total / limit) || 0,
       },
     });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
+
+// ---------- PUT /api/encounters/:id (E2 updateEncounter) ----------
+// Parity: encounter.handler.updateEncounter + service.updateEncounter.
+// OWNERSHIP: DOCTOR wajib match encounter.doctor_id (deviasi positif vs Express).
+router.put('/:id', putOnly(async (req, res) => {
+  const user = req.user;
+  if (!['DOCTOR', 'ADMIN_BRANCH'].includes(user.role)) {
+    return fail(res, 'Forbidden', 403, 'FORBIDDEN');
+  }
+
+  const encounterId = req.params.id as string;
+  if (!encounterId) return fail(res, 'Parameter id wajib diisi', 400, 'VALIDATION_ERROR');
+
+  const body = (req.body || {}) as Record<string, unknown>;
+  const fields = ['complaint', 'treatment', 'diagnosis', 'prescription', 'notes'];
+  const hasField = fields.some(f => body[f] !== undefined);
+  if (!hasField) {
+    return fail(res, 'Tidak ada field yang diupdate', 400, 'NO_FIELDS_TO_UPDATE');
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // Baca encounter (branch scope)
+    const { data: enc, error: eErr } = await supabase
+      .from('encounters')
+      .select('id, branch_id, booking_id, doctor_id, status')
+      .eq('id', encounterId)
+      .eq('branch_id', user.branchId)
+      .maybeSingle();
+    if (eErr) return fail(res, `Database error: ${eErr.message}`, 500, 'DB_ERROR');
+    if (!enc) return fail(res, 'Pemeriksaan tidak ditemukan', 404, 'ENCOUNTER_NOT_FOUND');
+
+    // Status harus ONGOING (parity service)
+    if (enc.status !== 'ONGOING') {
+      return fail(res, 'Pemeriksaan sudah selesai atau dibatalkan', 409, 'ENCOUNTER_NOT_ONGOING');
+    }
+
+    // OWNERSHIP: DOCTOR harus match encounter.doctor_id (deviasi positif)
+    if (user.role === 'DOCTOR') {
+      const { data: doc, error: dErr } = await supabase
+        .from('doctors')
+        .select('id')
+        .eq('user_id', user.userId)
+        .maybeSingle();
+      if (dErr) return fail(res, `Database error: ${dErr.message}`, 500, 'DB_ERROR');
+      if (!doc || doc.id !== enc.doctor_id) {
+        return fail(res, 'Anda tidak memiliki akses ke pemeriksaan ini', 403, 'ACCESS_DENIED');
+      }
+    }
+
+    // Dynamic UPDATE
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    for (const f of fields) {
+      const v = body[f];
+      if (v !== undefined) updates[f] = v;
+    }
+
+    const { error: updErr } = await supabase
+      .from('encounters')
+      .update(updates)
+      .eq('id', encounterId);
+    if (updErr) return fail(res, `Database error: ${updErr.message}`, 500, 'DB_ERROR');
+
+    await supabase.from('audit_logs').insert({
+      branch_id: enc.branch_id,
+      user_id: user.userId,
+      event_type: 'EMR_UPDATED',
+      entity_type: 'ENCOUNTER',
+      entity_id: encounterId,
+      description: 'EMR updated',
+    });
+
+    return ok(res, { id: encounterId }, 'Pemeriksaan berhasil diperbarui');
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal error';
     return fail(res, message, 500, 'INTERNAL_ERROR');

@@ -4834,3 +4834,36 @@ jangan asumsi.
 Task 2.4.4 STATUS: ✅ SELESAI. Func count: 11/12.
 
 Next: Task 2.4.5 (E1 startEncounter + E2 updateEncounter, extend encounters.ts).
+
+--- Task 2.4.5 E1 startEncounter + E2 updateEncounter ---
+Status: DONE (TSC clean, route order verified)
+
+Extend encounters.ts:
+- E1 POST '/' (startEncounter) — idempotent duplicate -> UPDATE EMR, audit ENCOUNTER_STARTED / EMR_UPDATED
+- E2 PUT '/:id' (updateEncounter) — ownership check DOCTOR via doctors.user_id, audit EMR_UPDATED
+
+CRITICAL: route order POST '/' (L98) + PUT '/:id' (L324) sebelum router.all getOnly (L235, L401) — verified.
+Func count: 11/12 (extend, no new file).
+
+Next: commit -> deploy -> E2E (2.4.5-E2E).
+
+--- Task 2.4.5-FIX focused verify ---
+- ENCOUNTER_STARTED: OK, encounters.ts:217 event_type 'ENCOUNTER_STARTED'
+- E1 status code parity Express: BOOKING_NOT_FOUND->404, BOOKING_NOT_READY_FOR_ENCOUNTER->409, ENCOUNTER_ALREADY_EXISTS->409; startEncounter->201
+- chief_complaint column: OK (migration 001:96; DB confirmed chief_complaint, complaint, diagnosis, treatment, prescription, notes all text)
+- E2 code aligned: ENCOUNTER_NOT_UPDATABLE -> ENCOUNTER_NOT_ONGOING (encounters.ts:355)
+- TSC: exit 0 (func count 11)
+
+--- Task 2.4.5-FIX focused verify ---
+- ENCOUNTER_STARTED: OK, encounters.ts:217 event_type 'ENCOUNTER_STARTED'
+- E1 status code parity Express: Express 201/400/404/409 matches serverless 201/400/404/409 (BOOKING_NOT_FOUND->404, invalid status->409, duplicate idempotent->201)
+- chief_complaint column: OK (migration 001:96 + 013:6; DB confirmed all text)
+- E2 code aligned: ENCOUNTER_NOT_UPDATABLE -> ENCOUNTER_NOT_ONGOING (encounters.ts:355)
+- TSC: exit 0 (func count 11)
+
+--- Task 2.4.5-FIX focused verify ---
+- ENCOUNTER_STARTED: ada, encounters.ts:217 (E1 audit event_type) — parity Express audit log.
+- E1 status code parity Express: serverless E1 → 404 BOOKING_NOT_FOUND (sama Express 404), 409 INVALID_BOOKING_STATUS vs Express BOOKING_NOT_READY_FOR_ENCOUNTER (409, kode beda krn dinamai ulang; frontend tidak baca error.code), login 201; idempotent update alih-alih 409 ENCOUNTER_ALREADY_EXISTS (deviasi terdokumentasi).
+- chief_complaint column: ADA — migration 001:96 (chief_complaint TEXT) + migration 013 tambah complaint; DB information_schema mengonfirmasi 6 kolom: chief_complaint, complaint, diagnosis, notes, prescription, treatment.
+- E2 code aligned: ENCOUNTER_NOT_UPDATABLE tidak pernah ada di code; serverless sudah ENCOUNTER_NOT_ONGOING (encounters.ts:355) = parity Express service (193,248,308,394). TIDAK ADA PERUBAHAN (no-op) - sed tidak perlu.
+- TSC: exit 0 (no errors). FUNC_COUNT=11.
