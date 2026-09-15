@@ -5299,3 +5299,31 @@ TSC: PASS (exit 0). Func count: 12/12.
 Parity: invoiceWeb.handler.addInvoicePayment -> transitionToPaid + paid_by_admin_id.
 Beda vs I3: route /payments, field amount/method, validasi amount <= amount_due,
   POST-COMMIT paid_by_admin_id.
+
+--- Task 4b-1d I4 addInvoicePayment COMPLETE (E2E verified) ---
+Status: ✅ PASS
+
+Chain:
+- 4b-1 pre-audit: F1 blocker (duplicate trigger) -> PREREQ fix
+- 4b-1-PREREQ (8edb9b4): migration 040 DROP trg_invoice_payment_log
+- 4b-1a (d1b8eb9): I2 undo-payment soft
+- 4b-1b (ebdfee3): I3 mark-paid state machine
+- 4b-1c (5e47a87): I1 admin mark-paid
+- 4b-1d (bcb3470): I4 addInvoicePayment
+
+E2E:
+- I4 happy=200, idempotent=200, payments_count=1 (no dup)
+- DB: status=PAID, payment_status=PAID, paid_amount=200000, paid_by_admin_id SET
+- Negatives: 401/404/400/400/405/404
+
+============================================================
+BATCH 4b-1 — INVOICE PAYMENT (I1-I4) COMPLETE
+============================================================
+
+- I1 POST /admin/invoices/:id/mark-paid (ADMIN_BRANCH only, paid_amount explicit)
+- I2 POST /admin/invoices/:id/undo-payment (soft undo, INSERT invoice_payments)
+- I3 PUT /invoices/:id/mark-paid (ADMIN_BRANCH + DOCTOR, amount default amount_due)
+- I4 POST /invoices/:id/payments (ADMIN_BRANCH + DOCTOR, amount <= amount_due, post-commit paid_by_admin_id)
+
+Func count: 12/12 AT LIMIT.
+Next: Batch 4b-2 (S2/S3 webhook) — WAJIB masuk file existing (func limit).
