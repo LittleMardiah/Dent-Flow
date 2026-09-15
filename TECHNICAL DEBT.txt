@@ -156,3 +156,17 @@ semua code set status explicit).
 
 Referensi: task_2_4_4a.log (temuan OpenCode).
 ===
+
+===
+TD-2.4.18: Process lesson — prompt incomplete untuk FIX2 (BARU 2026-09-15)
+Status: ℹ️ INFO
+
+Insiden: FIX2 prompt (Task 2.4.5) dimaksudkan fix E1 status + walk-in,
+tapi prompt hanya berisi verify + E2 code align (no-op). Actual fix
+TIDAK pernah di-apply. VETO gate di E2E-R2 berhasil mendeteksi.
+
+Lesson: prompt FIX WAJIB include actual edit, bukan hanya verify.
+Pattern v2 (CEK -> VETO -> FIX -> VERIFY) valid dan tetap dipakai.
+
+Referensi: task_2_4_5_e2e.log, task_2_4_5_fix2.log, task_2_4_5_fix3.log.
+===

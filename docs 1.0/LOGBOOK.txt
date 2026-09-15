@@ -4867,3 +4867,17 @@ Next: commit -> deploy -> E2E (2.4.5-E2E).
 - chief_complaint column: ADA — migration 001:96 (chief_complaint TEXT) + migration 013 tambah complaint; DB information_schema mengonfirmasi 6 kolom: chief_complaint, complaint, diagnosis, notes, prescription, treatment.
 - E2 code aligned: ENCOUNTER_NOT_UPDATABLE tidak pernah ada di code; serverless sudah ENCOUNTER_NOT_ONGOING (encounters.ts:355) = parity Express service (193,248,308,394). TIDAK ADA PERUBAHAN (no-op) - sed tidak perlu.
 - TSC: exit 0 (no errors). FUNC_COUNT=11.
+
+--- Task 2.4.5-FIX3 actual fix (post VETO gate) ---
+Status: DONE-2026-09-15 (TSC clean, fix ter-apply, belum commit/deploy/E2E)
+
+RC2 fix: tambah status: 'ONGOING' di INSERT encounters (parity Express),
+         ditulis di baris 191 (setelah patient_id). TSC clean.
+RC1 fix (deviasi positive): pre-check walk-in unconverted -> 400
+         BOOKING_WALKIN_NOT_CONVERTED (setelah if(!booking), baris ~136-143).
+         SELECT booking ditambah temp_patient_id (baris 128).
+
+Context: FIX2 sebelumnya NO-OP (prompt incomplete — tidak include actual fix).
+VETO gate di E2E-R2 nangkep ini. Pattern v2 valid.
+
+Next: commit + deploy + E2E R3 (walk-in flow + fresh path).

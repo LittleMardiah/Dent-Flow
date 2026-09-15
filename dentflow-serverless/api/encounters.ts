@@ -125,12 +125,23 @@ router.post('/', postOnly(async (req, res) => {
     // Baca booking + scope branch
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, branch_id, doctor_id, patient_id, status')
+      .select('id, branch_id, doctor_id, patient_id, status, temp_patient_id')
       .eq('id', body.bookingId as string)
       .eq('branch_id', user.branchId)
       .maybeSingle();
     if (bErr) return fail(res, `Database error: ${bErr.message}`, 500, 'DB_ERROR');
     if (!booking) return fail(res, 'Booking tidak ditemukan', 404, 'BOOKING_NOT_FOUND');
+
+    // FIX3 RC1 (deviation positive vs Express): walk-in pre-convert detection.
+    // W2 set patient_id=NULL + temp_patient_id. E1 butuh patient_id (NOT NULL di encounters).
+    if (!booking.patient_id && booking.temp_patient_id) {
+      return fail(
+        res,
+        'Booking walk-in belum dikonversi menjadi pasien. Jalankan convert-to-patient dulu.',
+        400,
+        'BOOKING_WALKIN_NOT_CONVERTED'
+      );
+    }
 
     // Status harus CHECKED_IN atau PAYMENT_CONFIRMED (parity service)
     if (!['CHECKED_IN', 'PAYMENT_CONFIRMED'].includes(booking.status)) {
@@ -188,6 +199,7 @@ router.post('/', postOnly(async (req, res) => {
         booking_id: booking.id,
         doctor_id: booking.doctor_id,
         patient_id: booking.patient_id,
+        status: 'ONGOING',  // FIX3 RC2: parity Express EncounterStatus.ONGOING (avoid constraint)
         complaint: emrData.complaint,
         treatment: emrData.treatment,
         diagnosis: emrData.diagnosis,
