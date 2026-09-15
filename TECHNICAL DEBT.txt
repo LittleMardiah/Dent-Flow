@@ -192,3 +192,23 @@ Estimasi: 2-3 jam. Prioritas: LOW (Express akan deprecated).
 
 Referensi: task_2_4_6_preaudit.log, task_2_4_6.log.
 ===
+
+===
+TD-2.4.20: Trigger generate_invoice_on_encounter_complete VARCHAR(50) overflow (BARU 2026-09-15)
+Status: ✅ FIXED by migration 036
+
+Deskripsi: function declare v_invoice_number VARCHAR(50), tapi
+get_next_invoice_number return 53 chars (INV-{uuid36}-{yyyymmdd}-{seq}).
+Overflow -> exception -> rollback (encounter tetap ONGOING, invoice kosong).
+
+Dampak: E3 completeEncounter selalu 500 sebelum fix. Pre-existing bug
+migration 011, belum pernah fire sukses karena encounter belum pernah
+di-complete via serverless.
+
+Fix: migration 036 CREATE OR REPLACE FUNCTION VARCHAR(255).
+Catatan validasi: SELECT busuk (booking_id di bookings) -> dikoreksi
+jadi id AS booking_id sebelum apply final. INSERT pakai column list
+valid (created_at/updated_at), old body refer invoice_date (tidak ada).
+
+Referensi: task_2_4_6_e2e.log, task_2_4_6_fix.log.
+===

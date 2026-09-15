@@ -4927,3 +4927,23 @@ TD-2.4.19: Express E3 deadlock (pre-existing, deprecate Phase 4).
 Func count: 11/12 (extend).
 
 Next: commit -> deploy -> E2E (2.4.6-e2e).
+
+--- Task 2.4.6-FIX migration 036 (v_invoice_number VARCHAR(50) -> 255) ---
+Status: ✅ APPLIED + VERIFIED (2026-09-15)
+
+RC: trigger function generate_invoice_on_encounter_complete declare
+v_invoice_number VARCHAR(50). get_next_invoice_number return 53 chars
+(INV-{uuid36}-{yyyymmdd}-{seq}). Overflow -> 500 -> rollback.
+
+Fix: migration 036 CREATE OR REPLACE FUNCTION VARCHAR(255).
+Tidak drop trigger.
+
+CORRECTION (validasi): 036 v1 yang di-prescribe SELECT booking_id
+FROM bookings -> kolom itu tidak ada (bookings PK namanya 'id').
+Diperbaiki jadi SELECT id AS booking_id, re-apply. Smoke+trigger
+test pass (invoice shell UNPAID 0, enrich 250000 OK, rollback).
+
+Fixes bonus: INSERT column list diganti valid (created_at/updated_at);
+live function lama refer invoice_date yang tidak ada di tabel invoices.
+
+Next: E2E R2 (re-verify E3).
