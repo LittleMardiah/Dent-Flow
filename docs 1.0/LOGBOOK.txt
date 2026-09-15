@@ -5232,3 +5232,26 @@ VERIFIED live (transaction ROLLBACK):
 - Trigger trg_log_invoice_payment auto-INSERT invoice_payments (status=PAID, amount=amount_due).
 - invoices TIDAK punya kolom transaction_id -> trigger insert NULL (column absent);
   transaction_id dari body dipakai untuk audit description (parity Express).
+
+--- Task 4b-1b I3 mark-paid via web COMPLETE (E2E verified) ---
+Status: ✅ PASS
+
+Chain:
+- 4b-1 pre-audit: I3 analysis
+- 4b-1b (ebdfee3): PUT /:id/mark-paid state machine
+- 4b-1b E2E (task_4b_1b_e2e.log): PASS
+
+E2E:
+- I3 happy=200, idempotent=200
+- DB: status=PAID, payment_status=PAID, paid_at + paid_amount=200000
+- Trigger auto-INSERT invoice_payments (PAID, 200000, CASH)
+- Negatives: no-token=401, fake=404, no-body=400, GET=405, doctor-token=200 idem
+
+Catch: template set transaction_id di UPDATE invoices -> kolom TIDAK ADA.
+OpenCode verify live schema -> hapus; tx id hanya untuk audit description.
+
+Func count: 12/12.
+
+Security note: leftover /tmp/opencode/e2e_admin_token (full token) — cleaned up.
+
+Next: 4b-1c (I1 admin mark-paid variant, terakhir I1-I4).
