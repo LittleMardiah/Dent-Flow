@@ -4974,3 +4974,23 @@ TD:
 Func count: 11/12.
 
 Next: Task 2.4.7 (B1 createScheduledBooking — bookings.ts extend).
+
+--- Task 2.4.7 B1 createScheduledBooking (PATIENT) ---
+Status: Implemented (pending deploy + E2E)
+
+Design: sequential statement, NO nested tx, notif skip (TD-2.4.5 fix).
+Deviation positive vs Express:
+- Notif NOT in tx (TD-2.4.5 fix, Express masih bug in-tx sendBookingConfirmation).
+- Notif skip (defer ke task notif terpisah).
+- Slot check tambah filter session_start (parity Express slotAvailabilityService,
+  template awal hanya doctor_id + booking_date — DIKOREKSI).
+Parity: doctor_schedules WHERE id + branch_id + is_active, response
+{ bookingId, bookingCode } camelCase exact (Express booking.service.ts:114).
+Status: 'PENDING_PAYMENT' (bukan 'PENDING' — invalid constraint).
+POST '/' SEBELUM all('/:id/cancel') — route order verified (>line 84 vs 216).
+Func count: 11 (extend, TSC clean exit 0).
+
+TD:
+- TD-2.4.5 (still live): Express notif in-tx.
+
+Next: commit -> deploy -> E2E (2.4.7-e2e).

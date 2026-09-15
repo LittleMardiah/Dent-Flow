@@ -64,6 +64,153 @@ const putOnly =
     return handler(req as AuthedRequest, res);
   };
 
+// POST-only guard (parity: metode selain POST => 405 METHOD_NOT_ALLOWED).
+const postOnly =
+  (handler: (req: AuthedRequest, res: Response) => unknown) =>
+  (req: Request, res: Response) => {
+    if (req.method !== 'POST') {
+      return fail(res, 'Method not allowed', 405);
+    }
+    return handler(req as AuthedRequest, res);
+  };
+
+// ---------- POST /api/patient/bookings (B1 createScheduledBooking) ----------
+// Parity Express booking.handler.createScheduledBooking + service.
+// Auth: PATIENT only.
+// DEViation positive vs Express:
+//   - Notif NOT in tx (TD-2.4.5 fix): skip, defer ke task notif terpisah.
+//   - Sequential statement (Supabase, no nested tx).
+// WAJIB SEBELUM /:id/cancel (route shadow lesson 2.4.2c).
+router.post('/', postOnly(async (req, res) => {
+  const user = req.user;
+  if (user.role !== 'PATIENT') {
+    return fail(res, 'Forbidden: endpoint ini untuk pasien', 403);
+  }
+
+  const body = (req.body || {}) as {
+    doctorId?: string;
+    bookingDate?: string;
+    sessionSlotId?: string;
+    notes?: string;
+  };
+
+  if (!body.doctorId || !body.bookingDate || !body.sessionSlotId) {
+    return fail(res, 'doctorId, bookingDate, sessionSlotId wajib diisi', 400);
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // 1. Resolve patient_id dari JWT userId -> patients.user_id -> patients.id
+    const { data: patient, error: pErr } = await supabase
+      .from('patients')
+      .select('id, branch_id')
+      .eq('user_id', user.userId)
+      .maybeSingle();
+    if (pErr) return fail(res, `Database error: ${pErr.message}`, 500);
+    if (!patient) return fail(res, 'Pasien tidak ditemukan', 404);
+
+    // 2. Resolve doctor (doctors.id di body, branch scope)
+    const { data: doctor, error: dErr } = await supabase
+      .from('doctors')
+      .select('id, branch_id, is_available')
+      .eq('id', body.doctorId)
+      .eq('branch_id', patient.branch_id)
+      .maybeSingle();
+    if (dErr) return fail(res, `Database error: ${dErr.message}`, 500);
+    if (!doctor) return fail(res, 'Dokter tidak ditemukan', 404);
+    if (!doctor.is_available) return fail(res, 'Dokter tidak tersedia', 400);
+
+    // 3. Verify session slot (doctor_schedules WHERE id + branch + is_active)
+    const { data: slot, error: sErr } = await supabase
+      .from('doctor_schedules')
+      .select('id, branch_id, session_start, session_end, max_patients_per_session, is_active')
+      .eq('id', body.sessionSlotId)
+      .eq('branch_id', patient.branch_id)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (sErr) return fail(res, `Database error: ${sErr.message}`, 500);
+    if (!slot) return fail(res, 'Jadwal dokter tidak ditemukan', 400);
+
+    // 4. Slot capacity check (parity Express slotAvailabilityService.checkSlotAvailability)
+    // COUNT bookings WHERE doctor_id + session_start + booking_date, NOT IN (CANCELLED, NO_SHOW).
+    // TOCTOU acceptable (parity Express).
+    const maxCap = Number(slot.max_patients_per_session) || 4;
+    const dateStr = body.bookingDate;
+    const sessionStartTimestamp = `${dateStr} ${slot.session_start}`;
+    const sessionEndTimestamp = `${dateStr} ${slot.session_end}`;
+    const { count, error: cErr } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('doctor_id', body.doctorId)
+      .eq('session_start', sessionStartTimestamp)
+      .eq('booking_date', dateStr)
+      .not('status', 'in', '(CANCELLED,NO_SHOW)');
+    if (cErr) return fail(res, `Database error: ${cErr.message}`, 500);
+    if ((count || 0) >= maxCap) {
+      return fail(res, `Slot penuh. Maksimal ${maxCap} pasien per sesi.`, 409);
+    }
+
+    // 5. Generate booking code (6 char uppercase alphanumeric, parity Express)
+    const bookingCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    // 6. booking_time NOT NULL (task 2.4.3b-W2-FIX lesson). Pakai nowTimeWIB pattern.
+    const now = new Date();
+    const wib = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+    const bookingTime = wib.toISOString().slice(11, 19);
+
+    // 7. INSERT booking (status='PENDING_PAYMENT', dp_amount default 50000)
+    const { data: booking, error: bErr } = await supabase
+      .from('bookings')
+      .insert({
+        branch_id: patient.branch_id,
+        patient_id: patient.id,
+        doctor_id: body.doctorId,
+        booking_date: dateStr,
+        booking_time: bookingTime,
+        session_start: sessionStartTimestamp,
+        session_end: sessionEndTimestamp,
+        status: 'PENDING_PAYMENT',
+        booking_code: bookingCode,
+        check_in_code: bookingCode,
+        is_walk_in: false,
+        patient_notes: body.notes || null,
+      })
+      .select('id, booking_code')
+      .maybeSingle();
+    if (bErr) return fail(res, `Database error: ${bErr.message}`, 500);
+    if (!booking) return fail(res, 'Gagal membuat booking', 500);
+
+    // 8. Audit BOOKING_CREATED (best-effort, jangan block response)
+    const { error: auditErr } = await supabase.from('audit_logs').insert({
+      branch_id: patient.branch_id,
+      user_id: user.userId,
+      event_type: 'BOOKING_CREATED',
+      entity_type: 'BOOKING',
+      entity_id: booking.id,
+      new_values: { booking_code: bookingCode, doctor_id: body.doctorId },
+      description: `Booking created for patient ${patient.id}`,
+    });
+    if (auditErr) console.error('BOOKING_CREATED audit failed:', auditErr.message);
+
+    // 9. NOTIF POST-COMMIT: SKIP (TD-2.4.5 fix).
+    // Express calls sendBookingConfirmation INSIDE tx — bug (notif fail rolls back booking).
+    // Serverless: defer ke task notif terpisah.
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        bookingId: booking.id,
+        bookingCode: booking.booking_code,
+      },
+      message: 'Booking berhasil dibuat',
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500);
+  }
+}));
+
 // ---------- PUT /api/patient/bookings/:id/cancel ----------
 // Parity Express booking.handler cancelBooking.
 router.all('/:id/cancel', putOnly(async (req, res) => {
