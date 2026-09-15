@@ -4994,3 +4994,30 @@ TD:
 - TD-2.4.5 (still live): Express notif in-tx.
 
 Next: commit -> deploy -> E2E (2.4.7-e2e).
+
+--- Task 2.4.7 B1 createScheduledBooking COMPLETE (E2E verified) ---
+Status: ✅ PASS
+
+Chain:
+- 2.4.7 pre-audit (task_2_4_7_preaudit.log) — VETO FIRE #1 (TD-2.4.5 still live)
+  + VETO FIRE #2 (TOCTOU slot race, parity acceptable)
+- 2.4.7 coding (e373119) — extend bookings.ts
+- 2.4.7 E2E (task_2_4_7_e2e.log) — PASS
+
+OpenCode catch: slot count butuh filter session_start (parity Express
+slotAvailability.service.ts:28-36). Template gua cuma doctor_id+booking_date
+-> false 'slot penuh' kalau 2 sesi beda jam.
+
+E2E:
+- B1=201, bookingCode=00M6EV
+- DB: status=PENDING_PAYMENT, dp=50000, check_in_code=booking_code
+- Negatives: admin=403, no-token=401, fake-doctor=404, fake-slot=400, empty-body=400
+
+Deviation positive vs Express:
+- Notif skip (TD-2.4.5 fix)
+- Sequential statement (bukan BEGIN/COMMIT)
+- Audit error explicit
+
+Func count: 11/12.
+
+Batch 4a progress: 20/21 DONE. Next: Task 2.4.8 (P3 D3 D4).
