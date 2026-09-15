@@ -179,7 +179,7 @@ router.post('/', postOnly(async (req, res) => {
         .eq('id', existing.id);
       if (updErr) return fail(res, `Database error: ${updErr.message}`, 500, 'DB_ERROR');
 
-      await supabase.from('audit_logs').insert({
+      const { error: auditErrU } = await supabase.from('audit_logs').insert({
         branch_id: booking.branch_id,
         user_id: user.userId,
         event_type: 'EMR_UPDATED',
@@ -187,6 +187,7 @@ router.post('/', postOnly(async (req, res) => {
         entity_id: existing.id,
         description: `Encounter updated for booking ${booking.id}`,
       });
+      if (auditErrU) console.error('EMR_UPDATED audit failed:', auditErrU.message);
 
       return ok(res, { id: existing.id, bookingId: booking.id }, 'Pemeriksaan berhasil dimulai');
     }
@@ -223,7 +224,7 @@ router.post('/', postOnly(async (req, res) => {
     }
     if (!created) return fail(res, 'Gagal membuat encounter', 500, 'DB_ERROR');
 
-    await supabase.from('audit_logs').insert({
+    const { error: auditErrS } = await supabase.from('audit_logs').insert({
       branch_id: booking.branch_id,
       user_id: user.userId,
       event_type: 'ENCOUNTER_STARTED',
@@ -231,6 +232,7 @@ router.post('/', postOnly(async (req, res) => {
       entity_id: created.id,
       description: `Encounter started for booking ${booking.id}`,
     });
+    if (auditErrS) console.error('ENCOUNTER_STARTED audit failed:', auditErrS.message);
 
     return res.status(201).json({
       success: true,
@@ -393,7 +395,7 @@ router.put('/:id', putOnly(async (req, res) => {
       .eq('id', encounterId);
     if (updErr) return fail(res, `Database error: ${updErr.message}`, 500, 'DB_ERROR');
 
-    await supabase.from('audit_logs').insert({
+    const { error: auditErrE2 } = await supabase.from('audit_logs').insert({
       branch_id: enc.branch_id,
       user_id: user.userId,
       event_type: 'EMR_UPDATED',
@@ -401,6 +403,7 @@ router.put('/:id', putOnly(async (req, res) => {
       entity_id: encounterId,
       description: 'EMR updated',
     });
+    if (auditErrE2) console.error('EMR_UPDATED audit failed:', auditErrE2.message);
 
     return ok(res, { id: encounterId }, 'Pemeriksaan berhasil diperbarui');
   } catch (err: unknown) {
@@ -533,7 +536,7 @@ router.post('/:id/complete', postOnly(async (req, res) => {
       .maybeSingle();
 
     // 6. Audit
-    await supabase.from('audit_logs').insert({
+    const { error: auditErrC } = await supabase.from('audit_logs').insert({
       branch_id: enc.branch_id,
       user_id: user.userId,
       event_type: 'ENCOUNTER_COMPLETED',
@@ -543,8 +546,9 @@ router.post('/:id/complete', postOnly(async (req, res) => {
       old_values: { status: 'ONGOING' },
       new_values: { status: 'COMPLETED' },
     });
+    if (auditErrC) console.error('ENCOUNTER_COMPLETED audit failed:', auditErrC.message);
 
-    await supabase.from('audit_logs').insert({
+    const { error: auditErrI } = await supabase.from('audit_logs').insert({
       branch_id: enc.branch_id,
       user_id: user.userId,
       event_type: 'INVOICE_GENERATED',
@@ -560,6 +564,7 @@ router.post('/:id/complete', postOnly(async (req, res) => {
         treatment: treatmentName,
       },
     });
+    if (auditErrI) console.error('INVOICE_GENERATED audit failed:', auditErrI.message);
 
     return res.status(200).json({
       success: true,
