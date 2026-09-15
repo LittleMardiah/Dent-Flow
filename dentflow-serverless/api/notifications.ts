@@ -32,6 +32,7 @@ interface AuthedRequest extends Request {
 }
 
 const router: Router = express.Router();
+const webhookReplayRouter: Router = express.Router();
 
 // ---------- Auth + env guard (level router, parity notification.routes.ts) ----------
 // Semua route require ADMIN_BRANCH.
@@ -132,14 +133,35 @@ router.all('/:id/send-reminder', postOnly(notificationSender('REMINDER', 'Remind
 router.all('/:id/send-confirmation', postOnly(notificationSender('CONFIRMATION', 'Confirmation')));
 
 // ---------- 404 fallback domain notifications ----------
-// ---------- POST /webhooks/:id/replay (S3 admin replay) ----------
-router.post('/webhooks/:id/replay', async (req: Request, res: Response) => {
-  const authedReq = req as any;
-  const user = authedReq.user;
-  if (!user || user.role !== 'ADMIN_BRANCH') {
-    return res.status(403).json({ success: false, message: 'Forbidden: ADMIN_BRANCH only', error: 'FORBIDDEN', timestamp: new Date().toISOString() });
-  }
+router.use((req: Request, res: Response) => {
+  return fail(res, 'Route tidak ditemukan di domain notifications.', 404, 'NOT_FOUND');
+});
 
+// ---------- POST /webhooks/:id/replay (S3 admin replay) ----------
+// Mounted separately under /api/admin/webhooks (Opsi B: sub-router terpisah).
+webhookReplayRouter.use((req: Request, res: Response, next: NextFunction) => {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return fail(res, 'ENV_MISSING: SUPABASE_* belum di-set.', 500, 'ENV_MISSING');
+  }
+  if (!process.env.JWT_SECRET) {
+    return fail(res, 'ENV_MISSING: JWT_SECRET belum di-set.', 500, 'ENV_MISSING');
+  }
+  const authHeader = req.headers['authorization'];
+  const token = extractBearerToken(typeof authHeader === 'string' ? authHeader : undefined);
+  if (!token) return res.status(401).json({ success: false, error: 'Unauthorized' });
+  try {
+    const user = verifyJwt(token);
+    requireRole(user, ALLOWED_ROLES);
+    (req as AuthedRequest).user = user;
+    next();
+  } catch (err: unknown) {
+    const e = err as { statusCode?: number; message?: string };
+    if (e.statusCode === 403) return res.status(403).json({ success: false, error: e.message || 'Forbidden' });
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+});
+
+webhookReplayRouter.post('/:id/replay', async (req: Request, res: Response) => {
   const webhookId = req.params.id;
   if (!webhookId) return res.status(400).json({ success: false, message: 'webhook id required', error: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
 
@@ -159,16 +181,13 @@ router.post('/webhooks/:id/replay', async (req: Request, res: Response) => {
   }
 });
 
-router.use((req: Request, res: Response) => {
-  return fail(res, 'Route tidak ditemukan di domain notifications.', 404, 'NOT_FOUND');
-});
-
 // ============================================================
 // Vercel handler: mount router di prefix '/api/admin/bookings'
 // ============================================================
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use('/api/admin/bookings', router);
+app.use('/api/admin/webhooks', webhookReplayRouter);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Vercel kirim FULL URL ke lambda (terbukti di 2.3.2c), jadi Express mount
@@ -181,7 +200,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const suffix = Array.isArray(captured) ? captured[0] : String(captured);
     const url = String(r.url || '');
     if (suffix && !url.includes(`/${suffix}`)) {
-      r.url = `/api/admin/bookings/${suffix}`;
+      if (suffix.startsWith('webhooks/')) {
+        r.url = `/api/admin/webhooks/${suffix.slice('webhooks/'.length)}`;
+      } else {
+        r.url = `/api/admin/bookings/${suffix}`;
+      }
     }
   }
   return app(r, res as any);

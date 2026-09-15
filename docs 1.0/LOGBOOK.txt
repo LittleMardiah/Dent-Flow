@@ -5344,3 +5344,21 @@ vercel.json: + 2 rewrite rules.
 Func count: 12/12. TSC: PASS.
 
 Next: E2E S2/S3 (sandbox key udah di-set Vercel env).
+
+--- Task 4b-2-FIX S3 routing ---
+Status: FIXED (pending E2E R2)
+
+Root cause: notifications.ts mount /api/admin/bookings, route /webhooks/:id/replay
+-> full expect /api/admin/bookings/webhooks/:id/replay, tapi incoming
+/api/admin/webhooks/:id/replay (dari rewrite). Mount mismatch -> 404 Express default.
+
+Fix (Opsi B):
+- Pindah S3 route ke webhookReplayRouter (baru)
+- Mount app.use('/api/admin/webhooks', webhookReplayRouter)
+- Route pattern /:id/replay
+- Safeguard: suffix startswith 'webhooks/' -> /api/admin/webhooks/${suffix.slice(9)}
+- Auth middleware duplicated on webhookReplayRouter (same guard as router)
+
+S2 tetap PASS. Func count: 12/12.
+
+Next: E2E R2 S3.
