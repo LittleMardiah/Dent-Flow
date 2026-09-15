@@ -396,6 +396,64 @@ router.all('/:id/audit-trail', getOnly(async (req, res) => {
   }
 }));
 
+// ---------- POST /api/patients/merge (P3 mergePatients) ----------
+// Parity Express patient.handler.mergePatients.
+// Design: RPC atomic merge_patients (migration 037) — Supabase JS tidak
+// bisa multi-write atomic.
+// WAJIB SEBELUM getOnly('/:id') supaya tidak shadow (L1).
+// Deviation positive vs Express: audit PATIENT_MERGED + users.is_active=false.
+router.post('/merge', async (req: Request, res: Response) => {
+  const user = (req as AuthedRequest).user;
+
+  const body = (req.body || {}) as {
+    primaryId?: string;
+    duplicateIds?: string[];
+    branchId?: string;
+  };
+
+  if (!body.primaryId || !Array.isArray(body.duplicateIds) || body.duplicateIds.length === 0) {
+    return fail(res, 'primaryId dan duplicateIds (non-empty array) wajib diisi', 400, 'VALIDATION_ERROR');
+  }
+
+  try {
+    const supabase = getSupabase();
+    let branchId = user.branchId;
+    try {
+      branchId = await enforceTenant(supabase, user, body.branchId);
+    } catch (tenantErr: unknown) {
+      const e = tenantErr as { statusCode?: number; message?: string };
+      if (e.statusCode === 403) return fail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
+      throw tenantErr;
+    }
+
+    const { data, error: rpcErr } = await supabase.rpc('merge_patients', {
+      p_primary_id: body.primaryId,
+      p_dup_ids: body.duplicateIds,
+      p_branch_id: branchId,
+      p_user_id: user.userId,
+    });
+
+    if (rpcErr) {
+      const msg = String(rpcErr.message || '');
+      if (msg.includes('PRIMARY_PATIENT_NOT_FOUND')) return fail(res, 'Pasien utama tidak ditemukan', 404, 'PRIMARY_PATIENT_NOT_FOUND');
+      if (msg.includes('DUPLICATE_PATIENT_NOT_FOUND')) return fail(res, 'Pasien duplikat tidak ditemukan', 404, 'DUPLICATE_PATIENT_NOT_FOUND');
+      if (msg.includes('NO_DUPLICATE_IDS')) return fail(res, 'Tidak ada pasien duplikat', 400, 'NO_DUPLICATE_IDS');
+      return fail(res, `RPC error: ${msg}`, 500, 'RPC_ERROR');
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return fail(res, 'RPC returned empty', 500, 'RPC_ERROR');
+
+    return ok(res, {
+      primaryId: row.primary_id,
+      mergedCount: Number(row.merged_count),
+    }, 200);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+});
+
 // ---------- GET /api/patients/:id (detail) ----------
 router.all('/:id', getOnly(async (req, res) => {
   const user = req.user;

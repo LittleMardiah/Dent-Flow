@@ -5021,3 +5021,21 @@ Deviation positive vs Express:
 Func count: 11/12.
 
 Batch 4a progress: 20/21 DONE. Next: Task 2.4.8 (P3 D3 D4).
+
+--- Task 2.4.8a P3 mergePatients (RPC + endpoint) ---
+Status: DONE
+
+Migration 037: RPC merge_patients atomic (parity 035 pattern).
+- multi-table update (bookings/encounters/invoices -> primary)
+- soft-delete dup patient
+- nonaktif users.is_active dup (improvement parity P2)
+- audit PATIENT_MERGED (improvement, Express gap)
+
+Coding patients.ts route POST /merge SEBELUM getOnly('/:id') (L1).
+- RPC error mapping: PRIMARY_PATIENT_NOT_FOUND / DUPLICATE_PATIENT_NOT_FOUND / NO_DUPLICATE_IDS
+- enforceTenant branch validation
+- Response: { primaryId, mergedCount }
+
+Func count: 11/11 (extend existing file, no new endpoint file).
+
+Next: commit -> deploy -> E2E (2.4.8a-e2e).
