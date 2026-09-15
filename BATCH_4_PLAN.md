@@ -370,8 +370,8 @@
 | C2 | POST `/admin/check-in/walk-in` | `checkIn.ts` (NEW) | New | 2.4.3 | ~90 | ✅ DONE |
 | W2 | POST `/walk-in/book-appointment` | `walkIn.ts` | Extend | 2.4.3 | ~120 | ✅ DONE |
 | W3 | POST `/walk-in/convert-to-patient` | `walkIn.ts` | Extend | 2.4.4 | ~100 | ✅ DONE |
-| E1 | POST `/encounters/` | `encounters.ts` | Extend | 2.4.5 | ~80 | pending |
-| E2 | PUT `/encounters/:id` | `encounters.ts` | Extend | 2.4.5 | ~80 | pending |
+| E1 | POST `/encounters/` | `encounters.ts` | Extend | 2.4.5 | ~80 | ✅ DONE |
+| E2 | PUT `/encounters/:id` | `encounters.ts` | Extend | 2.4.5 | ~80 | ✅ DONE |
 | E3 | POST `/encounters/:id/complete` | `encounters.ts` | Extend | 2.4.6 | ~120 (HIGH RISK) | pending |
 | B1 | POST `/patient/bookings` | `bookings.ts` | Extend | 2.4.7 | ~150 | pending |
 | P3 | POST `/patients/merge` | `patients.ts` | Extend | 2.4.8 | ~100 | pending |
