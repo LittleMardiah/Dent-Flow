@@ -5362,3 +5362,44 @@ Fix (Opsi B):
 S2 tetap PASS. Func count: 12/12.
 
 Next: E2E R2 S3.
+
+--- Task 4b-2 S2 + S3 COMPLETE (E2E verified R2) ---
+Status: ✅ PASS
+
+Chain:
+- 4b-2 pre-audit: CLEAR (no VETO)
+- 4b-2 verify: C1 (MIDTRANS key) VETO -> resolved (set Vercel env)
+- 4b-2 coding (2350954): S2 + S3
+- 4b-2 E2E R1 (task_4b_2_e2e.log): FAIL (S3 routing broken)
+- 4b-2-FIX (ed233c5): S3 sub-router separate mount
+- 4b-2 E2E R2 (task_4b_2_e2e_r2.log): PASS
+
+E2E R2:
+- S3 smoke 404 JSON (WEBHOOK_NOT_FOUND)
+- S3 happy 200
+- S3 dup 409
+- S3 no-token 401
+- S2 smoke 400 (regression clean)
+
+============================================================
+BATCH 4b — INVOICE PAYMENT + WEBHOOK COMPLETE (6/6)
+============================================================
+
+- I1 POST /admin/invoices/:id/mark-paid
+- I2 POST /admin/invoices/:id/undo-payment (soft undo)
+- I3 PUT /invoices/:id/mark-paid
+- I4 POST /invoices/:id/payments
+- S2 POST /api/webhooks/midtrans
+- S3 POST /api/admin/webhooks/:id/replay
+
+============================================================
+BATCH 4 FULL — CORE WRITE — COMPLETE (27/27 endpoint)
+============================================================
+
+- Batch 4a (21): booking + encounter + invoice + queue + patient + walk-in
+- Batch 4b (6): invoice payment + webhook
+
+Func count: 12/12 AT LIMIT.
+Migrations: 032 s/d 040 (9 migrations).
+
+Next: Batch 5+ planning (Redis replacement, Realtime, Cron, Webhook Edge Function).
