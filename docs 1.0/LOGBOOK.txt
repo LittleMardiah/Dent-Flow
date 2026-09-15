@@ -5186,3 +5186,28 @@ TSC: PASS (exit 0)
 Func count: 12/12 (extend invoices.ts, no new file)
 
 Next: E2E I2.
+
+--- Task 4b-1a I2 undo-payment COMPLETE (E2E verified) ---
+Status: ✅ PASS
+
+Chain:
+- 4b-1 pre-audit (F1 blocker: duplicate trigger)
+- 4b-1-PREREQ (8edb9b4): migration 040 DROP trg_invoice_payment_log
+- 4b-1a (d1b8eb9): I2 coding + path parity fix
+
+E2E (task_4b_1a_e2e.log):
+- express-parity path 200
+- direct path 200 (idempotent OK)
+- negatives: no-token=401, fake-id=404, no-reason=400, GET=405
+- Soft undo verified: invoice status=PAID tetap, payments[].status='UNPAID'
+
+Design:
+- JANGAN UPDATE invoices.status (trigger reversal block).
+- INSERT invoice_payments { status='UNPAID', amount=0, transaction_id='UNDO:<reason>' }.
+- Audit INVOICE_UNDO_PAYMENT.
+- vercel.json rewrite /api/admin/invoices/:path* -> /api/invoices?path=admin/$1
+  (parity Express canonical path).
+
+Func count: 12/12.
+
+Next: 4b-1b (I3 mark-paid via web state machine).
