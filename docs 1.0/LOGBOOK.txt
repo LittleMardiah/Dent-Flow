@@ -4947,3 +4947,30 @@ Fixes bonus: INSERT column list diganti valid (created_at/updated_at);
 live function lama refer invoice_date yang tidak ada di tabel invoices.
 
 Next: E2E R2 (re-verify E3).
+
+--- Task 2.4.6 E3 completeEncounter COMPLETE (E2E verified R3) ---
+Status: ✅ PASS
+
+Chain (5 iterasi, highest risk di Batch 4a):
+- Pre-audit: VETO fire (Express nested tx deadlock dengan trigger live)
+- 2.4.6 coding (cd4cff2): sequential statement (UPDATE -> trigger -> enrich)
+- E2E R1 FAIL: migration 011 function VARCHAR(50) overflow (get_next_invoice_number return 53 chars)
+- FIX (52fafdc): migration 036 CREATE OR REPLACE FUNCTION VARCHAR(255)
+  Runtime bugs: SELECT bookings 'id AS booking_id' (PK = 'id'), INSERT invoices column list valid
+- E2E R2 false alarm: audit filter entity_id=encId only, INVOICE_GENERATED punya entity_id=invoice.id
+- FIX2 (d518fd6): defensive audit error handling di 5 inserts encounters.ts
+- E2E R3 PASS: E3=200, amount=200000 (dp 0 + Scaling 200000), AUDIT_COUNT=3, idempotent=409, 401/404
+
+Findings:
+1. Sequential statement pattern WORKS (no MVCC blocking).
+2. Trigger live: shell created amount_due=0, serverless enrich.
+3. amount = dp_amount + treatment_price (walk-in dp=0).
+4. Audit entity_id pattern: ENCOUNTER events -> encounter.id; INVOICE event -> invoice.id.
+
+TD:
+- TD-2.4.19 (OPEN): Express E3 deadlock (deprecate Phase 4)
+- TD-2.4.20 (FIXED): trigger VARCHAR(50) overflow
+
+Func count: 11/12.
+
+Next: Task 2.4.7 (B1 createScheduledBooking — bookings.ts extend).
