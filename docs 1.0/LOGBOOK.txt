@@ -5094,3 +5094,23 @@ Catatan: empty-queue path tidak terisolasi (4 leftover WAITING dari E2E
 sebelumnya). Logic benar (RPC RETURN early). Track TD-2.4.21.
 
 Next: Task 2.4.8c D4 queue check-in (HIGHEST RISK).
+
+--- Task 2.4.8c D4 queue check-in (RPC + new api/queue.ts) ---
+Status: CODING DONE
+
+Migration 039: RPC doctor_checkin_patient atomic.
+- Resolve doctors.id internal dari users.id (L2 fix).
+- Guard status WAITING + BEING_CALLED.
+- Guard patient_id NULL -> BOOKING_WALKIN_NOT_CONVERTED.
+- Encounter status='ONGOING' eksplisit.
+- Audit QUEUE_COMPLETED + ENCOUNTER_STARTED dalam 1 tx.
+
+Coding api/queue.ts (NEW file):
+- POST /:id/check-in (auth DOCTOR router-level).
+- Response NESTED { data: { queue, encounter } } (parity Express).
+- Vercel rewrite /api/queue/:path*.
+
+Func count: 11 -> 12 AT LIMIT.
+Batch 4b S2/S3 WAJIB masuk file existing.
+
+Next: commit -> deploy -> E2E.

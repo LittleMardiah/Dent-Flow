@@ -1,16 +1,52 @@
 {
   "version": 2,
-  "regions": ["sin1"],
+  "regions": [
+    "sin1"
+  ],
   "rewrites": [
-    { "source": "/api/patients/:path*", "destination": "/api/patients?path=$1" },
-    { "source": "/api/doctors/:path*", "destination": "/api/doctors?path=$1" },
-    { "source": "/api/auth/:path*", "destination": "/api/auth?path=$1" },
-    { "source": "/api/encounters/:path*", "destination": "/api/encounters?path=$1" },
-    { "source": "/api/invoices/:path*", "destination": "/api/invoices?path=$1" },
-    { "source": "/api/patient/bookings/:path*", "destination": "/api/bookings?path=$1" },
-    { "source": "/api/no-shows/:path*", "destination": "/api/noShows?path=$1" },
-    { "source": "/walk-in/:path*", "destination": "/api/walkIn?path=$1" },
-    { "source": "/api/admin/check-in/:path*", "destination": "/api/checkIn?path=$1" },
-    { "source": "/api/admin/bookings/:path*", "destination": "/api/notifications?path=$1" }
+    {
+      "source": "/api/patients/:path*",
+      "destination": "/api/patients?path=$1"
+    },
+    {
+      "source": "/api/doctors/:path*",
+      "destination": "/api/doctors?path=$1"
+    },
+    {
+      "source": "/api/auth/:path*",
+      "destination": "/api/auth?path=$1"
+    },
+    {
+      "source": "/api/encounters/:path*",
+      "destination": "/api/encounters?path=$1"
+    },
+    {
+      "source": "/api/invoices/:path*",
+      "destination": "/api/invoices?path=$1"
+    },
+    {
+      "source": "/api/patient/bookings/:path*",
+      "destination": "/api/bookings?path=$1"
+    },
+    {
+      "source": "/api/no-shows/:path*",
+      "destination": "/api/noShows?path=$1"
+    },
+    {
+      "source": "/walk-in/:path*",
+      "destination": "/api/walkIn?path=$1"
+    },
+    {
+      "source": "/api/admin/check-in/:path*",
+      "destination": "/api/checkIn?path=$1"
+    },
+    {
+      "source": "/api/admin/bookings/:path*",
+      "destination": "/api/notifications?path=$1"
+    },
+    {
+      "source": "/api/queue/:path*",
+      "destination": "/api/queue?path=$1"
+    }
   ]
 }
