@@ -4,7 +4,13 @@ import { Router } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { extractBearerToken, verifyJwt, requireRole, enforceTenant, AuthUser } from '../lib/auth';
 
-const ALLOWED_ROLES = ['ADMIN_BRANCH', 'DOCTOR'];
+// Router-level guard = UNION (quick-view juga untuk PATIENT, parity
+// patientHistory.routes.ts). Semua route patients lain di-restriksi ulang
+// per-route ke ADMIN_DOCTOR (parity patients.routes.ts) supaya PATIENT tetap
+// ter-block — kalau cuma union doang, PATIENT bisa buka list/detail/audit,
+// itu SECURITY REGRESSION. Pattern sama dengan encounters.ts.
+const ALLOWED_ROLES = ['ADMIN_BRANCH', 'DOCTOR', 'PATIENT'];
+const ADMIN_DOCTOR = ['ADMIN_BRANCH', 'DOCTOR'];
 
 // ============================================================
 // Consolidated /api/patients — B+C pattern (MODULITH pilot)
@@ -66,6 +72,7 @@ const getOnly =
 // HARUS SEBELUM /:id (kalau kebalik, "branches" akan match :id).
 router.all('/branches', getOnly(async (req, res) => {
   const user = req.user;
+  if (!ADMIN_DOCTOR.includes(user.role)) return fail(res, 'Forbidden', 403, 'FORBIDDEN');
   try {
     const supabase = getSupabase();
 
@@ -105,6 +112,7 @@ router.all('/branches', getOnly(async (req, res) => {
 // shadow oleh GET-only guard (task 2.4.2c P1/P2 route shadow).
 router.put('/:id', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
+  if (!ADMIN_DOCTOR.includes(user.role)) return fail(res, 'Forbidden', 403, 'FORBIDDEN');
   const patientId = req.params.id;
   if (!patientId) return fail(res, 'Parameter id pasien wajib diisi', 400, 'VALIDATION_ERROR');
 
@@ -198,6 +206,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 // shadow oleh GET-only guard (task 2.4.2c P1/P2 route shadow).
 router.delete('/:id', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
+  if (!ADMIN_DOCTOR.includes(user.role)) return fail(res, 'Forbidden', 403, 'FORBIDDEN');
   const patientId = req.params.id;
   if (!patientId) return fail(res, 'Parameter id pasien wajib diisi', 400, 'VALIDATION_ERROR');
 
@@ -251,6 +260,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 // ---------- GET /api/patients (list) ----------
 router.all('/', getOnly(async (req, res) => {
   const user = req.user;
+  if (!ADMIN_DOCTOR.includes(user.role)) return fail(res, 'Forbidden', 403, 'FORBIDDEN');
   try {
     const search = String(req.query.search || '').trim();
     const page = parseInt(String(req.query.page || '1'), 10) || 1;
@@ -343,6 +353,7 @@ router.all('/', getOnly(async (req, res) => {
 // ---------- GET /api/patients/:id/audit-trail ----------
 router.all('/:id/audit-trail', getOnly(async (req, res) => {
   const user = req.user;
+  if (!ADMIN_DOCTOR.includes(user.role)) return fail(res, 'Forbidden', 403, 'FORBIDDEN');
   const patientId = req.params.id;
   if (!patientId) return fail(res, 'Parameter id pasien wajib diisi', 400, 'VALIDATION_ERROR');
 
@@ -404,6 +415,7 @@ router.all('/:id/audit-trail', getOnly(async (req, res) => {
 // Deviation positive vs Express: audit PATIENT_MERGED + users.is_active=false.
 router.post('/merge', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
+  if (!ADMIN_DOCTOR.includes(user.role)) return fail(res, 'Forbidden', 403, 'FORBIDDEN');
 
   const body = (req.body || {}) as {
     primaryId?: string;
@@ -454,9 +466,81 @@ router.post('/merge', async (req: Request, res: Response) => {
   }
 });
 
+// ---------- GET /api/patients/:id/quick-view ----------
+// Parity Express: patientHistory.routes.ts (role PATIENT|DOCTOR|ADMIN_BRANCH) +
+// patientQuickView.handler.ts. WAJIB SEBELUM /:id (dua segment path).
+// SECURITY FIX vs Express (TD-2.4.24): Express query cuma WHERE p.id=$1 —
+// cross-branch, tanpa soft-delete filter, tanpa ownership. Di sini:
+//   - branch scope wajib .eq('branch_id', user.branchId)
+//   - soft-delete wajib .is('deleted_at', null)
+//   - PATIENT hanya boleh pasien yang user_id = JWT.userId (ownership)
+// Response shape EXACT parity Express (no timestamp, id ... totalVisits),
+// medicalConditions & allergies hardcoded [] (schema tidak punya sumber).
+router.get('/:id/quick-view', async (req: Request, res: Response) => {
+  const user = (req as AuthedRequest).user;
+  const patientId = req.params.id;
+  if (!patientId) return res.status(400).json({ success: false, message: 'Parameter id pasien wajib diisi' });
+
+  try {
+    const supabase = getSupabase();
+
+    const base = supabase
+      .from('patients')
+      .select('id, full_name, phone, date_of_birth, user_id')
+      .eq('id', patientId)
+      .eq('branch_id', user.branchId)
+      .is('deleted_at', null);
+    const query = user.role === 'PATIENT' ? base.eq('user_id', user.userId) : base;
+
+    const { data: patient, error: e1 } = await query.maybeSingle();
+    if (e1) return fail(res, `Database error: ${e1.message}`, 500, 'DB_ERROR');
+    if (!patient) return res.status(404).json({ success: false, message: 'Pasien tidak ditemukan' });
+
+    const { data: userRow } = patient.user_id
+      ? await supabase.from('users').select('email').eq('id', patient.user_id).maybeSingle()
+      : { data: null };
+
+    const { data: encounters, error: e2 } = await supabase
+      .from('encounters')
+      .select('completed_at')
+      .eq('patient_id', patient.id);
+    if (e2) return fail(res, `Database error: ${e2.message}`, 500, 'DB_ERROR');
+
+    const totalVisits = (encounters || []).length;
+    let lastVisit = '';
+    for (const e of encounters || []) {
+      const ts = e.completed_at ? String(e.completed_at) : '';
+      if (ts && ts > lastVisit) lastVisit = ts;
+    }
+
+    const age = patient.date_of_birth
+      ? Math.floor((Date.now() - new Date(patient.date_of_birth).getTime()) / (365.25 * 24 * 3600 * 1000))
+      : undefined;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: patient.id,
+        fullName: patient.full_name,
+        phone: patient.phone || '',
+        email: (userRow as any)?.email || '',
+        age,
+        medicalConditions: [],
+        allergies: [],
+        lastVisit,
+        totalVisits,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+});
+
 // ---------- GET /api/patients/:id (detail) ----------
 router.all('/:id', getOnly(async (req, res) => {
   const user = req.user;
+  if (!ADMIN_DOCTOR.includes(user.role)) return fail(res, 'Forbidden', 403, 'FORBIDDEN');
   const patientId = req.params.id;
   if (!patientId) return fail(res, 'Parameter id pasien wajib diisi', 400, 'VALIDATION_ERROR');
 

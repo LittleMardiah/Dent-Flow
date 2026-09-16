@@ -3261,3 +3261,26 @@ Fix opsi (pilih saat eksekusi):
 
 Estimasi: 30 menit. Prioritas: LOW. Kategori: TEST.
 Referensi: task_cek_td.log
+
+===
+TD-2.4.24: Express /patients/:id/quick-view security bugs
+Status: OPEN (2026-09-16)
+
+Deskripsi: patientQuickView.handler.ts:17-25 query hanya WHERE p.id = $1 — TIDAK
+ada branch scope, TIDAK ada ownership pasien, TIDAK ada soft-delete filter.
+Route patientHistory.routes.ts:17 allowRoles ['PATIENT','DOCTOR','ADMIN_BRANCH']
+DENGAN roleMiddleware, tapi implementasinya leak: cross-branch (dokter cabang A
+bisa baca pasien cabang B), patient bisa baca pasien LAIN (no user_id check),
+dan pasien soft-deleted p.id masih return data.
+
+Dampak: informasi medis/sensitif pasien bisa bocor lintas branch + lintas user
+selama Express live.
+
+Bukti (serverless FIXED): patients.ts router.get('/:id/quick-view') menambahkan
+.eq('branch_id', user.branchId) + .is('deleted_at', null), dan untuk role PATIENT
+tambahan .eq('user_id', user.userId) (ownership = hanya pasien milik sendiri).
+Express tetap broken sampai deprecate Phase 4.
+
+Fix (opsional, kalau Express dipakai lagi): replikasi 3 guard di atas.
+Estimasi: 15 menit. Prioritas: HIGH (data leak, Express live).
+Referensi: prompt_22b.txt (Step 2.2 FASE B)
