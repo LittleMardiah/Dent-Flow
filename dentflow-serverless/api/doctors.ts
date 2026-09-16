@@ -65,6 +65,43 @@ const getOnly =
     return handler(req as AuthedRequest, res);
   };
 
+// ---------- Profil dokter (shared GET /me & PUT /me) ----------
+// Parity Express PROFILE_QUERY (doctorProfile.handler.ts:10-18):
+// createdAt & updatedAt bersumber dari DOCTORS (d.created_at/d.updated_at),
+// is_active dari USERS (u.is_active), branchName dari BRANCHES (b.name).
+const profileQuery = (userId: string) =>
+  getSupabase()
+    .from('doctors')
+    .select(`
+      id,
+      user_id,
+      full_name,
+      specialization,
+      license_number,
+      branch_id,
+      created_at,
+      updated_at,
+      users:user_id ( email, phone, is_active ),
+      branches:branch_id ( name )
+    `)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+const mapProfile = (d: any) => ({
+  id: d.id,
+  userId: d.user_id,
+  fullName: d.full_name,
+  email: d.users?.email || '',
+  phone: d.users?.phone || '',
+  specialization: d.specialization || '',
+  licenseNumber: d.license_number || '',
+  isActive: d.users?.is_active ?? true,
+  branchId: d.branch_id,
+  branchName: d.branches?.name || '',
+  createdAt: d.created_at,
+  updatedAt: d.updated_at,
+});
+
 // ---------- GET /api/doctors (list) ----------
 router.all('/', getOnly(async (req, res) => {
   const user = req.user;
@@ -109,6 +146,29 @@ router.all('/', getOnly(async (req, res) => {
     }));
 
     return ok(res, { count: doctors.length, doctors });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
+
+// ---------- GET /api/doctors/me ----------
+// Parity Express: doctorProfile.handler.ts getDoctorProfile.
+// Auth: DOCTOR only — TIDAK ADMIN_BRANCH (parity roleMiddleware(['DOCTOR'])).
+// pakai router.get (bukan all) biar PUT /me (handler terpisah di bawah) tetap 200.
+router.get('/me', getOnly(async (req, res) => {
+  const user = req.user;
+  if (!user?.userId) return fail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+  if (user.role !== 'DOCTOR') {
+    return fail(res, 'Forbidden: role tidak diizinkan untuk endpoint ini.', 403, 'FORBIDDEN');
+  }
+
+  try {
+    const { data: profile, error: profileErr } = await profileQuery(user.userId);
+    if (profileErr) return fail(res, `Database error: ${profileErr.message}`, 500, 'DB_ERROR');
+    if (!profile) return res.status(404).json({ success: false, error: 'DOCTOR_PROFILE_NOT_FOUND' });
+
+    return res.status(200).json({ success: true, data: mapProfile(profile) });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal error';
     return fail(res, message, 500, 'INTERNAL_ERROR');
@@ -235,40 +295,7 @@ router.put('/me', async (req: Request, res: Response) => {
   try {
     const supabase = getSupabase();
 
-    // Parity fetchDoctorProfile: doctors JOIN users (email/phone/is_active) LEFT JOIN branches.
-    const profileQuery = () =>
-      supabase
-        .from('doctors')
-        .select(`
-          id,
-          user_id,
-          full_name,
-          specialization,
-          license_number,
-          branch_id,
-          created_at,
-          updated_at,
-          users:user_id ( email, phone, is_active ),
-          branches:branch_id ( name )
-        `)
-        .eq('user_id', userId)
-        .maybeSingle();
-    const mapProfile = (d: any) => ({
-      id: d.id,
-      userId: d.user_id,
-      fullName: d.full_name,
-      email: d.users?.email || '',
-      phone: d.users?.phone || '',
-      specialization: d.specialization || '',
-      licenseNumber: d.license_number || '',
-      isActive: d.users?.is_active ?? true,
-      branchId: d.branch_id,
-      branchName: d.branches?.name || '',
-      createdAt: d.created_at,
-      updatedAt: d.updated_at,
-    });
-
-    const { data: profile, error: profileErr } = await profileQuery();
+    const { data: profile, error: profileErr } = await profileQuery(userId);
     if (profileErr) return fail(res, `Database error: ${profileErr.message}`, 500, 'DB_ERROR');
     if (!profile) return fail(res, 'Profil dokter tidak ditemukan', 404, 'DOCTOR_PROFILE_NOT_FOUND');
 
@@ -293,7 +320,7 @@ router.put('/me', async (req: Request, res: Response) => {
     const { error: updErr } = await supabase.from('users').update(updates).eq('id', userId);
     if (updErr) return fail(res, `Database error: ${updErr.message}`, 500, 'DB_ERROR');
 
-    const { data: updated, error: refetchErr } = await profileQuery();
+    const { data: updated, error: refetchErr } = await profileQuery(userId);
     if (refetchErr) return fail(res, `Database error: ${refetchErr.message}`, 500, 'DB_ERROR');
 
     return res.status(200).json({
