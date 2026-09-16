@@ -3380,4 +3380,42 @@ Estimasi: 15 menit. Prioritas: MEDIUM (Express akan deprecated, tapi sampai
 switch frontend masih live).
 Referensi: task_2_5_preaudit.log, task_2_5_coding.log (FIX).
 ===
+TD-2.4.30: Express tenant.middleware camelCase bug (BARU 2026-09-16)
+Status: ⚠️ OPEN
+
+Deskripsi: Express tenant.middleware.ts:33 cek cross-branch grant via
+`req.query?.branchId` (camelCase). Client kirim `?branch_id=` (snake_case) —
+tidak pernah match. Grant check never fires.
+
+Dampak: Setiap user authenticated (termasuk PATIENT) bisa akses branch LAIN
+via query param tanpa grant. Data leak cross-branch (queue, bookings, dll).
+Serverless enforceTenant sudah BENAR (pakai explicit param, tidak asal baca
+req.query). F5 pre-audit Step 2.6.
+
+Bukti: tenant.middleware.ts:33 vs serverless lib/auth.ts:125-151.
+Fix: baca req.query.branch_id || req.query.branchId (dua format), atau
+paksa client pakai satu format.
+
+Estimasi: 30 menit. Prioritas: HIGH (security, Express live sampai deprecate).
+Referensi: task_2_6_preaudit.log.
+===
+
+===
+TD-2.4.31: TV kiosk token expiry UX (BARU 2026-09-16)
+Status: ⚠️ OPEN
+
+Deskripsi: TV display di kiosk butuh logged-in session (role PATIENT/DOCTOR/
+ADMIN). Token expire → 401 → redirect /login. Kiosk unattended = broken UX
+sampai ada orang re-login. Pre-audit Step 2.6 F10.
+
+Dampak: TV display mati setelah token expire (default 24h). Operasional
+klinik terganggu.
+
+Fix (future design): endpoint /api/queue/status public (no auth) dengan
+IP-restriction ATAU long-lived service token khusus kiosk ATAU
+Supabase Realtime subscription (Phase 2 Batch 6).
+
+Estimasi: 2-3 jam (butuh design decision). Prioritas: MEDIUM.
+Referensi: task_2_6_preaudit.log, LOGBOOK ~3511.
+===
 ===

@@ -61,6 +61,10 @@
       "destination": "/api/queue?path=$1"
     },
     {
+      "source": "/queue/:path*",
+      "destination": "/api/queue?path=$1"
+    },
+    {
       "source": "/api/webhooks/:path*",
       "destination": "/api/invoices?path=webhooks/$1"
     },
