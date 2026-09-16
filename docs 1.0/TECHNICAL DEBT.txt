@@ -3306,4 +3306,29 @@ Perbaikan: (1) frontend adapt ke shape serverless /actions; (2) implementasi
 
 Estimasi: 1 jam. Prioritas: MEDIUM.
 Referensi: task_2_3_coding.log (Step 2.3 FASE B).
+
+===
+TD-2.4.26: Express /doctors/:id/queue-today loose ownership (BARU 2026-09-16)
+Status: ⚠️ OPEN
+
+Deskripsi: Express doctorQueue.handler.ts getDoctorQueueToday (baris 141-208)
+resolve :id via resolveDoctorRecordId (user_id = $1 OR id = $1) TANPA cek
+ownership. Route doctorQueue.routes.ts:25 allowRoles ['DOCTOR','ADMIN_BRANCH'],
+tapi DOCTOR bisa baca antrian dokter LAIN selama 1 branch sama (cross-doctor
+read). Hanya branch scope yang ada (WHERE branch_id = $2).
+
+Dampak: dokter cabang yang sama bisa lihat antrian/status pasien rekan dokter
+lain (privacy leak minimal — nama pasien + status antrian terekspos lintas
+dokter dalam 1 cabang).
+
+Bukti (serverless FIXED Step 2.4 FASE B2): doctors.ts /:id/queue-today — role
+DOCTOR dibatasi self_doctor_id: resolve :id harus == doctors.id milik
+user.userId, selain itu 403 FORBIDDEN. Resolve juga di-scope branch user
+(branchId dari token), pakai 2 query parameterized (by user_id, fallback by id)
+bukan .or() injection. ADMIN_BRANCH bebas (parity keputusan).
+
+Fix (opsional, kalau Express dipakai lagi): untuk role DOCTOR, wajib cek
+doctors.user_id = req.user.userId sebelum return data.
+Estimasi: 15 menit. Prioritas: MEDIUM-HIGH (data leak, Express live sampai deprecate).
+Referensi: prompt_24b.txt (Step 2.4 FASE B2).
 ===

@@ -530,6 +530,104 @@ router.post('/:id/ready-next', async (req: Request, res: Response) => {
   }
 });
 
+// ---------- GET /api/doctors/:id/queue-today ----------
+// Parity Express: doctorQueue.handler.ts getDoctorQueueToday (resolveDoctorRecordId).
+// Auth: DOCTOR + ADMIN_BRANCH.
+// SECURITY FIX (TD-2.4.26): Express mengizinkan cross-doctor read dalam 1 branch.
+// Serverless: role DOCTOR dibatasi ke self — resolve :id harus == self doctor record.
+// Note: resolve pakai 2 query parameterized (by user_id, fallback by id), TANPA .or()
+// injection, konsisten precedent auth.ts.
+router.all('/:id/queue-today', getOnly(async (req, res) => {
+  const user = req.user;
+
+  if (!['DOCTOR', 'ADMIN_BRANCH'].includes(user.role)) {
+    return res.status(403).json({ success: false, message: 'Forbidden', error: 'FORBIDDEN' });
+  }
+
+  const doctorParam = req.params.id;
+  if (!doctorParam) {
+    return res.status(400).json({ success: false, message: 'Parameter id dokter wajib diisi', error: 'VALIDATION_ERROR' });
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // Resolve :id -> doctors.id (bisa user_id atau doctor record id), branch scope user.
+    const { data: byUserId, error: e1 } = await supabase
+      .from('doctors')
+      .select('id, user_id')
+      .eq('user_id', doctorParam)
+      .eq('branch_id', user.branchId)
+      .limit(1)
+      .maybeSingle();
+    if (e1) return res.status(500).json({ success: false, message: `Database error: ${e1.message}`, error: 'DB_ERROR' });
+
+    let doctorRow = byUserId;
+    if (!doctorRow) {
+      const { data: byId, error: e2 } = await supabase
+        .from('doctors')
+        .select('id, user_id')
+        .eq('id', doctorParam)
+        .eq('branch_id', user.branchId)
+        .limit(1)
+        .maybeSingle();
+      if (e2) return res.status(500).json({ success: false, message: `Database error: ${e2.message}`, error: 'DB_ERROR' });
+      doctorRow = byId;
+    }
+
+    if (!doctorRow) {
+      return res.status(404).json({ success: false, message: 'Dokter tidak ditemukan' });
+    }
+
+    if (user.role === 'DOCTOR') {
+      const { data: selfRow, error: selfErr } = await supabase
+        .from('doctors')
+        .select('id')
+        .eq('user_id', user.userId)
+        .eq('branch_id', user.branchId)
+        .maybeSingle();
+      if (selfErr) return res.status(500).json({ success: false, message: `Database error: ${selfErr.message}`, error: 'DB_ERROR' });
+      if (doctorRow.id !== selfRow?.id) {
+        return res.status(403).json({ success: false, message: 'Forbidden', error: 'FORBIDDEN' });
+      }
+    }
+
+    const { data: rows, error: rpcErr } = await supabase.rpc('get_doctor_queue_today', {
+      p_doctor_id: doctorRow.id,
+      p_branch_id: user.branchId,
+    });
+    if (rpcErr) return res.status(500).json({ success: false, message: `RPC error: ${rpcErr.message}`, error: 'RPC_ERROR' });
+
+    const data = ((rows || []) as any[]).map((row: any) => ({
+      id: row.id,
+      bookingId: row.booking_id,
+      queueNumber: row.queue_number,
+      patientId: row.patient_id,
+      patientName: row.patient_name,
+      checkInTime: row.check_in_time,
+      status: row.status,
+      isWalkIn: !!row.is_walk_in,
+      waitTimeMinutes: Math.round(Number(row.wait_minutes)) || 0,
+    }));
+
+    const currentPatient =
+      data.find((p) => p.status === 'IN_SERVICE') ||
+      data.find((p) => p.status === 'BEING_CALLED') ||
+      null;
+
+    const nextPatients = data.filter((p) => p.status === 'WAITING').slice(0, 3);
+    const waitingCount = data.filter((p) => p.status === 'WAITING').length;
+
+    return res.status(200).json({
+      success: true,
+      data: { data, currentPatient, nextPatients, waitingCount },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return res.status(500).json({ success: false, message, error: 'INTERNAL_ERROR' });
+  }
+}));
+
 // ---------- 404 fallback domain doctors ----------
 router.use((req: Request, res: Response) => {
   return fail(res, 'Route tidak ditemukan di domain doctors.', 404, 'NOT_FOUND');
