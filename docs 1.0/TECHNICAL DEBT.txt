@@ -3232,3 +3232,32 @@ Fix opsi B (quick): tambah rewrite legacy non-/api di serverless vercel.json
 
 Estimasi: A = 2-3 jam, B = 15 menit + tech debt. Prioritas: HIGH.
 Referensi: task_preaudit_switch.log
+
+===
+TD-TEST-010: Unit Test NotificationService — hoisting mockQuery
+Status: OPEN (2026-09-16)
+
+Deskripsi: tests/unit/services/notification.service.test.ts:5 declare
+`const mockQuery = jest.fn()`, lalu direferensikan di dalam factory
+jest.mock('pg', ...) di line 8 & 10. babel-plugin-jest-hoist menaikkan
+jest.mock() ke atas const → module src/config/database.ts di-load
+sebelum mockQuery diinisialisasi → TDZ ReferenceError.
+
+Error: "Cannot access 'mockQuery' before initialization"
+Test suite: 1 failed, 0 tests run (gagal sebelum test execute).
+
+Dampak: Unit test NotificationService tidak bisa dijalankan sama sekali.
+Tidak mempengaruhi runtime (Express + serverless fine). Tidak blocker switch.
+Prioritas LOW (defer ke Batch 10 Testing/polish).
+
+Bukti: task_cek_td.log + /tmp/test_notif.log (full stack trace).
+Verifikasi TD existing: grep 2x + git history → tidak ada TD spesifik sebelumnya.
+
+Fix opsi (pilih saat eksekusi):
+- Opsi A (RECOMMENDED): pindahkan `const mockQuery = jest.fn()` KE DALAM factory
+  jest.mock('pg', () => { const mockQuery = jest.fn(); return { Pool: ..., __mockQuery: mockQuery }; });
+  lalu akses via `require('pg').__mockQuery` di test body.
+- Opsi B: pakai `jest.mock('pg')` auto-mock + `jest.spyOn(pool, 'query')` di beforeEach.
+
+Estimasi: 30 menit. Prioritas: LOW. Kategori: TEST.
+Referensi: task_cek_td.log
