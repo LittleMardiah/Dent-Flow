@@ -3192,3 +3192,43 @@ Kalau future butuh invoice_date sebagai kolom terpisah (business reason),
 add migration ALTER TABLE + backfill.
 
 Referensi: task_2_3_4b.log (diagnostic), task_2_3_4c.log (fix)
+
+===
+TD-2.4.22: Express N1/N2 FK mismatch (patients.id vs users.id)
+Status: OPEN (2026-09-16)
+
+Deskripsi: Express notification.service.ts:26-29 INSERT notifications.patient_id
+dengan nilai dari getPatientIdFromBooking() (:46-55) yang SELECT bookings.patient_id
+(= patients.id). Tapi notifications.patient_id FK → users(id) (migration 006:9).
+Akibat: FK violation 23503 → 500 → NOTIFICATION_LOG_FAILED.
+
+Dampak tambahan: booking.service.ts:110 panggil sendBookingConfirmation dalam
+transaksi create booking → FK fail → ROLLBACK → create-booking Express rusak.
+
+Bukti: file:line di notification.service.ts + migration 001:169 + 006:9.
+Serverless sudah benar: bookings.ts:456-482 resolve patients.user_id dulu.
+
+Fix: resolve patients.user_id (parity sendNoShowNotification + serverless).
+Estimasi: 30 menit. Prioritas: HIGH (revenue impact selama Express live).
+Referensi: task_preaudit_switch.log
+
+===
+TD-2.4.23: Frontend API path mismatch (no /api prefix)
+Status: OPEN (2026-09-16)
+
+Deskripsi: Frontend lib/api/*.ts + services/authService.ts memanggil endpoint
+TANPA prefix /api (mis. {base}/doctors, {base}/invoices). Serverless hanya
+melayani path /api/* (vercel.json rewrite). NEXT_PUBLIC_API_URL saat ini
+= https://dentflow-backend-lilac.vercel.app (Express, toleran path tanpa /api).
+
+Akibat: switch NEXT_PUBLIC_API_URL ke serverless TANPA update path → 404 hampir semua.
+
+Bukti: dentist-web/.env.production:1 (Express URL); semua lib/api/*.ts path tanpa /api;
+.env.local:1 sudah pakai suffix /api.
+
+Fix opsi A (RECOMMENDED): update 10+ file frontend, prepend /api ke semua path.
+Fix opsi B (quick): tambah rewrite legacy non-/api di serverless vercel.json
+(tech debt).
+
+Estimasi: A = 2-3 jam, B = 15 menit + tech debt. Prioritas: HIGH.
+Referensi: task_preaudit_switch.log

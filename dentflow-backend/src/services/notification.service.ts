@@ -45,13 +45,13 @@ export class NotificationService {
    */
   private async getPatientIdFromBooking(bookingId: string): Promise<string> {
     const result = await this.pool.query(
-      'SELECT patient_id FROM bookings WHERE id = $1',
+      `SELECT p.user_id FROM bookings b JOIN patients p ON p.id = b.patient_id WHERE b.id = $1`,
       [bookingId]
     );
     if (result.rows.length === 0) {
       throw new Error('BOOKING_NOT_FOUND');
     }
-    return result.rows[0].patient_id;
+    return result.rows[0].user_id;
   }
 
   /**
