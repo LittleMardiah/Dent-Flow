@@ -59,6 +59,14 @@
     {
       "source": "/api/admin/webhooks/:path*",
       "destination": "/api/notifications?path=webhooks/$1"
+    },
+    {
+      "source": "/api/audit-logs/:path*",
+      "destination": "/api/bookings?path=audit/$1"
+    },
+    {
+      "source": "/audit-logs/:path*",
+      "destination": "/api/bookings?path=audit/$1"
     }
   ]
 }

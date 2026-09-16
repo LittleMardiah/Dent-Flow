@@ -3284,3 +3284,26 @@ Express tetap broken sampai deprecate Phase 4.
 Fix (opsional, kalau Express dipakai lagi): replikasi 3 guard di atas.
 Estimasi: 15 menit. Prioritas: HIGH (data leak, Express live).
 Referensi: prompt_22b.txt (Step 2.2 FASE B)
+
+===
+TD-2.4.25: /api/audit-logs/export + /actions frontend call belum punya backend (BARU 2026-09-16)
+Status: ⚠️ OPEN
+
+Deskripsi: Frontend memanggil /audit-logs/export dan /audit-logs/actions
+(dentflow-web/src/lib/api/audit.ts), tapi backend Express tidak punya
+keduanya (audit.routes.ts hanya GET /audit-logs).
+
+Dampak:
+- /audit-logs/actions: serverless Step 2.3 SUDAH ada, shape { action, count }[]
+  (desc by count). Frontend mengharapkan string[] (audit.ts:66-69) dan render
+  langsung. Gap shape: frontend harus adapt ke {action,count}[] atau serverless
+  flatten. Bukan regresi (Express tidak punya sama sekali).
+- /audit-logs/export: serverless 404 (deferred). Export butuh spec CSV
+  (kolom, format, filename) sebelum implementasi. Frontend Export button broken.
+
+Perbaikan: (1) frontend adapt ke shape serverless /actions; (2) implementasi
+/export setelah spec CSV disetujui.
+
+Estimasi: 1 jam. Prioritas: MEDIUM.
+Referensi: task_2_3_coding.log (Step 2.3 FASE B).
+===

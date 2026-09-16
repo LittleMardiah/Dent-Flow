@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import express, { Request, Response, NextFunction } from 'express';
 import { Router } from 'express';
 import { getSupabase } from '../lib/supabase';
-import { extractBearerToken, verifyJwt, requireRole, AuthUser } from '../lib/auth';
+import { extractBearerToken, verifyJwt, requireRole, enforceTenant, AuthUser } from '../lib/auth';
 
 const ALLOWED_ROLES = ['PATIENT', 'ADMIN_BRANCH'];
 
@@ -17,8 +17,12 @@ const ALLOWED_ROLES = ['PATIENT', 'ADMIN_BRANCH'];
 //   POST /api/patient/bookings                     (createScheduledBooking)
 //   GET  /api/admin/bookings                       (list + filter status, TD-2.4.9)
 //   POST /api/admin/bookings/:id/send-reminder     (N1, dipindah dari notifications.ts)
-//   POST /api/admin/bookings/:id/send-confirmation (N2, dipindah dari notifications.ts)
+//   POST /api/admin/bookings/:id/send-confirmation  (N2, dipindah dari notifications.ts)
+//   GET  /api/admin/audit-logs                      (list + filter + pagination, Step 2.3 FASE B)
+//   GET  /api/admin/audit-logs/actions              (distinct event_type + count, Step 2.3 FASE B)
+//   DEFER: /api/audit-logs/export -> TD-2.4.25 (JANGAN implementasi, 404).
 // Parity Express: dentflow-backend/src/routes/booking.routes.ts
+//                 dentflow-backend/src/routes/audit.routes.ts + audit.handler.ts
 //                 dentflow-backend/src/handlers/booking.handler.ts (cancelBooking)
 //                 dentflow-backend/src/handlers/notification.handler.ts (N1/N2)
 // ============================================================
@@ -503,26 +507,210 @@ adminRouter.use((req: Request, res: Response) => {
 });
 
 // ============================================================
+// /api/admin/audit-logs — Step 2.3 FASE B (serverless subset)
+// - Approach B+C: vercel.json rewrites /api/audit-logs/:path* dan
+//   /audit-logs/:path* -> /api/bookings?path=audit/$1 (marker 'audit/...').
+// - Express mount prefix '/api/admin/audit-logs' (ADMIN_BRANCH only).
+// Scope serverless saat ini (parity Express audit.routes.ts + audit.handler):
+//   GET  /api/audit-logs          list + filter + pagination
+//   GET  /api/audit-logs/actions  distinct event_type + count (desc)
+//   DEFER /api/audit-logs/export  -> TD-2.4.25, JANGAN implementasi (404).
+// ============================================================
+const auditRouter: Router = express.Router();
+
+// ---------- Auth + env guard (level audit router, parity audit.routes.ts) ----------
+// Semua route audit require ADMIN_BRANCH.
+auditRouter.use((req: Request, res: Response, next: NextFunction) => {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return adminFail(res, 'ENV_MISSING: SUPABASE_* belum di-set.', 500, 'ENV_MISSING');
+  }
+  if (!process.env.JWT_SECRET) {
+    return adminFail(res, 'ENV_MISSING: JWT_SECRET belum di-set.', 500, 'ENV_MISSING');
+  }
+
+  const authHeader = req.headers['authorization'];
+  const token = extractBearerToken(typeof authHeader === 'string' ? authHeader : undefined);
+  if (!token) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+  try {
+    const user = verifyJwt(token);
+    requireRole(user, ADMIN_ALLOWED_ROLES);
+    (req as AuthedRequest).user = user;
+    next();
+  } catch (err: unknown) {
+    const e = err as { statusCode?: number; message?: string };
+    if (e.statusCode === 403) return res.status(403).json({ success: false, error: e.message || 'Forbidden' });
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+});
+
+// Escape wildcard ILIKE (% _) biar search literal (Supabase/PostgREST pakai
+// backslash default escape di pattern ILIKE).
+const escapeLike = (value: string) =>
+  value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+
+// ---------- GET /api/admin/audit-logs (list + filter + pagination) ----------
+// Branch scope: audit_logs.branch_id = enforceTenant(user, branchId query) —
+// default JWT user.branchId. Join users untuk username (LEFT JOIN, fallback 'System').
+// Footgun #3 (pre-audit): field action DIISI dari event_type.
+auditRouter.all('/', getOnly(async (req, res) => {
+  const user = req.user;
+  if (!user?.branchId) {
+    return adminFail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+  }
+
+  const page = Math.max(parseInt(String(req.query.page || '1'), 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit || '20'), 10) || 20, 1), 100);
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  try {
+    const supabase = getSupabase();
+
+    const rawBranch = req.query.branchId;
+    const requestedBranchId = typeof rawBranch === 'string' && rawBranch.length > 0 ? rawBranch : undefined;
+    let branchId: string;
+    try {
+      branchId = await enforceTenant(supabase, user, requestedBranchId);
+    } catch (tenantErr: unknown) {
+      const e = tenantErr as { statusCode?: number; message?: string };
+      if (e.statusCode === 403) return adminFail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
+      throw tenantErr;
+    }
+
+    let query = supabase
+      .from('audit_logs')
+      .select(
+        `id, event_type, entity_type, entity_id, old_values, new_values, description, ip_address, created_at, users:user_id ( username )`,
+        { count: 'exact' }
+      )
+      .eq('branch_id', branchId)
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    const eventType = typeof req.query.eventType === 'string' ? String(req.query.eventType).trim() : '';
+    if (eventType) query = query.eq('event_type', eventType);
+
+    const entityType = typeof req.query.entityType === 'string' ? String(req.query.entityType).trim() : '';
+    if (entityType) query = query.eq('entity_type', entityType);
+
+    const entityId = typeof req.query.entityId === 'string' ? String(req.query.entityId).trim() : '';
+    if (entityId) query = query.eq('entity_id', entityId);
+
+    const search = typeof req.query.search === 'string' ? String(req.query.search).trim() : '';
+    if (search) query = query.ilike('description', `%${escapeLike(search)}%`);
+
+    const dateFrom = typeof req.query.dateFrom === 'string' ? String(req.query.dateFrom).trim() : '';
+    if (dateFrom) query = query.gte('created_at', dateFrom);
+
+    const dateTo = typeof req.query.dateTo === 'string' ? String(req.query.dateTo).trim() : '';
+    if (dateTo) query = query.lte('created_at', dateTo);
+
+    const { data, error: dbErr, count } = await query;
+    if (dbErr) return adminFail(res, `Database error: ${dbErr.message}`, 500, 'DB_ERROR');
+
+    const logs = (data || []).map((row: any) => ({
+      id: row.id,
+      eventType: row.event_type,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      action: row.event_type,
+      description: row.description || '',
+      changes: { old: row.old_values, new: row.new_values },
+      userAgent: undefined,
+      actor: { username: row.users?.username || 'System' },
+      createdAt: row.created_at,
+      ipAddress: row.ip_address,
+    }));
+
+    const total = count || 0;
+    return adminOk(res, {
+      data: logs,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit) || 0,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return adminFail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
+
+// ---------- GET /api/admin/audit-logs/actions (distinct event_type + count) ----------
+auditRouter.all('/actions', getOnly(async (req, res) => {
+  const user = req.user;
+  if (!user?.branchId) {
+    return adminFail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    const rawBranch = req.query.branchId;
+    const requestedBranchId = typeof rawBranch === 'string' && rawBranch.length > 0 ? rawBranch : undefined;
+    let branchId: string;
+    try {
+      branchId = await enforceTenant(supabase, user, requestedBranchId);
+    } catch (tenantErr: unknown) {
+      const e = tenantErr as { statusCode?: number; message?: string };
+      if (e.statusCode === 403) return adminFail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
+      throw tenantErr;
+    }
+
+    const { data, error: dbErr } = await supabase
+      .from('audit_logs')
+      .select('event_type')
+      .eq('branch_id', branchId);
+    if (dbErr) return adminFail(res, `Database error: ${dbErr.message}`, 500, 'DB_ERROR');
+
+    const counts = new Map<string, number>();
+    for (const row of data || []) {
+      const key = (row as { event_type?: string })?.event_type;
+      if (!key) continue;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    const actions = Array.from(counts.entries())
+      .map(([action, count]) => ({ action, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return adminOk(res, actions);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return adminFail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
+
+// ---------- 404 fallback domain audit logs ----------
+auditRouter.use((req: Request, res: Response) => {
+  return adminFail(res, 'Route tidak ditemukan di domain audit logs.', 404, 'NOT_FOUND');
+});
+
+// ============================================================
 // Vercel handler: mount router di prefix '/api/patient/bookings'
-// + '/api/admin/bookings' (TD-2.4.9)
+// + '/api/admin/bookings' (TD-2.4.9) + '/api/admin/audit-logs'
+// (Step 2.3 FASE B)
 // ============================================================
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use('/api/patient/bookings', router);
 app.use('/api/admin/bookings', adminRouter);
+app.use('/api/admin/audit-logs', auditRouter);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Vercel kirim FULL URL ke lambda (terbukti di 2.3.2c), jadi Express mount
   // prefix match semua sub-path. Safeguard: kalau runtime strip URL jadi
   // destination saja (/api/bookings) dan suffix masuk ?path=, rekonstruksi.
-  // Admin rewrite memakai marker 'admin/...' (parity invoices.ts admin/$1).
+  // Admin rewrite memakai marker 'admin/...' (parity invoices.ts admin/$1),
+  // audit rewrite memakai marker 'audit/...' (Step 2.3 FASE B).
   const r = req as any;
   const captured = r.query && r.query.path ? r.query.path : undefined;
   if (captured) {
     const suffix = Array.isArray(captured) ? captured[0] : String(captured);
     const url = String(r.url || '');
     if (suffix && !url.includes(`/${suffix}`)) {
-      if (suffix.startsWith('admin/')) {
+      if (suffix.startsWith('audit/')) {
+        r.url = `/api/admin/audit-logs/${suffix.slice('audit/'.length)}`;
+      } else if (suffix.startsWith('admin/')) {
         r.url = `/api/admin/bookings/${suffix.slice('admin/'.length)}`;
       } else {
         r.url = `/api/patient/bookings/${suffix}`;
