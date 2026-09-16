@@ -46,7 +46,7 @@
     },
     {
       "source": "/api/admin/bookings/:path*",
-      "destination": "/api/notifications?path=$1"
+      "destination": "/api/bookings?path=admin/$1"
     },
     {
       "source": "/api/queue/:path*",
