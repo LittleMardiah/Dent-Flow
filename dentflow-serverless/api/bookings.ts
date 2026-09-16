@@ -20,7 +20,9 @@ const ALLOWED_ROLES = ['PATIENT', 'ADMIN_BRANCH'];
 //   POST /api/admin/bookings/:id/send-confirmation  (N2, dipindah dari notifications.ts)
 //   GET  /api/admin/audit-logs                      (list + filter + pagination, Step 2.3 FASE B)
 //   GET  /api/admin/audit-logs/actions              (distinct event_type + count, Step 2.3 FASE B)
+//   GET  /api/admin/queues                          (list queue hari ini, Step 2.5 FASE B)
 //   DEFER: /api/audit-logs/export -> TD-2.4.25 (JANGAN implementasi, 404).
+//   DEFER: /api/admin/queues/export -> TD-2.4.28 (JANGAN implementasi, 404).
 // Parity Express: dentflow-backend/src/routes/booking.routes.ts
 //                 dentflow-backend/src/routes/audit.routes.ts + audit.handler.ts
 //                 dentflow-backend/src/handlers/booking.handler.ts (cancelBooking)
@@ -686,15 +688,144 @@ auditRouter.use((req: Request, res: Response) => {
 });
 
 // ============================================================
+// /api/admin/queues — Step 2.5 FASE B (serverless subset)
+// - Approach B+C: vercel.json rewrites /api/admin/queues/:path* dan
+//   /admin/queues/:path* -> /api/bookings?path=admin-queues/$1
+//   (marker 'admin-queues/...').
+// - Express mount prefix '/api/admin/queues' (ADMIN_BRANCH only).
+// Parity Express: dentflow-backend/src/handlers/adminQueue.handler.ts
+//                 dentflow-backend/src/routes/admin.routes.ts (GET /queues)
+// LEVEL-KEPUTUSAN (deviasi di bawah, jangan diubah tanpa twg):
+//   - Walk-in EXCLUDED (INNER JOIN patients, parity Express). JANGAN COALESCE.
+//   - Branch scope: user.branchId (Express pakai query branchId — security fix).
+//   - Response: { success, data (flat QueuePatient[]), total (data.length), nowServing } —
+//     parity Express adminQueue.handler.ts:58-68. TANPA page/totalPages/timestamp.
+//   - Filter: doctorId optional (parity). Status filter NONE (parity — semua status).
+//     Date hardcoded DATE(created_at) = CURRENT_DATE (parity, UTC DB).
+// ============================================================
+const adminQueuesRouter: Router = express.Router();
+
+// ---------- Auth + env guard (level admin queues router, parity admin.routes.ts) ----------
+// Semua route admin queues require ADMIN_BRANCH.
+adminQueuesRouter.use((req: Request, res: Response, next: NextFunction) => {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return adminFail(res, 'ENV_MISSING: SUPABASE_* belum di-set.', 500, 'ENV_MISSING');
+  }
+  if (!process.env.JWT_SECRET) {
+    return adminFail(res, 'ENV_MISSING: JWT_SECRET belum di-set.', 500, 'ENV_MISSING');
+  }
+
+  const authHeader = req.headers['authorization'];
+  const token = extractBearerToken(typeof authHeader === 'string' ? authHeader : undefined);
+  if (!token) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+  try {
+    const user = verifyJwt(token);
+    requireRole(user, ADMIN_ALLOWED_ROLES);
+    (req as AuthedRequest).user = user;
+    next();
+  } catch (err: unknown) {
+    const e = err as { statusCode?: number; message?: string };
+    if (e.statusCode === 403) return res.status(403).json({ success: false, error: e.message || 'Forbidden' });
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+});
+
+// ---------- GET /api/admin/queues (list queue hari ini) ----------
+// Parity Express getAdminQueues: INNER JOIN bookings + patients + doctors —
+// walk-in (patient_id = NULL) EXCLUDED, TANPA COALESCE (beda queue-today, intentional).
+// Row mapping EXACT parity Express (Booklet pre-audit): id, queueNumber,
+// patientName, patientId, doctorId, doctorName, serviceType, checkInTime, status.
+adminQueuesRouter.all('/', getOnly(async (req, res) => {
+  const user = req.user;
+  if (!user?.branchId) {
+    return adminFail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+  }
+
+  const page = Math.max(parseInt(String(req.query.page || '1'), 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit || '20'), 10) || 20, 1), 100);
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  // doctorId filter optional (parity Express: optional query param).
+  const doctorId = typeof req.query.doctorId === 'string' ? String(req.query.doctorId).trim() : '';
+
+  try {
+    const supabase = getSupabase();
+
+    // Parity DATE(q.created_at) = CURRENT_DATE (DB UTC). Range dihitung di JS,
+    // setara dengan batas hari UTC local, WIB-independent (sama seperti Express).
+    const now = new Date();
+    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const dayEnd = new Date(dayStart.getTime() + 86400000);
+
+    let query = supabase
+      .from('queues')
+      .select(
+        `id, queue_number, status, created_at, doctor_id,
+         bookings:booking_id!inner(patient_id, patients:patient_id!inner(full_name)),
+         doctors:doctor_id!inner(full_name, specialization)`,
+        { count: 'exact' }
+      )
+      .eq('branch_id', user.branchId)
+      .is('deleted_at', null)
+      .gte('created_at', dayStart.toISOString())
+      .lt('created_at', dayEnd.toISOString())
+      .order('queue_number', { ascending: true })
+      .range(from, to);
+
+    if (doctorId) {
+      query = query.eq('doctor_id', doctorId);
+    }
+
+    const { data, error: dbErr, count } = await query;
+    if (dbErr) return adminFail(res, `Database error: ${dbErr.message}`, 500, 'DB_ERROR');
+
+    const queues = (data || []).map((row: any) => ({
+      id: row.id,
+      queueNumber: row.queue_number,
+      patientName: row.bookings?.patients?.full_name || '',
+      patientId: row.bookings?.patient_id,
+      doctorId: row.doctor_id,
+      doctorName: row.doctors?.full_name || '',
+      serviceType: row.doctors?.specialization || '',
+      checkInTime: row.created_at,
+      status: row.status,
+    }));
+
+    const nowServing =
+      queues.find((p: any) => p.status === 'IN_SERVICE') ||
+      queues.find((p: any) => p.status === 'BEING_CALLED') ||
+      null;
+
+    return res.status(200).json({
+      success: true,
+      data: queues,
+      total: queues.length,
+      nowServing,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return adminFail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
+
+// ---------- 404 fallback domain admin queues ----------
+adminQueuesRouter.use((req: Request, res: Response) => {
+  return adminFail(res, 'Route tidak ditemukan di domain admin queues.', 404, 'NOT_FOUND');
+});
+
+// ============================================================
 // Vercel handler: mount router di prefix '/api/patient/bookings'
 // + '/api/admin/bookings' (TD-2.4.9) + '/api/admin/audit-logs'
-// (Step 2.3 FASE B)
+// (Step 2.3 FASE B) + '/api/admin/queues' (Step 2.5 FASE B)
 // ============================================================
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use('/api/patient/bookings', router);
 app.use('/api/admin/bookings', adminRouter);
 app.use('/api/admin/audit-logs', auditRouter);
+app.use('/api/admin/queues', adminQueuesRouter);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Vercel kirim FULL URL ke lambda (terbukti di 2.3.2c), jadi Express mount
@@ -708,7 +839,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const suffix = Array.isArray(captured) ? captured[0] : String(captured);
     const url = String(r.url || '');
     if (suffix && !url.includes(`/${suffix}`)) {
-      if (suffix.startsWith('audit/')) {
+      if (suffix.startsWith('admin-queues/')) {
+        r.url = `/api/admin/queues/${suffix.slice('admin-queues/'.length)}`;
+      } else if (suffix.startsWith('audit/')) {
         r.url = `/api/admin/audit-logs/${suffix.slice('audit/'.length)}`;
       } else if (suffix.startsWith('admin/')) {
         r.url = `/api/admin/bookings/${suffix.slice('admin/'.length)}`;

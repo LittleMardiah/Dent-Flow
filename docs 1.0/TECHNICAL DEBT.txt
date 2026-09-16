@@ -3332,3 +3332,52 @@ doctors.user_id = req.user.userId sebelum return data.
 Estimasi: 15 menit. Prioritas: MEDIUM-HIGH (data leak, Express live sampai deprecate).
 Referensi: prompt_24b.txt (Step 2.4 FASE B2).
 ===
+TD-2.4.27: Express /admin/queues exclude walk-in (INNER JOIN patients) (BARU 2026-09-16)
+Status: OPEN
+
+Deskripsi: Express handler GET /admin/queues pakai INNER JOIN patients p ON
+b.patient_id = p.id. Walk-in bookings punya patient_id = NULL (migration 033
+drop NOT NULL), pakai temp_patient_id. Akibat: walk-in invisible di admin
+queue board. queue-today endpoint pakai COALESCE (handles walk-in); admin/queues
+tidak — inkonsisten.
+
+Serverless Step 2.5 replicate (parity) — walk-in tetap excluded. Fix (kalau
+perlu) = mirror queue-today pattern (COALESCE + LEFT JOIN).
+
+Dampak: Admin tidak bisa lihat walk-in pasien di queue board. Mungkin
+intentional (admin proses walk-in di halaman berbeda), atau bug.
+
+Evaluasi: setelah frontend switch + walk-in flow tested. Kalau admin butuh,
+fix mirror queue-today.
+
+Estimasi: 30 menit (kalau fix). Prioritas: LOW (evaluate dulu).
+Referensi: task_2_5_preaudit.log.
+===
+TD-2.4.28: /admin/queues/export frontend call belum punya backend (BARU 2026-09-16)
+Status: OPEN
+
+Deskripsi: Frontend queueApi.exportQueue memanggil /admin/queues/export,
+backend Express tidak ada, serverless Step 2.5 defer. Butuh spec CSV.
+
+Estimasi: 1 jam (setelah spec). Prioritas: LOW.
+Referensi: task_2_5_preaudit.log.
+===
+TD-2.4.29: Express /admin/queues branch scope via query param (BARU 2026-09-16)
+Status: OPEN
+
+Deskripsi: Express GET /admin/queues ambil branchId dari req.query.branchId
+(required, client-controlled). ADMIN_BRANCH cabang A bisa pass branchId=B
+untuk lihat queue cabang lain. Serverless Step 2.5 fix: pakai user.branchId
+dari JWT (tidak bisa dimanipulasi).
+
+Dampak: Express cross-branch read (admin A lihat queue B). Privacy antar-branch
+terlanggar. Serverless sudah aman.
+
+Fix Express (opsional, Express deprecated Phase 4): pakai req.user.branchId,
+abaikan query param atau validasi via tenantMiddleware.
+
+Estimasi: 15 menit. Prioritas: MEDIUM (Express akan deprecated, tapi sampai
+switch frontend masih live).
+Referensi: task_2_5_preaudit.log, task_2_5_coding.log (FIX).
+===
+===

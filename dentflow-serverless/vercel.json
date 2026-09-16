@@ -45,6 +45,14 @@
       "destination": "/api/checkIn?path=$1"
     },
     {
+      "source": "/api/admin/queues/:path*",
+      "destination": "/api/bookings?path=admin-queues/$1"
+    },
+    {
+      "source": "/admin/queues/:path*",
+      "destination": "/api/bookings?path=admin-queues/$1"
+    },
+    {
       "source": "/api/admin/bookings/:path*",
       "destination": "/api/bookings?path=admin/$1"
     },
