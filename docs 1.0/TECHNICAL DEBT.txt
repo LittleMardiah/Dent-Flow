@@ -3481,3 +3481,16 @@ Fix: Hapus handler + import dead. Atau biarkan sampai deprecate Express
 Estimasi: 10 menit. Prioritas: LOW.
 Referensi: task_queue_actions_preaudit.log.
 ===
+===
+TD-2.4.35: Serverless noShows.ts tidak punya GET /admin/no-shows (list) (BARU 2026-09-17)
+Status: OPEN
+
+Deskripsi: Serverless noShows.ts tidak punya GET /admin/no-shows (list).
+Express punya (noShow.routes.ts:12). Cypress hit GET ini.
+Frontend admin no-show list (kalau ada) akan 404 setelah switch.
+
+Scope: migrate GET list endpoint di task terpisah.
+
+Estimasi: 1-2 jam. Prioritas: HIGH.
+Referensi: task_batch5_faseb_merge_notifications.log.
+===

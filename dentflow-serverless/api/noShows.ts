@@ -20,6 +20,14 @@ const ALLOWED_ROLES = ['ADMIN_BRANCH'];
 // role ADMIN_BRANCH-only — domain terpisah dari '/api/patient/bookings'
 // (PATIENT+ADMIN_BRANCH). Lihat task_2_4_2.log STEP 3.
 // ============================================================
+// ============================================================
+// Sub-Task A FASE B (2026-09-17): notifications.ts di-merge ke file ini
+// (1 endpoint webhook replay, multi-mount '/api/admin/webhooks'). Tujuan:
+// 12 -> 11 function, bebaskan slot untuk inventory.ts (Sub-Task C).
+// Contract response webhook BEDA dari no-shows ({success,error,message,
+// timestamp}) — per-router, jangan digabung (D4).
+// Reconstruct handler pakai BRANCHING per-prefix (D3).
+// ============================================================
 
 // Response shape = parity Express noShow.handler:
 //   success: { success: true, message, data? }
@@ -146,23 +154,100 @@ router.use((req: Request, res: Response) => {
 });
 
 // ============================================================
+// Webhook replay domain (merged dari notifications.ts — Sub-Task A FASE B)
+// - notifications.ts di-delete setelah merge. vercel.json destination
+//   /api/admin/webhooks/:path* -> /api/noShows (bukan /api/notifications).
+// - Multi-mount router terpisah, parity bookings.ts:825-828.
+// - Auth + response contract BEDA dari domain no-shows
+//   ({ success, error, message, timestamp }) — per-router, jangan digabung.
+// Parity Express: dentflow-backend/src/routes/adminWebhook.routes.ts
+// ============================================================
+
+// Error shape (parity notification.handler): { success: false, error, message }.
+// Dinamai replayFail (bukan fail) supaya tidak bentrok dengan fail() domain
+// no-shows yang shape-nya { success: false, message }.
+const replayFail = (res: Response, message: string, status = 400, code = 'ERROR') =>
+  res.status(status).json({ success: false, error: code, message });
+
+const webhookReplayRouter: Router = express.Router();
+
+// ---------- Auth + env guard (level router, parity adminWebhook.routes.ts) ----------
+// Semua route require ADMIN_BRANCH.
+webhookReplayRouter.use((req: Request, res: Response, next: NextFunction) => {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return replayFail(res, 'ENV_MISSING: SUPABASE_* belum di-set.', 500, 'ENV_MISSING');
+  }
+  if (!process.env.JWT_SECRET) {
+    return replayFail(res, 'ENV_MISSING: JWT_SECRET belum di-set.', 500, 'ENV_MISSING');
+  }
+  const authHeader = req.headers['authorization'];
+  const token = extractBearerToken(typeof authHeader === 'string' ? authHeader : undefined);
+  if (!token) return res.status(401).json({ success: false, error: 'Unauthorized' });
+  try {
+    const user = verifyJwt(token);
+    requireRole(user, ALLOWED_ROLES);
+    (req as AuthedRequest).user = user;
+    next();
+  } catch (err: unknown) {
+    const e = err as { statusCode?: number; message?: string };
+    if (e.statusCode === 403) return res.status(403).json({ success: false, error: e.message || 'Forbidden' });
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+});
+
+// ---------- POST /api/admin/webhooks/:id/replay (S3 admin replay) ----------
+webhookReplayRouter.post('/:id/replay', async (req: Request, res: Response) => {
+  const webhookId = req.params.id;
+  if (!webhookId) return res.status(400).json({ success: false, message: 'webhook id required', error: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+
+  try {
+    const supabase = getSupabase();
+    const { data: wh, error } = await supabase.from('payment_webhooks').select('webhook_id, status').eq('webhook_id', webhookId).maybeSingle();
+    if (error) return res.status(500).json({ success: false, message: `DB error: ${error.message}`, error: 'DB_ERROR', timestamp: new Date().toISOString() });
+    if (!wh) return res.status(404).json({ success: false, message: 'Webhook not found', error: 'WEBHOOK_NOT_FOUND', timestamp: new Date().toISOString() });
+    if (wh.status === 'PROCESSED') return res.status(409).json({ success: false, message: 'Webhook already processed', error: 'ALREADY_PROCESSED', timestamp: new Date().toISOString() });
+
+    await supabase.from('payment_webhooks').update({ status: 'PROCESSED', processed_at: new Date().toISOString() }).eq('webhook_id', webhookId);
+    await supabase.from('payment_webhook_errors').delete().eq('webhook_id', webhookId);
+    return res.status(200).json({ success: true, message: 'Webhook replayed', timestamp: new Date().toISOString() });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return res.status(500).json({ success: false, message, error: 'INTERNAL_ERROR', timestamp: new Date().toISOString() });
+  }
+});
+
+// ---------- 404 fallback domain admin webhooks ----------
+webhookReplayRouter.use((req: Request, res: Response) => {
+  return replayFail(res, 'Route tidak ditemukan di domain admin webhooks.', 404, 'NOT_FOUND');
+});
+
+// ============================================================
 // Vercel handler: mount router di prefix '/api/no-shows'
+// + '/api/admin/webhooks' (Sub-Task A FASE B, parity bookings.ts:825)
 // ============================================================
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use('/api/no-shows', router);
+app.use('/api/admin/webhooks', webhookReplayRouter);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Vercel kirim FULL URL ke lambda (terbukti di 2.3.2c), jadi Express mount
-  // prefix '/api/no-shows' match semua sub-path. Safeguard: kalau runtime strip
-  // URL jadi destination saja (/api/noShows) dan suffix masuk ?path=, rekonstruksi.
+  // prefix match semua sub-path. Safeguard: kalau runtime strip URL jadi
+  // destination saja (/api/noShows) dan suffix masuk ?path=, rekonstruksi
+  // pakai BRANCHING per-prefix (D3):
+  //   path=webhooks/<rest> -> /api/admin/webhooks/<rest>   (rewrite /api/admin/webhooks)
+  //   path=<suffix>        -> /api/no-shows/<suffix>       (rewrite /api/no-shows)
   const r = req as any;
   const captured = r.query && r.query.path ? r.query.path : undefined;
   if (captured) {
     const suffix = Array.isArray(captured) ? captured[0] : String(captured);
     const url = String(r.url || '');
     if (suffix && !url.includes(`/${suffix}`)) {
-      r.url = `/api/no-shows/${suffix}`;
+      if (suffix.startsWith('webhooks/')) {
+        r.url = `/api/admin/webhooks/${suffix.slice('webhooks/'.length)}`;
+      } else {
+        r.url = `/api/no-shows/${suffix}`;
+      }
     }
   }
   return app(r, res as any);

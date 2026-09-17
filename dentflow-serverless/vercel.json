@@ -78,7 +78,7 @@
     },
     {
       "source": "/api/admin/webhooks/:path*",
-      "destination": "/api/notifications?path=webhooks/$1"
+      "destination": "/api/noShows?path=webhooks/$1"
     },
     {
       "source": "/api/audit-logs/:path*",
