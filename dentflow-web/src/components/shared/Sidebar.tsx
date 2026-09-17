@@ -22,7 +22,7 @@ interface SidebarProps {
   onMobileClose?: () => void;
 }
 
-const adminMenu = [
+const adminMenuAll = [
   { label: 'Antrian', href: '/admin/queue', icon: LayoutDashboard },
   { label: 'Dokter', href: '/admin/doctors', icon: Stethoscope },
   { label: 'Pasien', href: '/admin/patients', icon: User },
@@ -31,6 +31,18 @@ const adminMenu = [
   { label: 'Audit Log', href: '/admin/audit', icon: FileText },
   { label: 'Pengaturan', href: '/admin/settings', icon: Settings },
 ];
+
+const hideBrokenMenu = (() => {
+  try {
+    return process.env.NEXT_PUBLIC_HIDE_BROKEN_MENU === 'true';
+  } catch {
+    return false;
+  }
+})();
+
+const adminMenu = hideBrokenMenu
+  ? adminMenuAll.filter((item) => item.href !== '/admin/settings')
+  : adminMenuAll;
 
 const doctorMenu = [
   { label: 'Antrian', href: '/doctor/queue', icon: LayoutDashboard },
