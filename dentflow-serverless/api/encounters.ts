@@ -266,7 +266,7 @@ router.all('/', getOnly(async (req, res) => {
     let query = supabase
       .from('encounters')
       .select(
-        `id, started_at, created_at, treatment, status, patients:patient_id ( full_name )`,
+        `id, patient_id, started_at, created_at, complaint, diagnosis, treatment, status, patients:patient_id ( full_name )`,
         { count: 'exact' }
       )
       .eq('branch_id', user.branchId);
@@ -310,20 +310,22 @@ router.all('/', getOnly(async (req, res) => {
     const total = count || 0;
     const items = (data || []).map((row: any) => ({
       id: row.id,
-      encounterDate: row.started_at || row.created_at || null,
+      patientId: row.patient_id,
       patientName: row.patients?.full_name || '',
+      complaint: row.complaint || '',
+      diagnosis: row.diagnosis || '',
       treatment: row.treatment || '',
       status: row.status,
+      createdAt: row.started_at || row.created_at || null,
     }));
 
     res.status(200).json({
       success: true,
-      data: items,
-      pagination: {
+      data: {
+        data: items,
         total,
         page,
-        limit,
-        pages: Math.ceil(total / limit) || 0,
+        totalPages: Math.ceil(total / limit) || 0,
       },
     });
   } catch (err: unknown) {

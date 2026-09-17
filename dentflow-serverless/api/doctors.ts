@@ -114,7 +114,7 @@ router.all('/', getOnly(async (req, res) => {
       ? rawBranch
       : user.branchId;
 
-    const { data, error: dbError } = await supabase
+    const { data: doctorsData, error: dbError } = await supabase
       .from('doctors')
       .select(`
         id,
@@ -132,7 +132,23 @@ router.all('/', getOnly(async (req, res) => {
 
     if (dbError) return fail(res, `Database error: ${dbError.message}`, 500, 'DB_ERROR');
 
-    const doctors = (data || []).map((d: any) => ({
+    // Agregat queueCount (SATU query, bukan N+1): hitung queues status WAITING per doctor_id.
+    const doctorIds = (doctorsData || []).map((d: any) => d.id);
+    let queueCounts: Record<string, number> = {};
+    if (doctorIds.length > 0) {
+      const { data: queueRows, error: queueErr } = await supabase
+        .from('queues')
+        .select('doctor_id')
+        .in('doctor_id', doctorIds)
+        .eq('status', 'WAITING');
+      if (queueErr) return fail(res, `Database error: ${queueErr.message}`, 500, 'DB_ERROR');
+      queueCounts = (queueRows || []).reduce((acc: Record<string, number>, q: any) => {
+        acc[q.doctor_id] = (acc[q.doctor_id] || 0) + 1;
+        return acc;
+      }, {});
+    }
+
+    const doctors = (doctorsData || []).map((d: any) => ({
       id: d.id,
       userId: d.user_id,
       branchId: d.branch_id,
@@ -141,11 +157,12 @@ router.all('/', getOnly(async (req, res) => {
       specialization: d.specialization,
       licenseNumber: d.license_number,
       isAvailable: d.is_available,
+      isActive: d.is_available,
       email: d.users?.email || null,
-      queueCount: 0,
+      queueCount: queueCounts[d.id] || 0,
     }));
 
-    return ok(res, { count: doctors.length, doctors });
+    return ok(res, doctors);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal error';
     return fail(res, message, 500, 'INTERNAL_ERROR');

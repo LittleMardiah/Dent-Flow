@@ -3418,4 +3418,24 @@ Supabase Realtime subscription (Phase 2 Batch 6).
 Estimasi: 2-3 jam (butuh design decision). Prioritas: MEDIUM.
 Referensi: task_2_6_preaudit.log, LOGBOOK ~3511.
 ===
+
+===
+TD-2.4.32: Express /api/encounters latent field mismatch (BARU 2026-09-17)
+Status: OPEN
+
+Deskripsi: Express GET /api/encounters return flat data + sibling pagination
+{ total, page, limit, pages } dengan field `encounterDate` (bukan createdAt),
+dan TIDAK include complaint/diagnosis/patientId. Frontend doctor/emr page
+sudah typed PaginatedEncounters = { data, total, page, totalPages } dan akses
+`encounter.createdAt`, `e.complaint`. Akibat: halaman EMR dokter broken
+(bukan regresi serverless, latent bug Express).
+
+Serverless Step FASE B fix: nested { data, total, page, totalPages } + rename
+createdAt + add complaint/diagnosis/patientId + drop encounterDate/pages sibling.
+
+Fix Express: same pattern (kalau Express masih live sampai deprecate).
+
+Estimasi: 20 menit. Prioritas: MEDIUM (Express akan deprecate).
+Referensi: task_contract_preaudit.log, task_consumer.log
+===
 ===
