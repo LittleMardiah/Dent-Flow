@@ -3494,3 +3494,34 @@ Scope: migrate GET list endpoint di task terpisah.
 Estimasi: 1-2 jam. Prioritas: HIGH.
 Referensi: task_batch5_faseb_merge_notifications.log.
 ===
+===
+TD-2.4.36: 23 tabel existing RLS OFF + anon full DML (BARU 2026-09-17)
+Status: OPEN (security hardening, Batch 6)
+
+Deskripsi: Pre-audit migration 044 menemukan pg_tables.rowsecurity=false
+untuk SEMUA 23 tabel public (patients, doctors, users, bookings, queues,
+invoices, dll). pg_policies public = 0. role_table_grants: anon punya
+full DML (SELECT/INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER).
+Supabase default grant — tidak ada hardening di migration manapun.
+
+Dampak: Siapa pun dengan anon key (exposed di frontend JS bundle,
+NEXT_PUBLIC_*) bisa read/write semua tabel via Supabase REST
+(https://<project>.supabase.co/rest/v1/). PII exposure + data integrity
+risk. Frontend TIDAK pakai Supabase REST saat ini (pakai backend API),
+tapi anon key tetap public.
+
+Fix Batch 6 (security hardening):
+1. Pre-audit: identifikasi consumer yang pakai Supabase REST langsung
+   (kalau ada). Konfirmasi serverless service_role bypass RLS.
+2. Migration: ALTER TABLE ... ENABLE ROW LEVEL SECURITY untuk semua 23.
+   REVOKE ALL FROM anon, public. GRANT ke service_role only.
+3. Policies (kalau butuh authenticated access): tambah per table.
+4. Test: regression entire E2E.
+
+Inventory (migration 044) sudah FIXED untuk new table. 22 existing
+deferred.
+
+Estimasi: 3-4 jam (pre-audit + migration + regression). Prioritas: HIGH
+(security, tapi frontend belum terekspos).
+Referensi: task_mig044_preaudit.log.
+===
