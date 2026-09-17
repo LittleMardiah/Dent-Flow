@@ -3461,3 +3461,23 @@ Fix (design decision): pilih salah satu:
 Estimasi: 1-2 jam (setelah design decision). Prioritas: LOW (out of scope B1).
 Referensi: task_doctors_b1.log, task_doctors_b1b.log.
 ===
+===
+TD-2.4.34: Express queue.handler dead code (callNextPatient/completePatient) (BARU 2026-09-17)
+Status: OPEN (cleanup, low priority)
+
+Deskripsi: Express queue.handler.ts:40 (callNextPatient) dan :80
+(completePatient) TIDAK di-wire di route manapun. doctorQueue.routes.ts
+hanya expose ready-next (→ doctors.ts D3), check-in, status. Dead code.
+
+Serverless Step queue-actions design diambil dari frontend contract
+(queue-id-scoped, tanpa body) — bukan dari Express handler (yang FIFO
+doctor+branch via body branch_id).
+
+Dampak: Negligible. Tidak dipakai. Tapi membingungkan developer baru.
+
+Fix: Hapus handler + import dead. Atau biarkan sampai deprecate Express
+(Phase 4).
+
+Estimasi: 10 menit. Prioritas: LOW.
+Referensi: task_queue_actions_preaudit.log.
+===

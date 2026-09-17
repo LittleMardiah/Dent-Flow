@@ -57,6 +57,14 @@
       "destination": "/api/bookings?path=admin/$1"
     },
     {
+      "source": "/api/queues/:path*",
+      "destination": "/api/queue?path=$1"
+    },
+    {
+      "source": "/queues/:path*",
+      "destination": "/api/queue?path=$1"
+    },
+    {
       "source": "/api/queue/:path*",
       "destination": "/api/queue?path=$1"
     },
