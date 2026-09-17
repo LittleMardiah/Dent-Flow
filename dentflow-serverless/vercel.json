@@ -87,6 +87,14 @@
     {
       "source": "/audit-logs/:path*",
       "destination": "/api/bookings?path=audit/$1"
+    },
+    {
+      "source": "/api/inventory/:path*",
+      "destination": "/api/inventory?path=$1"
+    },
+    {
+      "source": "/inventory/:path*",
+      "destination": "/api/inventory?path=$1"
     }
   ]
 }

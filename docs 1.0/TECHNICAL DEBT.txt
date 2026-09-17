@@ -3525,3 +3525,42 @@ Estimasi: 3-4 jam (pre-audit + migration + regression). Prioritas: HIGH
 (security, tapi frontend belum terekspos).
 Referensi: task_mig044_preaudit.log.
 ===
+===
+TD-2.4.37: api/inventory.ts (BARU 2026-09-17)
+Status: OPEN (low priority)
+
+Deskripsi: api/inventory.ts |inventory.ts| endpoint yang mengubah state
+(POST/PUT/PATCH/DELETE) diakses tanpa branchId dari frontend — resolveBranch
+fallback ke user.branchId. Kalau frontend nanti butuh cross-branch (admin
+multi-cabang), wajib pass branchId di body/query eksplisit. Low priority.
+===
+
+
+===
+TD-2.4.38: Inventory adjust via CAS (bukan atomic SQL) — proper fix = RPC (BARU 2026-09-17)
+Status: OPEN (proper fix = migration RPC, Batch 6)
+
+Deskripsi: Sub-Task C PATCH /api/inventory/:id/quantity butuh atomic
+increment (quantity_in_stock +N / -N). PostgREST reject raw SQL expression
+via supabase-js (.update({quantity_in_stock: 'quantity_in_stock + 5'}) ->
+error 22P02 invalid input syntax for integer). Proper fix = migration RPC
+adjust_inventory_stock(p_id, p_qty, p_type) atomic single-statement.
+
+Karena scope Sub-Task C locked (no migration), diimplementasi CAS
+(compare-and-swap): read current -> UPDATE WHERE quantity_in_stock = old
+-> if 0 rows, retry <=4. Response full item.
+
+Dampak: Works untuk realistic load (admin 1-2 adjust/hari/item, zero
+contention). Race risk: high-contention (10+ concurrent adjust same item
+dalam window kecil) mungkin exhaust retries -> 500. Tested E2E 100% PASS.
+
+Fix Batch 6:
+1. migration 045 CREATE FUNCTION adjust_inventory_stock(p_id uuid,
+   p_qty int, p_type text) RETURNS inventory AS $$ ... UPDATE ...
+   WHERE quantity_in_stock >= p_qty (subtract) RETURNING *; $$.
+   REVOKE anon (lesson 042), GRANT authenticated + service_role.
+2. Update inventory.ts handler PATCH /:id/quantity -> panggil RPC.
+
+Estimasi: 1-1.5 jam. Prioritas: LOW (no realistic contention).
+Referensi: task_inv_c_b.log.
+===
