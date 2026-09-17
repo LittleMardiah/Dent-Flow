@@ -3439,3 +3439,25 @@ Estimasi: 20 menit. Prioritas: MEDIUM (Express akan deprecate).
 Referensi: task_contract_preaudit.log, task_consumer.log
 ===
 ===
+TD-2.4.33: Doctors isActive vs isAvailable conflation (BARU 2026-09-17)
+Status: OPEN
+
+Deskripsi: doctors.is_available (semantic: siap terima pasien, dipakai
+booking/walkIn service filter) BEDA dari users.is_active (semantic: akun
+aktif, login gate). List endpoint pakai is_available; profile + toggle
+Step B1 pakai users.is_active. Consumer `Doctor.isActive` ambigu.
+
+Dampak: Admin toggle "nonaktifkan dokter" (toggle users.is_active) TIDAK
+mengubah list (masih baca is_available). Konsistensi UI long-term perlu
+design decision: apakah list juga harus surface users.is_active, atau
+dua field terpisah (isActive + isAvailable) di response.
+
+Fix (design decision): pilih salah satu:
+- (a) Rename list field jadi isAvailable, tambah isActive (users).
+- (b) Unify semantics — semua pakai users.is_active, drop is_available
+  (breaking booking filter).
+- (c) Biarkan, dokumentasikan clearly di API contract.
+
+Estimasi: 1-2 jam (setelah design decision). Prioritas: LOW (out of scope B1).
+Referensi: task_doctors_b1.log, task_doctors_b1b.log.
+===

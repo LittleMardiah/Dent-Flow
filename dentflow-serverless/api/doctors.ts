@@ -102,6 +102,43 @@ const mapProfile = (d: any) => ({
   updatedAt: d.updated_at,
 });
 
+// ---------- Doctor detail helpers (GET /:id + PATCH /:id/status) ----------
+// New (design): mapDoctorDetail dipisah dari mapProfile — Test A prompt mewajibkan
+// response TANPA createdAt/updatedAt/timestamp (D6). isActive = users.is_active (D2).
+const isValidUuid = (s: string): boolean =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+
+const mapDoctorDetail = (row: any) => ({
+  id: row.id,
+  userId: row.user_id,
+  fullName: row.full_name,
+  email: row.users?.email || '',
+  specialization: row.specialization || '',
+  licenseNumber: row.license_number || '',
+  isActive: row.users?.is_active ?? true,
+  branchId: row.branch_id,
+  branchName: row.branches?.name || '',
+});
+
+// Shared query: doctors join users + branches, branch-scoped. Parity profileQuery
+// tapi tanpa created_at/updated_at (D6). Dipakai GET /:id dan re-fetch PATCH /:id/status.
+// NOTE: TANPA maybeSingle() supaya masih bisa di-chain .eq() (role DOCTOR self filter).
+const doctorDetailQuery = (id: string, branchId: string) =>
+  getSupabase()
+    .from('doctors')
+    .select(`
+      id,
+      user_id,
+      full_name,
+      specialization,
+      license_number,
+      branch_id,
+      users:user_id ( email, is_active ),
+      branches:branch_id ( name )
+    `)
+    .eq('id', id)
+    .eq('branch_id', branchId);
+
 // ---------- GET /api/doctors (list) ----------
 router.all('/', getOnly(async (req, res) => {
   const user = req.user;
@@ -644,6 +681,102 @@ router.all('/:id/queue-today', getOnly(async (req, res) => {
     return res.status(500).json({ success: false, message, error: 'INTERNAL_ERROR' });
   }
 }));
+
+// ---------- GET /api/doctors/:id ----------
+// New (design): single doctor detail (Subset B1). Response explicit res.json tanpa
+// timestamp (D6). isActive = users.is_active (D2). DOCTOR dibatasi self (TD-2.4.26),
+// cross-branch / non-self → 404 (D1, no info leak).
+router.get('/:id', async (req: Request, res: Response) => {
+  const user = (req as AuthedRequest).user;
+  const doctorId = req.params.id as string;
+
+  try {
+    requireRole(user, ['ADMIN_BRANCH', 'DOCTOR']);
+  } catch (err: unknown) {
+    const e = err as { statusCode?: number; message?: string };
+    if (e.statusCode === 403) return fail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
+    return fail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+  }
+
+  if (!isValidUuid(doctorId)) {
+    return res.status(400).json({ success: false, message: 'Format id dokter tidak valid', error: 'VALIDATION_ERROR' });
+  }
+
+  try {
+    // Branch scope wajib (D8). Role DOCTOR: .eq user_id -> self only (TD-2.4.26),
+    // bukan self → row null → 404 (bukan 403, D1).
+    let query = doctorDetailQuery(doctorId, user.branchId);
+    if (user.role === 'DOCTOR') {
+      query = query.eq('user_id', user.userId);
+    }
+    const { data: row, error: dbError } = await query.maybeSingle();
+    if (dbError) return fail(res, `Database error: ${dbError.message}`, 500, 'DB_ERROR');
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'Dokter tidak ditemukan', error: 'DOCTOR_NOT_FOUND' });
+    }
+    return res.status(200).json({ success: true, data: mapDoctorDetail(row) });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+});
+
+// ---------- PATCH /api/doctors/:id/status ----------
+// New (design): toggle akun dokter (Subset B1). Field = users.is_active (D4),
+// parity patients.ts P2 (soft-delete = is_active false). ADMIN_BRANCH only (D7).
+router.patch('/:id/status', async (req: Request, res: Response) => {
+  const user = (req as AuthedRequest).user;
+  const doctorId = req.params.id as string;
+
+  try {
+    requireRole(user, ['ADMIN_BRANCH']);
+  } catch (err: unknown) {
+    const e = err as { statusCode?: number; message?: string };
+    if (e.statusCode === 403) return fail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
+    return fail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+  }
+
+  if (!isValidUuid(doctorId)) {
+    return res.status(400).json({ success: false, message: 'Format id dokter tidak valid', error: 'VALIDATION_ERROR' });
+  }
+
+  const body = (req.body || {}) as { isActive?: unknown };
+  if (typeof body.isActive !== 'boolean') {
+    return res.status(400).json({ success: false, message: 'isActive wajib bertipe boolean', error: 'VALIDATION_ERROR' });
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // Branch scope (D8): resolve doctors.id -> user_id, cek branch user.
+    const { data: doctorRow, error: doctorErr } = await supabase
+      .from('doctors')
+      .select('id, user_id, branch_id')
+      .eq('id', doctorId)
+      .eq('branch_id', user.branchId)
+      .maybeSingle();
+    if (doctorErr) return fail(res, `Database error: ${doctorErr.message}`, 500, 'DB_ERROR');
+    if (!doctorRow) {
+      return res.status(404).json({ success: false, message: 'Dokter tidak ditemukan', error: 'DOCTOR_NOT_FOUND' });
+    }
+
+    // Parity patients.ts P2: UPDATE users SET is_active=... + updated_at.
+    const { error: updErr } = await supabase
+      .from('users')
+      .update({ is_active: body.isActive, updated_at: new Date().toISOString() })
+      .eq('id', doctorRow.user_id);
+    if (updErr) return fail(res, `Database error: ${updErr.message}`, 500, 'DB_ERROR');
+
+    // Re-fetch detail terbaru (isActive = users.is_active).
+    const { data: updated, error: refetchErr } = await doctorDetailQuery(doctorId, user.branchId).maybeSingle();
+    if (refetchErr) return fail(res, `Database error: ${refetchErr.message}`, 500, 'DB_ERROR');
+
+    return res.status(200).json({ success: true, data: mapDoctorDetail(updated) });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+});
 
 // ---------- 404 fallback domain doctors ----------
 router.use((req: Request, res: Response) => {
