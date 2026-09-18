@@ -60,8 +60,12 @@ Thumbs.db
 # TypeScript
 *.tsbuildinfo
 
-# OpenCode prompt template (jangan di-commit)
+# OpenCode prompt artifacts (jangan di-commit)
+prompt_*.txt
 prompt.txt
+
+# Empty junk
+9,
 
 # Security: Kredensial & secrets (JANGAN commit!)
 Kredensial.txt
