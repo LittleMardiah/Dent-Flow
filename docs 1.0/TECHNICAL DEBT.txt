@@ -3564,3 +3564,55 @@ Fix Batch 6:
 Estimasi: 1-1.5 jam. Prioritas: LOW (no realistic contention).
 Referensi: task_inv_c_b.log.
 ===
+
+===
+TD-MIGRATE-001 UPDATE: Frontend switch COMPLETE (2026-09-18)
+Status: ✅ SWITCHED (canary promoted to prod)
+
+Detail:
+- Prod frontend (dentflow-web-chi.vercel.app) hit serverless
+  (https://dentflow-serverless.vercel.app/api), bukan Express legacy.
+- Bundle prod layout chunk: layout-0c38eac6caad7d0b.js
+  contains dentflow-serverless.vercel.app.
+- V3 filter (HIDE_BROKEN_MENU) active di prod: chunk 640 .filter()=1.
+- Observe 10 menit: 100% 200 across /, /login, /admin/queue, /admin/patients,
+  /admin/inventory, /tv-display. Zero 5xx.
+- Rollback ready: vercel rollback dpl_Fgxh3cM4y1aQSm4WhbX696co39Rn
+- Express legacy backend (dentflow-backend-lilac) tetap live sebagai
+  fallback s/d Phase 4 deprecate.
+
+Verifikasi: task_b2_step1.log + task_canary_e2e.log + observe cycles.
+===
+
+===
+TD-2.4.23 UPDATE: Frontend path mismatch RESOLVED (2026-09-18)
+Status: ✅ RESOLVED (via env suffix /api)
+
+Detail: production NEXT_PUBLIC_API_URL = serverless URL + /api suffix,
+frontend path lib/api/*.ts tanpa /api prefix. Canary verified 21/21 E2E.
+===
+
+===
+TD-2.4.39: Preview SSO disable re-enable reminder (BARU 2026-09-18)
+Status: OPEN (security hygiene, LOW)
+
+Deskripsi: B-Phase 1 disable ssoProtection untuk preview (canary E2E).
+Preview URL sekarang public (obscurity = random-hash). Setelah switch
+stabil 24 jam, re-enable via PATCH /v9/projects/{id}
+{"ssoProtection": {"deploymentType": "all_except_custom_domains"}}.
+Preview tidak punya data sensitif (login page only, auth guard).
+
+Prioritas: LOW. Referensi: task_canary_e2e.log.
+===
+
+===
+TD-2.4.40: Hide-menu verify via bundle-level, bukan browser runtime (BARU 2026-09-18)
+Status: OPEN (test coverage gap, LOW)
+
+Deskripsi: Hide menu /admin/settings diverifikasi via bundle diff
+(.filter() presence di chunk 640). Runtime behavior implied: env inline
+=true -> adminMenuAll.filter. Browser E2E (Playwright) deferred ke
+Batch 10. Kalau runtime tidak sesuai, user lihat menu -> klik -> 404.
+
+Estimasi: 2 jam (Playwright setup). Prioritas: LOW.
+===
