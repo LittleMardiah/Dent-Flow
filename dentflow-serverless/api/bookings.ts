@@ -816,9 +816,341 @@ adminQueuesRouter.use((req: Request, res: Response) => {
 });
 
 // ============================================================
+// /api/settings — Batch 6.2 FASE B2 (serverless subset)
+// - Approach B+C: vercel.json rewrite /api/settings/:path* ->
+//   /api/bookings?path=settings/$1 (marker 'settings/...').
+// - Express mount prefix '/api/settings' (ADMIN_BRANCH only).
+// Parity Express: dentflow-backend + frontend dentflow-web (settings page).
+// Scope (parity dentflow-web/src/lib/api/settings.ts):
+//   GET  /api/settings                 get settings (branch scope)
+//   PUT  /api/settings                 update settings (merge-on-write)
+//   POST /api/settings/verify-webhook  webhook URL reachability check
+// Response shape: GET/PUT = adminOk(res, settings) (data wrapper); verify = res.json
+// { success, message } explicit TANPA data wrapper (R6/R8).
+// Audit: SYSTEM_CONFIG_UPDATE, entity_type='SETTINGS'. new_values hanya clinic +
+// hours + notifications — payment EXCLUDED (R11: jangan tulis midtrans key ke audit).
+// ============================================================
+const settingsRouter: Router = express.Router();
+
+// ---------- Auth + env guard (level settings router) ----------
+// Semua route settings require ADMIN_BRANCH (pola auditRouter).
+settingsRouter.use((req: Request, res: Response, next: NextFunction) => {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return adminFail(res, 'ENV_MISSING: SUPABASE_* belum di-set.', 500, 'ENV_MISSING');
+  }
+  if (!process.env.JWT_SECRET) {
+    return adminFail(res, 'ENV_MISSING: JWT_SECRET belum di-set.', 500, 'ENV_MISSING');
+  }
+
+  const authHeader = req.headers['authorization'];
+  const token = extractBearerToken(typeof authHeader === 'string' ? authHeader : undefined);
+  if (!token) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+  try {
+    const user = verifyJwt(token);
+    requireRole(user, ADMIN_ALLOWED_ROLES);
+    (req as AuthedRequest).user = user;
+    next();
+  } catch (err: unknown) {
+    const e = err as { statusCode?: number; message?: string };
+    if (e.statusCode === 403) return res.status(403).json({ success: false, error: e.message || 'Forbidden' });
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+});
+
+// ---------- Default settings (parity frontend Settings interface) ----------
+const defaultSettings = () => ({
+  clinic: { branchName: '', address: '', phone: '', email: '' },
+  hours: {
+    openTime: '08:00',
+    closeTime: '17:00',
+    breakStart: '12:00',
+    breakEnd: '13:00',
+    daysOpen: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'],
+  },
+  payment: { midtransClientKey: '', midtransServerKey: '', midtransWebhookUrl: '' },
+  notifications: { emailReminders: true, smsGateway: false },
+});
+
+// ---------- GET /api/settings (get settings) ----------
+// Branch scope: enforceTenant (query branchId, default JWT user.branchId).
+// Fallback: merge row dengan defaultSettings() untuk field null. Kalau row
+// branch_settings tidak ada (tidak seharusnya — seed 046), auto-fallback
+// default + branches (tidak 404).
+settingsRouter.get('/', getOnly(async (req, res) => {
+  const user = req.user;
+  if (!user?.branchId) {
+    return adminFail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    const rawBranch = req.query.branchId;
+    const requestedBranchId = typeof rawBranch === 'string' && rawBranch.length > 0 ? rawBranch : undefined;
+    let finalBranchId: string;
+    try {
+      finalBranchId = await enforceTenant(supabase, user, requestedBranchId);
+    } catch (tenantErr: unknown) {
+      const e = tenantErr as { statusCode?: number; message?: string };
+      if (e.statusCode === 403) return adminFail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
+      throw tenantErr;
+    }
+
+    const { data: row, error: dbErr } = await supabase
+      .from('branch_settings')
+      .select('clinic, hours, payment, notifications')
+      .eq('branch_id', finalBranchId)
+      .maybeSingle();
+    if (dbErr) return adminFail(res, `Database error: ${dbErr.message}`, 500, 'DB_ERROR');
+
+    const def = defaultSettings();
+    const settings = {
+      clinic: { ...def.clinic, ...((row?.clinic as Record<string, unknown>) || {}) },
+      hours: { ...def.hours, ...((row?.hours as Record<string, unknown>) || {}) },
+      payment: { ...def.payment, ...((row?.payment as Record<string, unknown>) || {}) },
+      notifications: { ...def.notifications, ...((row?.notifications as Record<string, unknown>) || {}) },
+    };
+
+    // clinic.branchName/address/phone: prefer branch_settings.clinic JSONB,
+    // fallback Select branches (name, address, phone) kalau kosong.
+    if (!(settings.clinic.branchName && settings.clinic.address && settings.clinic.phone)) {
+      const { data: branch, error: bErr } = await supabase
+        .from('branches')
+        .select('name, address, phone')
+        .eq('id', finalBranchId)
+        .maybeSingle();
+      if (!bErr && branch) {
+        settings.clinic.branchName = settings.clinic.branchName || branch.name || '';
+        settings.clinic.address = settings.clinic.address || branch.address || '';
+        settings.clinic.phone = settings.clinic.phone || branch.phone || '';
+      }
+    }
+
+    return adminOk(res, settings);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return adminFail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
+
+// ---------- PUT /api/settings (update settings, merge-on-write) ----------
+// Body: { clinic, hours, payment, notifications } semua optional (D4/D12).
+// Flow: read existing → merge per-field (tidak clobber) → upsert
+// ({onConflict:'branch_id'}) → audit SYSTEM_CONFIG_UPDATE → adminOk(res, saved).
+settingsRouter.put('/', putOnly(async (req, res) => {
+  const user = req.user;
+  if (!user?.branchId) {
+    return adminFail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+  }
+
+  const body = (req.body || {}) as {
+    clinic?: Record<string, unknown>;
+    hours?: Record<string, unknown>;
+    payment?: Record<string, unknown>;
+    notifications?: Record<string, unknown>;
+  };
+  const sections: (keyof typeof body)[] = ['clinic', 'hours', 'payment', 'notifications'];
+  const invalid = sections.filter(
+    (s) => body[s] !== undefined && (typeof body[s] !== 'object' || body[s] === null || Array.isArray(body[s]))
+  );
+  if (invalid.length > 0) {
+    return adminFail(res, `Bagian settings tidak valid: ${invalid.join(', ')}`, 400, 'VALIDATION_ERROR');
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    const rawBranch = req.query.branchId;
+    const requestedBranchId = typeof rawBranch === 'string' && rawBranch.length > 0 ? rawBranch : undefined;
+    let finalBranchId: string;
+    try {
+      finalBranchId = await enforceTenant(supabase, user, requestedBranchId);
+    } catch (tenantErr: unknown) {
+      const e = tenantErr as { statusCode?: number; message?: string };
+      if (e.statusCode === 403) return adminFail(res, e.message || 'Forbidden', 403, 'FORBIDDEN');
+      throw tenantErr;
+    }
+
+    const { data: row, error: dbErr } = await supabase
+      .from('branch_settings')
+      .select('clinic, hours, payment, notifications')
+      .eq('branch_id', finalBranchId)
+      .maybeSingle();
+    if (dbErr) return adminFail(res, `Database error: ${dbErr.message}`, 500, 'DB_ERROR');
+
+    // Merge-on-write: defaults fill gap, existing = source of truth, partial overrides.
+    const def = defaultSettings();
+    const merged = {
+      clinic: { ...def.clinic, ...((row?.clinic as Record<string, unknown>) || {}), ...(body.clinic || {}) },
+      hours: { ...def.hours, ...((row?.hours as Record<string, unknown>) || {}), ...(body.hours || {}) },
+      payment: { ...def.payment, ...((row?.payment as Record<string, unknown>) || {}), ...(body.payment || {}) },
+      notifications: {
+        ...def.notifications,
+        ...((row?.notifications as Record<string, unknown>) || {}),
+        ...(body.notifications || {}),
+      },
+    };
+
+    const { data: updated, error: upErr } = await supabase
+      .from('branch_settings')
+      .upsert(
+        {
+          branch_id: finalBranchId,
+          clinic: merged.clinic,
+          hours: merged.hours,
+          payment: merged.payment,
+          notifications: merged.notifications,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'branch_id' }
+      )
+      .select('clinic, hours, payment, notifications')
+      .maybeSingle();
+    if (upErr) return adminFail(res, `Database error: ${upErr.message}`, 500, 'DB_ERROR');
+    if (!updated) return adminFail(res, 'Gagal menyimpan settings', 500, 'DB_ERROR');
+
+    const saved = {
+      clinic: { ...def.clinic, ...((updated.clinic as Record<string, unknown>) || {}) },
+      hours: { ...def.hours, ...((updated.hours as Record<string, unknown>) || {}) },
+      payment: { ...def.payment, ...((updated.payment as Record<string, unknown>) || {}) },
+      notifications: { ...def.notifications, ...((updated.notifications as Record<string, unknown>) || {}) },
+    };
+
+    // Audit SYSTEM_CONFIG_UPDATE (best-effort). Payment EXCLUDED — jangan
+    // pernah tulis midtrans key plaintext ke audit (R11).
+    const { error: auditErr } = await supabase.from('audit_logs').insert({
+      branch_id: finalBranchId,
+      user_id: user.userId,
+      event_type: 'SYSTEM_CONFIG_UPDATE',
+      entity_type: 'SETTINGS',
+      entity_id: finalBranchId,
+      new_values: {
+        clinic: saved.clinic,
+        hours: saved.hours,
+        notifications: saved.notifications,
+      },
+      description: `Settings updated for branch ${finalBranchId}`,
+    });
+    if (auditErr) console.error('SYSTEM_CONFIG_UPDATE audit failed:', auditErr.message);
+
+    return adminOk(res, saved);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return adminFail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
+
+// ---------- POST /api/settings/verify-webhook (reachability check) ----------
+// Body: { url? } optional, fallback payment.midtransWebhookUrl existing.
+// Validasi: format URL valid, protocol https, bukan localhost.
+// Reachability: HEAD (fallback GET) timeout 5s, non-destructive — success
+// = reachable (bukan validasi HMAC). Response EXPLICIT { success, message }
+// TANPA data wrapper (R6/R8).
+settingsRouter.all('/verify-webhook', postOnly(async (req, res) => {
+  const user = req.user;
+  if (!user?.branchId) {
+    return res.json({ success: false, message: 'Unauthorized' });
+  }
+
+  const body = (req.body || {}) as { url?: string };
+
+  try {
+    const supabase = getSupabase();
+
+    const rawBranch = req.query.branchId;
+    const requestedBranchId = typeof rawBranch === 'string' && rawBranch.length > 0 ? rawBranch : undefined;
+    let finalBranchId: string;
+    try {
+      finalBranchId = await enforceTenant(supabase, user, requestedBranchId);
+    } catch (tenantErr: unknown) {
+      const e = tenantErr as { statusCode?: number; message?: string };
+      if (e.statusCode === 403) return res.json({ success: false, message: e.message || 'Forbidden' });
+      throw tenantErr;
+    }
+
+    let url = typeof body.url === 'string' && body.url.trim() ? body.url.trim() : '';
+    if (!url) {
+      const { data: row } = await supabase
+        .from('branch_settings')
+        .select('payment')
+        .eq('branch_id', finalBranchId)
+        .maybeSingle();
+      url = typeof (row as any)?.payment?.midtransWebhookUrl === 'string'
+        ? (row as any).payment.midtransWebhookUrl
+        : '';
+    }
+
+    // Format validation: URL valid, protocol https, bukan localhost.
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return res.json({ success: false, message: 'Format URL tidak valid' });
+    }
+    if (parsed.protocol !== 'https:') {
+      return res.json({ success: false, message: 'Format URL tidak valid' });
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost')) {
+      return res.json({ success: false, message: 'Format URL tidak valid' });
+    }
+
+    // Reachability: HEAD lalu fallback GET, timeout 5s, non-destructive.
+    const check = async (method: 'HEAD' | 'GET') => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      try {
+        const resp = await fetch(url, {
+          method,
+          redirect: 'follow',
+          signal: controller.signal,
+          headers: { 'user-agent': 'DentFlow-Serverless-WebhookVerify/1.0' },
+        });
+        return { status: resp.status };
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    let headResult: { status: number } | null = null;
+    try {
+      headResult = await check('HEAD');
+    } catch {
+      headResult = null;
+    }
+    if (headResult && (headResult.status === 200 || headResult.status === 204)) {
+      return res.json({ success: true, message: `Webhook URL reachable (HTTP ${headResult.status})` });
+    }
+
+    try {
+      const getResult = await check('GET');
+      return res.json({ success: true, message: `Webhook URL reachable (HTTP ${getResult.status})` });
+    } catch (getErr: unknown) {
+      const reason =
+        (getErr as Error & { name?: string })?.name === 'AbortError'
+          ? 'timeout (5s)'
+          : getErr instanceof Error
+            ? getErr.message
+            : 'network error';
+      return res.json({ success: false, message: `Webhook URL tidak reachable: ${reason}` });
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal error';
+    return res.json({ success: false, message: `Webhook URL tidak reachable: ${message}` });
+  }
+}));
+
+// ---------- 404 fallback domain settings ----------
+settingsRouter.use((req: Request, res: Response) => {
+  return adminFail(res, 'Route tidak ditemukan di domain settings.', 404, 'NOT_FOUND');
+});
+
+// ============================================================
 // Vercel handler: mount router di prefix '/api/patient/bookings'
 // + '/api/admin/bookings' (TD-2.4.9) + '/api/admin/audit-logs'
 // (Step 2.3 FASE B) + '/api/admin/queues' (Step 2.5 FASE B)
+// + '/api/settings' (Batch 6.2 FASE B2)
 // ============================================================
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -826,6 +1158,7 @@ app.use('/api/patient/bookings', router);
 app.use('/api/admin/bookings', adminRouter);
 app.use('/api/admin/audit-logs', auditRouter);
 app.use('/api/admin/queues', adminQueuesRouter);
+app.use('/api/settings', settingsRouter);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Vercel kirim FULL URL ke lambda (terbukti di 2.3.2c), jadi Express mount
@@ -843,6 +1176,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         r.url = `/api/admin/queues/${suffix.slice('admin-queues/'.length)}`;
       } else if (suffix.startsWith('audit/')) {
         r.url = `/api/admin/audit-logs/${suffix.slice('audit/'.length)}`;
+      } else if (suffix.startsWith('settings/')) {
+        r.url = `/api/settings/${suffix.slice('settings/'.length)}`;
       } else if (suffix.startsWith('admin/')) {
         r.url = `/api/admin/bookings/${suffix.slice('admin/'.length)}`;
       } else {

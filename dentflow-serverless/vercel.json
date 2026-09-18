@@ -95,6 +95,10 @@
     {
       "source": "/inventory/:path*",
       "destination": "/api/inventory?path=$1"
+    },
+    {
+      "source": "/api/settings/:path*",
+      "destination": "/api/bookings?path=settings/$1"
     }
   ]
 }
