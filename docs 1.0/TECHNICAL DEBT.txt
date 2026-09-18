@@ -3667,3 +3667,55 @@ Estimasi: 1 jam. Prioritas: MEDIUM.
 Referensi: task_rls_preapply.log.
 
 ===
+
+TD-2.4.42: Header dropdown tidak di-filter HIDE_BROKEN_MENU (BARU 2026-09-18)
+Status: OPEN (LOW)
+
+Deskripsi: Saat switch canary (B-Phase 1), HIDE_BROKEN_MENU filter hanya
+dipasang di Sidebar.tsx:43-45. Header.tsx:88-95 (user dropdown) tetap
+menampilkan link "Pengaturan" → /admin/settings. Sebelum 6.2, klik = 404.
+Setelah 6.2 endpoint live, tapi menu toggle masih deferred (TD-2.4.40).
+
+Dampak: Saat HIDE_BROKEN_MENU=true di prod, link header masih tampil
+(tidak konsisten dengan Sidebar).
+
+Fix: Apply filter yang sama di Header.tsx (konsisten env flag), atau
+refactor menu definition ke shared module.
+
+Estimasi: 30 menit. Referensi: task_settings_preaudit.log.
+===
+
+TD-2.4.43: API Docs button 404 di serverless (BARU 2026-09-18)
+Status: OPEN (LOW)
+
+Deskripsi: /admin/settings page.tsx:387 window.open('/api/docs').
+Serverless tidak punya endpoint docs (Swagger UI legacy Express only).
+Klik tombol = 404.
+
+Dampak: Cosmetic. Non-demo-critical.
+
+Fix: (a) port Swagger docs ke serverless (butuh function/slot),
+(b) hapus tombol, (c) link ke GitHub README API.
+
+Estimasi: 1 jam (opsi b). Prioritas: LOW.
+===
+
+TD-2.4.44: .env.production repo stale vs prod live (BARU 2026-09-18)
+Status: OPEN (LOW, repo hygiene)
+
+Deskripsi: dentflow-web/.env.production di repo berisi
+NEXT_PUBLIC_API_URL=https://dentflow-backend-lilac.vercel.app (Express,
+tanpa /api). Prod live (Vercel env) sudah serverless URL + /api.
+Drift antara repo file (stale) dan Vercel dashboard env (source of truth).
+
+Dampak: Developer baru bisa bingung mana source of truth. Local build
+development bisa inconsistent. Bukan runtime issue (Vercel pakai dashboard
+env, bukan file repo).
+
+Fix: (a) update .env.production repo ke serverless URL (sync), atau
+(b) hapus .env.production dari repo, andalkan Vercel dashboard only,
+(c) tambah README comment "source of truth = Vercel dashboard".
+
+Estimasi: 15 menit. Prioritas: LOW.
+Referensi: task_settings_preaudit.log.
+===
