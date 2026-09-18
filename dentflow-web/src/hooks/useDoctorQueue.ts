@@ -2,9 +2,15 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { doctorQueueApi, QueuePatient, PatientQuickView } from '@/lib/api/doctorQueue';
-import { useWebSocketContext } from '@/context/WebSocketContext';
+import { useAuth } from '@/context/AuthContext';
+import { useRealtime, type RealtimeEvent } from '@/hooks/useRealtime';
+
+const POLL_INTERVAL_MS = 5000;
 
 export function useDoctorQueue(doctorId: string) {
+  const { user } = useAuth();
+  const branchId: string | undefined = user?.branchId;
+
   const [queue, setQueue] = useState<QueuePatient[]>([]);
   const [currentPatient, setCurrentPatient] = useState<QueuePatient | null>(null);
   const [nextPatients, setNextPatients] = useState<QueuePatient[]>([]);
@@ -14,8 +20,6 @@ export function useDoctorQueue(doctorId: string) {
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isReadyNextLoading, setIsReadyNextLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const { on } = useWebSocketContext();
 
   const fetchQueue = useCallback(async () => {
     if (!doctorId) return;
@@ -85,18 +89,26 @@ export function useDoctorQueue(doctorId: string) {
     }
   }, [doctorId, fetchQueue]);
 
-  // WebSocket real-time updates
+  // Supabase realtime: trigger REST refetch on relevant queue events (debounced 500ms inside useRealtime).
+  const { isLive } = useRealtime(
+    branchId,
+    useCallback(
+      (event: RealtimeEvent) => {
+        if (event.type !== 'queue:updated') return;
+        // Skip kalau event milik doctor lain (payload opsional).
+        if (event.payload.doctorId && event.payload.doctorId !== doctorId) return;
+        void fetchQueue();
+      },
+      [doctorId, fetchQueue],
+    ),
+  );
+
+  // Polling fallback 5s (baru): aktif saat realtime tidak live / branchId kosong.
   useEffect(() => {
-    if (!doctorId) return;
-
-    const unsubscribe = on('queue:updated', (payload) => {
-      if (payload?.doctorId === doctorId) {
-        fetchQueue();
-      }
-    });
-
-    return unsubscribe;
-  }, [doctorId, on, fetchQueue]);
+    if (isLive || !doctorId) return undefined;
+    const interval = setInterval(fetchQueue, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [isLive, doctorId, fetchQueue]);
 
   // Initial fetch
   useEffect(() => {
@@ -115,6 +127,7 @@ export function useDoctorQueue(doctorId: string) {
     isDetailLoading,
     isReadyNextLoading,
     error,
+    isLive,
     fetchQueue,
     readyNext,
     getPatientQuickView,

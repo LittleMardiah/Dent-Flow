@@ -1,14 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { queueApi, QueuePatient, QueueResponse } from '@/lib/api/queue';
-import { useAuth } from '@/context/AuthContext';
-
-// WebSocket event types
-type QueueEvent = 
-  | { type: 'QUEUE_UPDATED'; data: QueuePatient[] }
-  | { type: 'PATIENT_CALLED'; data: QueuePatient }
-  | { type: 'PATIENT_COMPLETED'; data: { queueId: string } };
+import { queueApi, QueuePatient } from '@/lib/api/queue';
+import { useRealtime, type RealtimeEvent } from '@/hooks/useRealtime';
 
 interface UseQueueOptions {
   branchId: string;
@@ -17,23 +11,19 @@ interface UseQueueOptions {
   refreshInterval?: number; // in seconds (fallback polling)
 }
 
-export function useQueue({ 
-  branchId, 
-  doctorId, 
-  autoRefresh = true, 
-  refreshInterval = 5 
+export function useQueue({
+  branchId,
+  doctorId,
+  autoRefresh = true,
+  refreshInterval = 5,
 }: UseQueueOptions) {
   const [queue, setQueue] = useState<QueuePatient[]>([]);
   const [nowServing, setNowServing] = useState<QueuePatient | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isLive, setIsLive] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const { user } = useAuth();
-  const wsRef = useRef<WebSocket | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchQueue = useCallback(async () => {
     try {
@@ -50,97 +40,44 @@ export function useQueue({
     }
   }, [branchId, doctorId]);
 
-  // Setup WebSocket connection
-  const setupWebSocket = useCallback(() => {
-    if (!user?.branchId) return;
+  // Realtime: trigger REST refetch on queue events (debounced 500ms inside useRealtime).
+  const { isLive } = useRealtime(
+    branchId,
+    useCallback(
+      (event: RealtimeEvent) => {
+        if (event.type !== 'queue:updated') return;
+        void fetchQueue();
+      },
+      [fetchQueue],
+    ),
+  );
 
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
-    const ws = new WebSocket(`${wsUrl}/ws/queue?branchId=${branchId}&token=${localStorage.getItem('dentflow_token')}`);
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  }, []);
 
-    ws.onopen = () => {
-      console.log('✅ WebSocket connected for queue');
-      setIsLive(true);
-      // Stop polling when WebSocket is connected
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
-    };
+  // Fallback polling 5s: preserves existing REST polling when realtime is not live.
+  useEffect(() => {
+    if (isLive || !autoRefresh) {
+      stopPolling();
+      return undefined;
+    }
+    if (pollIntervalRef.current) return undefined;
+    pollIntervalRef.current = setInterval(fetchQueue, refreshInterval * 1000);
+    return stopPolling;
+  }, [isLive, autoRefresh, refreshInterval, fetchQueue, stopPolling]);
 
-    ws.onmessage = (event) => {
-      try {
-        const payload: QueueEvent = JSON.parse(event.data);
-        switch (payload.type) {
-          case 'QUEUE_UPDATED':
-            setQueue(payload.data);
-            setLastUpdated(new Date());
-            break;
-          case 'PATIENT_CALLED':
-            // Update queue: mark patient as BEING_CALLED
-            setQueue((prev) =>
-              prev.map((p) =>
-                p.id === payload.data.id ? { ...p, status: 'BEING_CALLED' } : p
-              )
-            );
-            setNowServing(payload.data);
-            setLastUpdated(new Date());
-            break;
-          case 'PATIENT_COMPLETED':
-            // Remove patient from queue
-            setQueue((prev) => prev.filter((p) => p.id !== payload.data.queueId));
-            setLastUpdated(new Date());
-            break;
-        }
-      } catch (err) {
-        console.error('Failed to parse WebSocket message:', err);
-      }
-    };
-
-    ws.onclose = () => {
-      console.log('🔴 WebSocket disconnected, switching to polling');
-      setIsLive(false);
-      // Fallback to polling
-      if (autoRefresh && !pollIntervalRef.current) {
-        pollIntervalRef.current = setInterval(fetchQueue, refreshInterval * 1000);
-      }
-      // Attempt to reconnect after 5 seconds
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      reconnectTimeoutRef.current = setTimeout(() => {
-        setupWebSocket();
-      }, 5000);
-    };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      ws.close();
-    };
-
-    wsRef.current = ws;
-  }, [branchId, user?.branchId, autoRefresh, refreshInterval, fetchQueue]);
-
-  // Initial fetch and WebSocket setup
+  // Initial fetch
   useEffect(() => {
     fetchQueue();
 
-    if (autoRefresh) {
-      setupWebSocket();
-    }
-
     return () => {
-      // Cleanup
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
+      stopPolling();
     };
-  }, [fetchQueue, autoRefresh, setupWebSocket]);
+  }, [fetchQueue, stopPolling]);
 
   // Manual refresh
   const refresh = useCallback(() => {

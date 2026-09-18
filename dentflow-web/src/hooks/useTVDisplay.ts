@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { tvApi, TVDisplayData } from '@/lib/api/tv';
-import { useWebSocketContext } from '@/context/WebSocketContext';
+import { useRealtime, type RealtimeEvent } from '@/hooks/useRealtime';
 
 type ConnectionStatus = 'connected' | 'polling' | 'offline';
 
 interface UseTVDisplayOptions {
   branchId: string;
   doctorId?: string;
-  pollInterval?: number; // in seconds
+  pollInterval?: number;
 }
 
 export function useTVDisplay({
@@ -23,12 +23,10 @@ export function useTVDisplay({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { isConnected, on } = useWebSocketContext();
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const mountedRef = useRef(true);
 
-  // Fetch data via polling
   const fetchData = useCallback(async () => {
     try {
       const result = await tvApi.getQueueStatus(branchId, doctorId);
@@ -50,19 +48,16 @@ export function useTVDisplay({
     }
   }, [branchId, doctorId]);
 
-  // Start polling
   const startPolling = useCallback(() => {
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
     }
-    // Immediate fetch
     fetchData();
     pollIntervalRef.current = setInterval(fetchData, pollInterval * 1000);
     setStatus('polling');
   }, [fetchData, pollInterval]);
 
-  // Stop polling
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
@@ -70,64 +65,29 @@ export function useTVDisplay({
     }
   }, []);
 
-  // Handle WebSocket events
+  const { isLive } = useRealtime(
+    branchId,
+    useCallback(
+      (event: RealtimeEvent) => {
+        if (!mountedRef.current) return;
+        if (event.type !== 'queue:updated') return;
+        void fetchData();
+      },
+      [fetchData],
+    ),
+  );
+
+  const isLiveRef = useRef(false);
+  useEffect(() => {
+    isLiveRef.current = isLive;
+  }, [isLive]);
+
   useEffect(() => {
     if (!branchId) return;
 
-    // Subscribe to queue updates via WebSocket
-    const unsubscribeQueue = on('queue:updated', (payload) => {
-      if (payload?.branchId === branchId) {
-        // Refresh data instantly via polling (or use WebSocket data directly)
-        fetchData();
-        setStatus('connected');
-      }
-    });
-
-    // Subscribe to TV display refresh
-    const unsubscribeTV = on('tv:display:refresh', (payload) => {
-      if (payload?.branchId === branchId) {
-        fetchData();
-        setStatus('connected');
-      }
-    });
-
-    return () => {
-      unsubscribeQueue();
-      unsubscribeTV();
-    };
-  }, [branchId, on, fetchData]);
-
-  // Manage connection status & fallback
-  useEffect(() => {
-    if (isConnected) {
-      // WebSocket connected - use it, but keep polling as backup
-      setStatus('connected');
-      stopPolling();
-      // Still fetch once to ensure data
-      fetchData();
-      // But we also need polling fallback if WS dies
-    } else {
-      // WebSocket disconnected - switch to polling
-      setStatus('polling');
-      startPolling();
-    }
-
-    return () => {
-      stopPolling();
-    };
-  }, [isConnected, startPolling, stopPolling, fetchData]);
-
-  // Initial fetch
-  useEffect(() => {
-    // Reset flag sebelum memulai fetch (penting utk React StrictMode / double-mount:
-    // cleanup di bawah men-set mountedRef=false, harus di-reset true saat mount ulang).
     mountedRef.current = true;
-
-    if (branchId) {
-      fetchData();
-      // Start polling anyway (fallback)
-      startPolling();
-    }
+    fetchData();
+    startPolling();
 
     return () => {
       mountedRef.current = false;
@@ -137,6 +97,18 @@ export function useTVDisplay({
       }
     };
   }, [branchId, fetchData, startPolling, stopPolling]);
+
+  useEffect(() => {
+    if (isLive) {
+      stopPolling();
+      setStatus('connected');
+      console.debug('[useTVDisplay] realtime live, polling stopped');
+    } else {
+      if (pollIntervalRef.current === null) {
+        startPolling();
+      }
+    }
+  }, [isLive, startPolling, stopPolling]);
 
   const refresh = useCallback(() => {
     fetchData();
