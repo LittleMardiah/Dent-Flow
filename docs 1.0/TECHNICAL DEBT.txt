@@ -3496,7 +3496,7 @@ Referensi: task_batch5_faseb_merge_notifications.log.
 ===
 ===
 TD-2.4.36: 23 tabel existing RLS OFF + anon full DML (BARU 2026-09-17)
-Status: OPEN (security hardening, Batch 6)
+Status: ✅ DONE (2026-09-18, migration 045)
 
 Deskripsi: Pre-audit migration 044 menemukan pg_tables.rowsecurity=false
 untuk SEMUA 23 tabel public (patients, doctors, users, bookings, queues,
@@ -3524,6 +3524,21 @@ deferred.
 Estimasi: 3-4 jam (pre-audit + migration + regression). Prioritas: HIGH
 (security, tapi frontend belum terekspos).
 Referensi: task_mig044_preaudit.log.
+
+---
+RESOLVED 2026-09-18 (Batch 6.1 migration 045):
+- 23 tables ENABLE ROW LEVEL SECURITY (inventory sudah via 044).
+- anon grants: 161 -> 0.
+- anon seq USAGE: 2 -> 0.
+- anon RPC EXECUTE: 13 -> 0.
+- service_role intact (168 table grants + 26 RPC grants).
+- Smoke test 8 endpoint + negative anon PASS (401 42501).
+- Verified service_role + postgres rolbypassrls=true.
+- Rollback SQL saved /tmp/opencode/rls_rollback_045.sql.
+- NOT included: FORCE RLS (owner bypass kept), DEFAULT PRIVILEGES (TD
+  baru — affect future migrations).
+Referensi: task_rls_preaudit.log + task_rls_preapply.log +
+           task_rls_apply.log + task_rls_smoke.log.
 ===
 ===
 TD-2.4.37: api/inventory.ts (BARU 2026-09-17)
@@ -3537,7 +3552,7 @@ multi-cabang), wajib pass branchId di body/query eksplisit. Low priority.
 
 
 ===
-TD-2.4.38: Inventory adjust via CAS (bukan atomic SQL) — proper fix = RPC (BARU 2026-09-17)
+TD-2.4.38 (PLAN 046): Inventory adjust via CAS (bukan atomic SQL) — proper fix = RPC (BARU 2026-09-17)
 Status: OPEN (proper fix = migration RPC, Batch 6)
 
 Deskripsi: Sub-Task C PATCH /api/inventory/:id/quantity butuh atomic
@@ -3563,6 +3578,11 @@ Fix Batch 6:
 
 Estimasi: 1-1.5 jam. Prioritas: LOW (no realistic contention).
 Referensi: task_inv_c_b.log.
+
+---
+RENUMBER 2026-09-18: migration plan pindah dari 045 -> 046.
+Alasan: 045 sudah dipakai untuk RLS hardening (Batch 6.1).
+Status tetap OPEN, prioritas LOW. Referensi: task_rls_preaudit.log.
 ===
 
 ===
@@ -3615,4 +3635,35 @@ Deskripsi: Hide menu /admin/settings diverifikasi via bundle diff
 Batch 10. Kalau runtime tidak sesuai, user lihat menu -> klik -> 404.
 
 Estimasi: 2 jam (Playwright setup). Prioritas: LOW.
+===
+
+===
+TD-2.4.41: Migration runner tidak wrap transaction (BARU 2026-09-18)
+Status: ⚠️ OPEN (Batch 6.x infrastructure, MEDIUM)
+
+Deskripsi: `dentflow-backend/src/utils/migrate.ts:51` mengirim seluruh isi
+file migration sebagai `pool.query(sql)` single-shot (simple query protocol).
+TIDAK ada BEGIN/COMMIT wrapper otomatis. Kalau error di tengah file:
+- Statement sebelum error TETAP ter-commit (partial state).
+- File TIDAK tercatat di tabel `migrations` (karena insert filename setelah
+  query sukses).
+- Re-run manual bisa double-apply kalau idempotent (atau fail kalau tidak).
+
+Implikasi: Migration files 001-044 tidak wrap. Migration 045 (RLS) wrap
+manual untuk mitigasi. Semua migrasi berikutnya WAJIB wrap manual kecuali
+runner diperbaiki.
+
+Dampak: Latent risk partial-state + double-apply pada migrasi kompleks
+(DDL multi-statement, ALTER TABLE loop).
+
+Fix Batch 6.x:
+1. Update migrate.ts: wrap setiap file di `BEGIN; <sql> COMMIT;` sebelum
+   pool.query (atau `client.query('BEGIN')` + query + COMMIT).
+2. Idempotent pattern di file tetap dipertahankan (IF NOT EXISTS / CREATE
+   OR REPLACE) — belt-and-suspenders.
+3. Regression: apply 1 dummy migration, error di tengah, verify rollback.
+
+Estimasi: 1 jam. Prioritas: MEDIUM.
+Referensi: task_rls_preapply.log.
+
 ===
