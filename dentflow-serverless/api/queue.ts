@@ -3,6 +3,7 @@ import express, { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { extractBearerToken, verifyJwt, enforceTenant, AuthUser } from '../lib/auth';
+import { publishBroadcast } from '../lib/realtime';
 
 // ============================================================
 // Consolidated /api/queue — Task 2.4.8c (D4 queue check-in)
@@ -238,6 +239,15 @@ router.post('/:id/call-next', requireAuth(['ADMIN_BRANCH']), async (req: Request
       description: `Queue ${row.queue_number} dipanggil`,
     });
 
+    // Realtime ping (fire-and-forget) — gagal = silent, tidak block response.
+    void publishBroadcast(`dentflow:branch:${row.branch_id}`, 'queue:updated', {
+      branchId: row.branch_id,
+      doctorId: row.doctor_id,
+      action: 'call-next',
+      queueId: row.id,
+      ts: new Date().toISOString(),
+    });
+
     return res.status(200).json({
       success: true,
       data: mapQueueRow(row),
@@ -289,6 +299,15 @@ router.post('/:id/complete', requireAuth(['ADMIN_BRANCH']), async (req: Request,
       entity_id: row.id,
       new_values: { status: 'COMPLETED', queue_number: row.queue_number },
       description: `Queue ${row.queue_number} completed`,
+    });
+
+    // Realtime ping (fire-and-forget) — gagal = silent, tidak block response.
+    void publishBroadcast(`dentflow:branch:${row.branch_id}`, 'queue:updated', {
+      branchId: row.branch_id,
+      doctorId: row.doctor_id,
+      action: 'complete',
+      queueId: row.id,
+      ts: new Date().toISOString(),
     });
 
     return res.status(200).json({

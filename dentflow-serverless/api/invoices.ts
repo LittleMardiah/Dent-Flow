@@ -3,6 +3,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import { Router } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { extractBearerToken, verifyJwt, requireRole, AuthUser } from '../lib/auth';
+import { publishBroadcast } from '../lib/realtime';
 
 // ============================================================
 // Consolidated /api/invoices — READ ONLY (Batch 3)
@@ -473,6 +474,14 @@ router.all('/admin/:id/mark-paid', async (req: Request, res: Response) => {
       status: row.status,
     }));
 
+    // Realtime ping (fire-and-forget) — gagal = silent, tidak block response.
+    void publishBroadcast(`dentflow:branch:${user.branchId}`, 'invoice:paid', {
+      branchId: user.branchId,
+      invoiceId,
+      action: 'mark-paid',
+      ts: new Date().toISOString(),
+    });
+
     res.status(200).json({
       success: true,
       data: detail,
@@ -619,6 +628,14 @@ router.all('/:id/mark-paid', async (req: Request, res: Response) => {
       adminName: user.userId,
       status: row.status,
     }));
+
+    // Realtime ping (fire-and-forget) — gagal = silent, tidak block response.
+    void publishBroadcast(`dentflow:branch:${user.branchId}`, 'invoice:paid', {
+      branchId: user.branchId,
+      invoiceId,
+      action: 'mark-paid',
+      ts: new Date().toISOString(),
+    });
 
     res.status(200).json({
       success: true,

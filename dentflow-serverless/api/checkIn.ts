@@ -3,6 +3,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import { Router } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { extractBearerToken, verifyJwt, requireRole, enforceTenant, AuthUser } from '../lib/auth';
+import { publishBroadcast } from '../lib/realtime';
 
 const ALLOWED_ROLES = ['ADMIN_BRANCH'];
 
@@ -132,6 +133,14 @@ router.post('/', async (req: Request, res: Response) => {
       description: `Admin check-in pasien dengan kode ${code}, queue number ${queueNumber}`,
     });
 
+    // Realtime ping (fire-and-forget) — gagal = silent, tidak block response.
+    void publishBroadcast(`dentflow:branch:${branchId}`, 'queue:updated', {
+      branchId,
+      doctorId: booking.doctor_id,
+      action: 'check-in',
+      ts: new Date().toISOString(),
+    });
+
     return ok(res, {
       queue_number: queueNumber,
       booking_id: booking.id,
@@ -247,6 +256,14 @@ router.post('/walk-in', async (req: Request, res: Response) => {
       status: 'WAITING',
     });
     if (qErr) return fail(res, 'Internal server error', 500);
+
+    // Realtime ping (fire-and-forget) — gagal = silent, tidak block response.
+    void publishBroadcast(`dentflow:branch:${branchId}`, 'queue:updated', {
+      branchId,
+      doctorId: body.doctor_id,
+      action: 'walk-in',
+      ts: new Date().toISOString(),
+    });
 
     return res.status(201).json({
       success: true,

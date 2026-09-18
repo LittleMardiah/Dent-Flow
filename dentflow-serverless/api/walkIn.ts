@@ -3,6 +3,7 @@ import express, { Request, Response } from 'express';
 import { Router } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { extractBearerToken, verifyJwt, requireRole, enforceTenant, AuthUser, hashPassword, signAccessToken, signRefreshToken } from '../lib/auth';
+import { publishBroadcast } from '../lib/realtime';
 
 // ============================================================
 // Consolidated /walk-in — Task 2.4.1 (W1, FIRST WRITE)
@@ -226,6 +227,14 @@ router.all('/book-appointment', postOnly(async (req, res) => {
       entity_id: booking.id,
       new_values: { tempPatientId: body.tempPatientId, doctorId: body.doctorId, queueNumber },
       description: `Walk-in booking ditambahkan, queue number ${queueNumber}`,
+    });
+
+    // Realtime ping (fire-and-forget) — gagal = silent, tidak block response.
+    void publishBroadcast(`dentflow:branch:${branchId}`, 'queue:updated', {
+      branchId,
+      doctorId: body.doctorId,
+      action: 'queue:updated',
+      ts: new Date().toISOString(),
     });
 
     return res.status(201).json({
