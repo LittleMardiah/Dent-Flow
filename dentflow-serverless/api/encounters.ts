@@ -3,6 +3,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import { Router } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { extractBearerToken, verifyJwt, requireRole, AuthUser } from '../lib/auth';
+import { issueUploadTicket, listDocuments, StorageError } from '../lib/storage';
 
 // ============================================================
 // Consolidated /api/encounters — READ ONLY (Batch 3)
@@ -331,6 +332,75 @@ router.all('/', getOnly(async (req, res) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal error';
     return fail(res, message, 500, 'INTERNAL_ERROR');
+  }
+}));
+
+// ---------- POST /api/encounters/:id/documents (upload ticket) ----------
+// Task 2.10 B1: MinIO -> Supabase Storage. Ticket = signed upload URL (5 menit) +
+// metadata row (reservation). Only DOCTOR/ADMIN_BRANCH, branch-scoped.
+const mapStorageError = (err: unknown, res: Response) => {
+  if (err instanceof StorageError) {
+    return fail(res, err.message, err.statusCode, err.code);
+  }
+  const message = err instanceof Error ? err.message : 'Internal error';
+  return fail(res, message, 500, 'INTERNAL_ERROR');
+};
+
+router.post('/:id/documents', postOnly(async (req, res) => {
+  const user = req.user;
+  if (!['DOCTOR', 'ADMIN_BRANCH'].includes(user.role)) {
+    return fail(res, 'Forbidden', 403, 'FORBIDDEN');
+  }
+
+  const encounterId = req.params.id as string;
+  if (!encounterId) return fail(res, 'Parameter id wajib diisi', 400, 'VALIDATION_ERROR');
+
+  const body = (req.body || {}) as Record<string, unknown>;
+  const filename = typeof body.filename === 'string' ? body.filename : '';
+  const size = typeof body.size === 'number' ? body.size : Number(body.size ?? NaN);
+  const mime = typeof body.mime === 'string' ? body.mime : '';
+
+  try {
+    const supabase = getSupabase();
+    const ticket = await issueUploadTicket(supabase, user, encounterId, { filename, size, mime });
+    return res.status(201).json({
+      success: true,
+      data: {
+        docId: ticket.docId,
+        path: ticket.path,
+        signedUrl: ticket.signedUrl,
+        token: ticket.token,
+        expiresIn: 300,
+      },
+      message: 'Upload ticket issued',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: unknown) {
+    return mapStorageError(err, res);
+  }
+}));
+
+// ---------- GET /api/encounters/:id/documents (list + signed download URL) ----------
+router.get('/:id/documents', getOnly(async (req, res) => {
+  const user = req.user;
+  if (!['DOCTOR', 'ADMIN_BRANCH'].includes(user.role)) {
+    return fail(res, 'Forbidden', 403, 'FORBIDDEN');
+  }
+
+  const encounterId = req.params.id as string;
+  if (!encounterId) return fail(res, 'Parameter id wajib diisi', 400, 'VALIDATION_ERROR');
+
+  try {
+    const supabase = getSupabase();
+    const documents = await listDocuments(supabase, user, encounterId);
+    return res.status(200).json({
+      success: true,
+      data: documents,
+      message: 'OK',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: unknown) {
+    return mapStorageError(err, res);
   }
 }));
 
