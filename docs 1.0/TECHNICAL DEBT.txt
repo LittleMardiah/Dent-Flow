@@ -2795,7 +2795,7 @@ Prioritas: HIGH
 
 
 TD-VERCEL-003: MinIO Storage Skipped di Vercel
-Status: ⚠️ KNOWN LIMITATION
+Status: 🟡 PARTIAL (B1 done 2026-09-19, B2 web wiring pending, B3 mobile defer)
 
 Deskripsi:
 MinIO (S3-compatible file storage) tidak di-deploy bersama Vercel.
@@ -2808,10 +2808,18 @@ Dampak:
 Perbaikan (Phase 2):
 - Migrate ke Supabase Storage (S3-compatible, free 1GB)
 - Atau Vercel Blob (paid)
-- Update FileUploadService pakai Supabase Storage client
+- Create new storage layer (lib/storage.ts + encounter_documents table).
+  Catatan: item lama "Update FileUploadService" HAPUS — FileUploadService
+  TIDAK pernah ada (pre-audit finding, ref: task_210_preaudit.log).
 
 Estimasi: 2-3 hari
 Prioritas: MEDIUM
+
+  ---
+  UPDATE 2026-09-19 (Task 2.10 B1): Partial migrated.
+  Bucket dentflow private + lib/storage.ts + 2 endpoint live.
+  Migration 048 applied. Ref: task_210_preaudit.log, task_210b1.log
+  ===
 
 
 TD-VERCEL-004: WebSocket Error Suppressed (Workaround, Bukan Fixed)

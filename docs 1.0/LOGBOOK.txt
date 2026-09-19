@@ -5486,3 +5486,44 @@ TD appended: TD-CRON-001/002/003. TD-VERCEL-002 updated PARTIAL.
 Verifikasi: migration tracked, 3 cron.job active=true, 3 functions exist,
 dry-run no error.
 ===
+TASK 2.10 B1 + B2 — MINIO -> SUPABASE STORAGE (EMR DOCUMENTS)
+Status: 🟡 PARTIAL (B1 done, B2 web wiring done, B3 mobile defer)
+
+Fase: Task 2.10 (ROADMAP TAMBAHAN Phase 2).
+
+B0 (Supabase Dashboard manual):
+- Bucket `dentflow` PRIVATE dibuat (public=false, size_limit NULL,
+  allowed_mime_types NULL — enforce server-side).
+- Verify: task_210b0.log (bucket 1 row, policies 0, objects 0).
+
+B1 (commit 081001e + 227ff8c):
+- Migration 048_encounter_documents.sql: tabel encounter_documents
+  (11 kolom, index encounter_id+patient_id, RLS ON + REVOKE
+  anon/public, GRANT authenticated/service_role — pattern 044/045/046).
+- lib/storage.ts (NEW): issueUploadTicket() (validate size <=4MB + MIME
+  whitelist jpeg/png/webp/pdf + ownership via branch scope, insert row
+  BEFORE upload, createSignedUploadUrl expire 5 min), listDocuments()
+  (+ createSignedUrl download expire 1 hour), StorageError class.
+- 2 endpoint (api/encounters.ts extended):
+  * POST /:id/documents (DOCTOR + ADMIN_BRANCH) — issue ticket.
+  * GET /:id/documents (DOCTOR + ADMIN_BRANCH) — list + download URLs.
+- Func count 12/12 (extend only, 0 api/* baru).
+- E2E .e2e_storage.mjs: 20/20 PASS (12 E2E + 8 regression). Cleanup done.
+- Ref: task_210_preaudit.log, task_210b1.log.
+
+B2 (web EMR UI wiring, this commit):
+- dentflow-web doctor EMR new page attachment card live:
+  input file multiple (jpeg/png/webp/pdf), client validate <=4MB + MIME,
+  preview list (nama + size readable), hapus per file, upload in
+  progress loading.
+- Flow: submit encounter -> POST /:id/documents -> PUT ke signedUrl
+  (no auth header) -> fail = console.warn + toast "X file gagal upload"
+  (submit encounter tetap sukses).
+- doctorEmr.ts: uploadEncounterDocument(), listEncounterDocuments(),
+  putToSignedUrl().
+
+B3: mobile deferred.
+
+TD: TD-VERCEL-003 -> PARTIAL (B1 done 2026-09-19, B2 web wiring pending,
+B3 mobile defer). FileUploadService removed (pre-audit finding).
+===
