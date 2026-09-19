@@ -3719,3 +3719,84 @@ Fix: (a) update .env.production repo ke serverless URL (sync), atau
 Estimasi: 15 menit. Prioritas: LOW.
 Referensi: task_settings_preaudit.log.
 ===
+===
+TD-2.4.45: WebSocketContext.on unstable reference (BARU 2026-09-19)
+Status: OPEN (LOW)
+
+Deskripsi: `WebSocketContext.tsx` mengembalikan `on` handler yang
+di-recreate setiap provider render. Consumer (dulu useDoctorQueue)
+dengan useEffect dep `[on]` akan re-run saat provider re-render —
+churn. Saat ini useDoctorQueue sudah tidak pakai (migrated ke
+useRealtime). Consumer sisa: ConnectionStatus (read-only status,
+tidak subscribe events).
+
+Dampak: Cosmetic + potential churn kalau consumer baru muncul.
+
+Fix (Batch 6.7 polish): memoize `on` via useCallback, atau migrate
+ConnectionStatus ke useRealtime.isLive.
+
+Estimasi: 30 menit. Referensi: task_63c_step4_verify.log.
+===
+
+===
+TD-2.4.46: lib/websocket.ts + WebSocketContext orphan setelah Realtime migration (BARU 2026-09-19)
+Status: OPEN (LOW, cleanup batch)
+
+Deskripsi: Setelah 6.3c migrate 3 hook ke useRealtime, legacy WS path
+(lib/websocket.ts + WebSocketContext) hanya dipakai oleh
+ConnectionStatus.tsx (read status saja, tidak subscribe events). File
+kode ~200+ lines dormant (WS_ENABLED=false di prod).
+
+Dampak: Dead code, 3 file (websocket.ts, WebSocketContext.tsx,
+ConnectionStatus.tsx) butuh cleanup. Bundle include dormant code.
+
+Fix (Batch 6.7): (a) hapus 3 file, pindah status indicator ke
+useRealtime.isLive; atau (b) keep sebagai fallback documented.
+Estimasi: 2 jam.
+
+Referensi: task_63c_step4_verify.log, task_63c_e2e.log.
+===
+
+===
+TD-2.4.47: NEXT_PUBLIC_WS_ENABLED toggle footgun (BARU 2026-09-19)
+Status: OPEN (LOW)
+
+Deskripsi: `NEXT_PUBLIC_WS_ENABLED=true` akan mengaktifkan legacy
+socket.io path (lib/websocket.ts + WebSocketContext) — jika nanti
+dinyalakan, akan double-wire dengan useRealtime (Supabase Broadcast):
+setiap event `queue:updated` trigger refetch 2x.
+
+Dampak: Latent. Safe today (WS_ENABLED=false). Footgun env toggle.
+
+Fix (Batch 6.7 + 2.4.46): hapus legacy WS 100%, remove env flag, atau
+hard-guard di code. Estimasi: terkait 2.4.46.
+
+Referensi: task_63c_step4_verify.log.
+===
+
+===
+TD-2.4.48: Supabase Realtime public channel — transient delivery window (BARU 2026-09-19)
+Status: OPEN (MONITOR, LOW-MEDIUM)
+
+Deskripsi: 2026-09-19 00:11-00:16 (~5 menit) broadcast REST di-ack 202
+tapi tidak ada delivery ke WS subscriber (5 probe independent, 0
+received). Window setelahnya normal (10/10 + 6/6 delivered).
+
+Kemungkinan: Supabase infra transient (node routing/heartbeat),
+bukan code. Tidak reproducible dalam short test.
+
+Dampak: Kalau terjadi di production: realtime silence 5 menit → user
+lihat stale data. Fallback polling (3-5s) mitigate UX tapi admin/TV
+tidak tahu realtime mati (kecuali lihat status indicator).
+
+Fix/mitigation:
+1. Monitor via Vercel Analytics + Supabase Realtime dashboard.
+2. Kalau recurring: implement retry strategy (client re-subscribe
+   after idle timeout) + alert.
+3. Fallback polling sudah ada (safety net).
+
+Estimasi: 2-4 jam (kalau perlu retry impl). Prioritas: LOW-MEDIUM
+(kalau recurring naik HIGH).
+
+Referensi: task_63c_e2e.log.
+===
