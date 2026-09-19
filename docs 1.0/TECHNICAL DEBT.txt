@@ -3539,6 +3539,7 @@ RESOLVED 2026-09-18 (Batch 6.1 migration 045):
   baru — affect future migrations).
 Referensi: task_rls_preaudit.log + task_rls_preapply.log +
            task_rls_apply.log + task_rls_smoke.log.
+[Ref: hutang teknis (bukan Task roadmap) — see TD-DOC-003]
 ===
 ===
 TD-2.4.37: api/inventory.ts (BARU 2026-09-17)
@@ -3736,6 +3737,8 @@ Fix (Batch 6.7 polish): memoize `on` via useCallback, atau migrate
 ConnectionStatus ke useRealtime.isLive.
 
 Estimasi: 30 menit. Referensi: task_63c_step4_verify.log.
+[Ref: Task 2.6 Realtime (6.3c) — see TD-DOC-003]
+[Fix Ref: Task 2.14 Polish — see TD-DOC-003]
 ===
 
 ===
@@ -3755,6 +3758,8 @@ useRealtime.isLive; atau (b) keep sebagai fallback documented.
 Estimasi: 2 jam.
 
 Referensi: task_63c_step4_verify.log, task_63c_e2e.log.
+[Ref: Task 2.6 Realtime (6.3c) — see TD-DOC-003]
+[Fix Ref: Task 2.14 Polish — see TD-DOC-003]
 ===
 
 ===
@@ -3772,6 +3777,8 @@ Fix (Batch 6.7 + 2.4.46): hapus legacy WS 100%, remove env flag, atau
 hard-guard di code. Estimasi: terkait 2.4.46.
 
 Referensi: task_63c_step4_verify.log.
+[Ref: Task 2.6 Realtime (6.3c) — see TD-DOC-003]
+[Fix Ref: Task 2.14 Polish — see TD-DOC-003]
 ===
 
 ===
@@ -3799,4 +3806,39 @@ Estimasi: 2-4 jam (kalau perlu retry impl). Prioritas: LOW-MEDIUM
 (kalau recurring naik HIGH).
 
 Referensi: task_63c_e2e.log.
+[Ref: Task 2.6 Realtime (6.3c) — see TD-DOC-003]
+===
+===
+TD-DOC-003: Terminology reconciliation — "Batch 6.x" -> Task 2.X nominal (BARU 2026-09-19)
+Status: ✅ DONE (docs-only, commit 7fc7549 + follow-up)
+
+Deskripsi: Selama Task 2.6-2.7 implementation, developer memakai label
+"Batch 6.1/6.2/6.3/6.4/6.7" — TIDAK ada di ROADMAP TAMBAHAN.txt,
+MIGRATION_PLAN.md, atau BATCH_4_PLAN.md. Catch-all untuk task setelah
+Batch 4, tapi tidak clean-map ke Task nominal 2.X.
+
+Canonical mapping:
+- "Batch 6.1 RLS"       -> TD-2.4.36 (hutang teknis)
+- "Batch 6.2 Settings"  -> Task 2.4.x (coverage debt)
+- "Batch 6.3 Realtime"  -> Task 2.6 (ROADMAP TAMBAHAN)
+- "Batch 6.4 Schedule"  -> Task 2.4.x (coverage debt)
+- "Batch 6.7 Polish"    -> Task 2.14
+
+Koreksi yang sudah dilakukan (commit 7fc7549):
+- MIGRATION_PLAN.md: Batch 5 (Task 2.7) + Batch 6 (Task 2.6) checked.
+- LOGBOOK.txt: append Batch 5 + Task 2.6 entries.
+
+Follow-up commit ini:
+- TECHNICAL DEBT.txt: append TD-DOC-003 + [Ref: Task X] note di
+  entry yang salah pakai label.
+
+Namespace collision warning:
+- "Task 2.6.x" di LOGBOOK/ROADMAP FASE 2 = walk-in/no-show/attendance
+  (Phase 2 lama, DONE).
+- "Task 2.6" di ROADMAP TAMBAHAN = Realtime (Socket.IO -> Supabase).
+- Konteks beda (Phase 2 vs Phase 2 Serverless Refactor). Wajib baca
+  konteks.
+
+Estimasi: selesai (task ini). Prioritas: LOW (docs hygiene).
+Referensi: task_reconcile.log, task_reconcile_fix.log.
 ===
