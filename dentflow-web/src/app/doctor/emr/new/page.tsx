@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, ChangeEvent } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useDoctorEmr } from '@/hooks/useDoctorEmr';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -23,9 +23,16 @@ import {
   CheckCircle,
   Clock,
   FileText,
+  Paperclip,
   Pill,
 } from 'lucide-react';
 import { Suspense } from 'react';
+import {
+  doctorEmrApi,
+  MAX_FILE_SIZE,
+  ALLOWED_MIME_TYPES,
+  formatFileSize,
+} from '@/lib/api/doctorEmr';
 
 // Inner component for search params
 function NewEMRContent() {
@@ -74,6 +81,10 @@ function NewEMRContent() {
     notes: '',
   });
 
+  const [files, setFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
       router.push('/login');
@@ -106,10 +117,74 @@ function NewEMRContent() {
 
   const handleSubmit = async () => {
     try {
-      await submitEncounter();
+      const result = await submitEncounter();
+      if (result?.id && files.length > 0) {
+        await uploadFiles(result.id);
+      }
       router.push('/doctor/queue');
     } catch (err) {
       // Error already handled in hook
+    }
+  };
+
+  const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files || []);
+    if (selected.length === 0) return;
+
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    const validTypes = ALLOWED_MIME_TYPES as readonly string[];
+
+    for (const f of selected) {
+      if (f.size > MAX_FILE_SIZE) {
+        rejected.push(`${f.name} (melebihi 4MB)`);
+        continue;
+      }
+      if (!validTypes.includes(f.type)) {
+        rejected.push(`${f.name} (format tidak didukung)`);
+        continue;
+      }
+      accepted.push(f);
+    }
+
+    if (accepted.length > 0) {
+      setFiles((prev) => [...prev, ...accepted]);
+    }
+    if (rejected.length > 0) {
+      setUploadError(
+        `Ditolak: ${rejected.join('; ')}. Maks 4MB, format JPG, PNG, WebP, PDF.`
+      );
+    } else {
+      setUploadError(null);
+    }
+    e.target.value = '';
+  };
+
+  const handleRemoveFile = (idx: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const uploadFiles = async (encounterId: string) => {
+    if (files.length === 0) return;
+    setIsUploading(true);
+    let failed = 0;
+    try {
+      for (const file of files) {
+        try {
+          const ticket = await doctorEmrApi.uploadEncounterDocument(encounterId, file);
+          await doctorEmrApi.putToSignedUrl(ticket.signedUrl, file);
+        } catch (err) {
+          console.warn('[EMR DOC] Upload gagal:', file.name, err);
+          failed += 1;
+        }
+      }
+      if (failed > 0) {
+        window.alert(`${failed} file gagal upload, sisanya sukses.`);
+      } else {
+        window.alert('Semua lampiran berhasil diupload.');
+      }
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -155,12 +230,16 @@ function NewEMRContent() {
             <Button
               variant="primary"
               onClick={handleSubmit}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isUploading}
             >
-              {isSubmitting ? (
+              {isSubmitting || isUploading ? (
                 <Loader2 className="animate-spin mr-2" size={16} />
               ) : null}
-              {isSubmitting ? 'Menyimpan...' : 'Simpan & Selesai'}
+              {isSubmitting
+                ? 'Menyimpan...'
+                : isUploading
+                ? 'Mengupload lampiran...'
+                : 'Simpan & Selesai'}
             </Button>
           </div>
         </div>
@@ -385,21 +464,67 @@ function NewEMRContent() {
             )}
           </Card>
 
-          {/* Upload Image Placeholder */}
+          {/* Lampiran (X-ray, Lab) */}
           <Card>
             <h2 className="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
-              <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+              <Paperclip size={18} className="text-primary" />
               Lampiran (X-ray, Lab)
             </h2>
-            <div className="border-2 border-dashed border-neutral rounded-lg p-8 text-center">
-              <p className="text-sm text-gray-400">Drag & drop file di sini, atau klik untuk upload</p>
-              <p className="text-xs text-gray-300 mt-1">Maks 5MB • JPG, PNG, PDF</p>
-              <Button variant="outline" size="sm" className="mt-3" disabled>
-                Upload (Coming Soon)
-              </Button>
+            <div className="border-2 border-dashed border-neutral rounded-lg p-6 text-center">
+              <p className="text-sm text-gray-400">Pilih file untuk dilampirkan ke rekam medis</p>
+              <p className="text-xs text-gray-300 mt-1">Maks 4MB • JPG, PNG, WebP, PDF</p>
+              <input
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                onChange={handleFileSelect}
+                disabled={isUploading}
+                className="mt-3 block w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary file:text-white hover:file:bg-primary-dark cursor-pointer"
+              />
             </div>
+
+            {files.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {files.map((f, idx) => (
+                  <div
+                    key={`${f.name}-${idx}`}
+                    className="flex items-center justify-between p-2 bg-neutral/30 rounded-lg"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileText size={14} className="text-gray-400 shrink-0" />
+                      <p className="text-sm text-gray-700 truncate">{f.name}</p>
+                      <span className="text-xs text-gray-400 shrink-0">{formatFileSize(f.size)}</span>
+                    </div>
+                    {!isUploading && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFile(idx)}
+                        className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <p className="text-xs text-gray-400">
+                  {files.length} file • {formatFileSize(files.reduce((sum, f) => sum + f.size, 0))} • lampiran diupload setelah EMR tersimpan
+                </p>
+              </div>
+            )}
+
+            {uploadError && (
+              <div className="mt-3 p-2.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">
+                <AlertCircle size={14} />
+                {uploadError}
+              </div>
+            )}
+
+            {isUploading && (
+              <div className="mt-3 flex items-center gap-2 text-sm text-primary">
+                <Loader2 className="animate-spin" size={16} />
+                Mengupload lampiran...
+              </div>
+            )}
           </Card>
         </div>
 
