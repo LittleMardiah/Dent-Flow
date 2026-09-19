@@ -5455,3 +5455,34 @@ Note: term "Batch 6.3" = unofficial label untuk Task 2.6. Kanonik =
 Task 2.6.
 
 ===
+TASK 2.8 B1 — CRON JOBS MIGRATION (node-cron -> Supabase pg_cron)
+Status: 🟡 PARTIAL (3/4 jobs, webhook-retry deferred)
+
+Fase: Task 2.8 (ROADMAP TAMBAHAN Phase 2).
+
+Pre-audit + B0:
+- pg_cron 1.6.4 enabled via Supabase Dashboard.
+- cron.job clean slate.
+- Asia/Jakarta tzdata available, tapi pg_cron 1.6.4 tidak support
+  schedule_timezone 4-arg.
+
+Migration 047_cron_jobs.sql (173 lines, self-wrap BEGIN/COMMIT):
+- Function cron_no_show_detect() — parity Express noShowDetection.job.ts.
+  Grace 15 min (hardcoded, TD-CRON-003).
+- Function cron_queue_retention() — replaces legacy "reset-queue"
+  (obsolete post-Task 2.7 Redis->sequence migration 032).
+- Function cron_cleanup_temp_patients() — parity Express.
+- 3 cron.schedule (Asia/Jakarta equivalent via UTC offset):
+  * no-show-detection: */30 * * * * (tz-agnostic).
+  * queue-retention: 0 17 * * * UTC = 00:00 WIB.
+  * cleanup-temp-patients: 0 20 * * * UTC = 03:00 WIB.
+
+Deferred:
+- C4 webhook-retry (parity 3-impl: Express vs serverless vs replay).
+  Task 2.8 B2 (terpisah).
+
+TD appended: TD-CRON-001/002/003. TD-VERCEL-002 updated PARTIAL.
+
+Verifikasi: migration tracked, 3 cron.job active=true, 3 functions exist,
+dry-run no error.
+===

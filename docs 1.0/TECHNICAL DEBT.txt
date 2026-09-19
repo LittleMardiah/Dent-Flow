@@ -2779,6 +2779,20 @@ Perbaikan (Phase 2):
 Estimasi: 3-5 hari
 Prioritas: HIGH
 
+  ---
+  UPDATE 2026-09-19 (Task 2.8 B1):
+  PARTIAL MIGRATED. 3/4 cron job migrated ke pg_cron via migration 047:
+  - no-show-detection (*/30 * * * * UTC -> Asia/Jakarta equivalent) ✓
+  - queue-retention (0 0 * * * WIB) ✓ [replaces legacy reset-queue,
+    obsolete post-Task 2.7 Redis->sequence migration 032]
+  - cleanup-temp-patients (0 3 * * * WIB) ✓
+  Webhook-retry (C4) DEFERRED ke Task 2.8 B2 — parity 3-implementasi
+  (Express vs serverless vs replay) butuh audit terpisah + TD-PAY-020
+  double-charge guard verification.
+  
+  Status: PARTIAL (75% migrated). Referensi: task_28b1_mig.log.
+  ===
+
 
 TD-VERCEL-003: MinIO Storage Skipped di Vercel
 Status: ⚠️ KNOWN LIMITATION
@@ -3841,4 +3855,73 @@ Namespace collision warning:
 
 Estimasi: selesai (task ini). Prioritas: LOW (docs hygiene).
 Referensi: task_reconcile.log, task_reconcile_fix.log.
+===
+
+===
+TD-CRON-001: pg_cron 1.6.4 tidak support schedule_timezone (BARU 2026-09-19)
+Status: OPEN (LOW)
+
+Deskripsi: Function signature `cron.schedule(job_name, schedule, command,
+schedule_timezone)` (4-arg) TIDAK tersedia di pg_cron 1.6.4 yang
+di-enable di Supabase project ini. Kolom `cron.job.schedule_timezone`
+juga absen.
+
+Workaround: encode wall-clock WIB ke UTC offset (-7 jam) di cron
+expression. Midnight WIB (00:00) = `0 17 * * *` UTC. 03:00 WIB =
+`0 20 * * *` UTC.
+
+Dampak: WIB tidak punya DST, jadi workaround = permanent aman.
+Kalau pg_cron upgrade → support 4-arg, re-schedule untuk cleanliness.
+
+Fix: (a) kalau upgrade, re-schedule pakai 4-arg `'Asia/Jakarta'`;
+(b) biarkan workaround (OK selama WIB tidak DST).
+
+Estimasi: 15 menit (kalau upgrade). Prioritas: LOW.
+Referensi: task_28b1_mig.log.
+===
+
+===
+TD-CRON-002: no-show job tidak INSERT audit_logs BOOKING_NO_SHOW_MARKED (BARU 2026-09-19)
+Status: OPEN (MEDIUM — parity spec gap)
+
+Deskripsi: Spec LOGBOOK.txt:545,1072,1078 mengharuskan audit log
+`BOOKING_NO_SHOW_MARKED` (label "Pemesanan Tidak Datang") saat job
+no-show mark booking. Tapi:
+- Express `noShowDetection.job.ts:20-27` TIDAK INSERT audit_logs.
+- `NotificationService.sendNoShowNotification` TIDAK INSERT audit_logs.
+- Migration 047 `cron_no_show_detect()` TIDAK INSERT audit_logs.
+
+Kesimpulan: parity OK (Express juga tidak), tapi spec tidak terpenuhi
+di kedua implementasi. Gap pre-existing, bukan regresi.
+
+Dampak: Audit trail tidak mencatat auto-mark NO_SHOW. Compliance gap
+untuk audit trail append-only.
+
+Fix: (a) tambahkan INSERT audit_logs di migration 047 function + juga
+fix Express (parity); (b) update spec LOGBOOK (kalau memang bukan
+requirement). Rekomendasi (a).
+
+Estimasi: 1 jam. Prioritas: MEDIUM.
+Referensi: task_audit_verify.log.
+===
+
+===
+TD-CRON-003: grace_minutes hardcoded 15 di cron_no_show_detect (BARU 2026-09-19)
+Status: OPEN (LOW)
+
+Deskripsi: Migration 047 function `cron_no_show_detect()` pakai
+`v_grace_minutes int := 15` hardcoded. Express versi pakai
+`config.noShow.graceMinutes` (env `NO_SHOW_GRACE_MINUTES`, default 15).
+
+Dampak: Admin tidak bisa ubah grace period tanpa ALTER FUNCTION.
+Kehilangan fleksibilitas env-driven.
+
+Fix: (a) baca dari tabel `cron_settings` (buat table baru); (b) pakai
+`current_setting('app.no_show_grace_minutes', true)` dengan fallback
+15; (c) biarkan hardcoded (keputusan sadar untuk v1).
+
+Rekomendasi: (c) v1, (a) batch polish.
+
+Estimasi: 30 menit. Prioritas: LOW.
+Referensi: task_28b1_mig.log.
 ===

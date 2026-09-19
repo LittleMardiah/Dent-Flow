@@ -412,7 +412,8 @@ Total: **8 endpoint** (7 auth + 1 health).
 - DONE 2026-09-19. Publisher 6.3b + Subscriber 6.3c end-to-end verified. TD-2.4.45-48.
 
 ### Batch 7: Cron (Task 2.8)
-- [ ] node-cron → Supabase pg_cron (4 job: cleanup, no-show, reset-queue, webhook-retry)
+- [~] node-cron → Supabase pg_cron (3/4 job DONE, webhook-retry
+deferred Task 2.8 B2) — DONE 2026-09-19 via migration 047
 
 ### Batch 8: Webhook (Task 2.9)
 - [ ] `/webhooks/midtrans` → Vercel Edge Function (signature verify)
