@@ -401,13 +401,15 @@ Total: **8 endpoint** (7 auth + 1 health).
 - Source: `notification.routes.ts` (orphan) — handler + service aktif.
 
 ### Batch 5: Redis Replacement (Task 2.7)
-- [ ] `/api/queue/status` — Redis INCR → Postgres `nextval()` sequence
-- [ ] queueManagement.resetAllQueuesForDate → SQL reset
+- [x] `/api/queue/status` — Redis INCR → Postgres `nextval()` sequence
+- [x] queueManagement.resetAllQueuesForDate → SQL reset
+- DONE 2026-09-14 via migration 032_queue_sequence.
 
 ### Batch 6: Realtime (Task 2.6)
-- [ ] Socket.IO → Supabase Realtime (`channel` per `branch:{id}`)
-- [ ] Broadcast `queue:updated` → supabase channel emit / polling fallback
-- [ ] Frontend `dentflow-web/src/lib/websocket.ts` switch ke supabase realtime
+- [x] Socket.IO → Supabase Realtime (channel per `branch:{id}`)
+- [x] Broadcast `queue:updated` → supabase channel emit / polling fallback
+- [x] Frontend `dentflow-web/src/lib/websocket.ts` switch ke supabase realtime
+- DONE 2026-09-19. Publisher 6.3b + Subscriber 6.3c end-to-end verified. TD-2.4.45-48.
 
 ### Batch 7: Cron (Task 2.8)
 - [ ] node-cron → Supabase pg_cron (4 job: cleanup, no-show, reset-queue, webhook-retry)

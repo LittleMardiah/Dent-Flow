@@ -5403,3 +5403,55 @@ Func count: 12/12 AT LIMIT.
 Migrations: 032 s/d 040 (9 migrations).
 
 Next: Batch 5+ planning (Redis replacement, Realtime, Cron, Webhook Edge Function).
+
+===
+BATCH 5 — TASK 2.4.x (WRITE MIGRATION) + TASK 2.7 (REDIS → SEQUENCE)
+Status: ✅ DONE
+
+Entry terakhir Batch 4 (commit fb62aef). Lanjut migrasi write endpoint
+Express-only → serverless + coverage debt.
+
+Task 2.4.x — Coverage debt migration:
+- Task 2.4.9: admin bookings list (extend bookings.ts).
+- Task 2.4.22: fix Express N1/N2 FK mismatch (TD-2.4.22).
+- Task 2.4.13: CRLF line-ending fix (.gitattributes).
+- Doctors B1: GET /:id + PATCH /:id/status (serverless greenfield).
+- Queue admin actions: call-next + complete (Express dead code).
+- Contract drift fix: /api/doctors + /api/encounters (TD-MIGRATE-003).
+- Inventory CRUD: migration 044 + api/inventory.ts (7 endpoint).
+- Frontend switch B-Phase 1-2: canary staging → prod (commit 6347c6f,
+  bd932b0).
+
+Task 2.7 — Redis → Postgres sequence:
+- DONE via migration 032_queue_sequence.sql (sebelumnya, sudah apply
+  di awal batch 4).
+
+Commit chain (Batch 5):
+f1cd8dd s/d 7292d53 (lihat git log untuk full list).
+
+TD appended: 2.4.19 s/d 2.4.44.
+
+===
+
+===
+TASK 2.6 — SOCKET.IO → SUPABASE REALTIME
+Status: ✅ DONE
+
+Approach: Broadcast public via Supabase REST (pre-audit 6.3a).
+Backend publisher + web subscriber + fallback polling preserved.
+
+Sub-Task:
+- 6.3a (alias: Task 2.6 pre-audit): realtime assessment.
+  Commit: task_realtime_preaudit.log.
+- 6.3b (backend publisher): lib/realtime.ts + wire 7 call site.
+  Commit: f8478ec.
+- 6.3c (web subscriber): @supabase/supabase-js + useRealtime + wire
+  3 hook. Commit: f44dcb4 + fa45f4a + 4c8e53e.
+- E2E verify: 6/6 + 10/10 events, latency 34-38ms, zero PII,
+  fallback preserved. Commit: (verify only).
+- TD cleanup: 7292d53 (TD-2.4.45-48).
+
+Note: term "Batch 6.3" = unofficial label untuk Task 2.6. Kanonik =
+Task 2.6.
+
+===
