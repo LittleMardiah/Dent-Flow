@@ -30,7 +30,11 @@ export const tenantMiddleware = async (req: Request, res: Response, next: NextFu
 
     if (user.role === 'ADMIN_BRANCH' || user.role === 'DOCTOR') {
       const requestedBranch: string | undefined =
-        req.params?.branchId || req.query?.branchId || req.body?.branchId;
+        req.params?.branchId ||
+        (req.query as any)?.branch_id ||
+        (req.query as any)?.branchId ||
+        (req.body as any)?.branch_id ||
+        (req.body as any)?.branchId;
 
       // User mengakses branch lain (bukan branch utamanya)
       if (requestedBranch && requestedBranch !== userBranchId) {

@@ -240,6 +240,35 @@ router.post('/reset-password', async (req: Request, res: Response) => {
   }
 });
 
+// =============== REFRESH TOKEN ===============
+router.post('/refresh', async (req: Request, res: Response) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token wajib diisi',
+      });
+    }
+
+    const result = await authService.refreshToken(refreshToken);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        token: result.token,
+        refreshToken: result.refreshToken,
+      },
+    });
+  } catch (error: unknown) {
+    res.status(401).json({
+      success: false,
+      message: getErrorMessage(error) || 'Token tidak valid',
+    });
+  }
+});
+
 console.log("🔍 ROUTER STACK:", router.stack.map(l => l.route?.path || "middleware"));
 
 export default router;

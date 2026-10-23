@@ -291,6 +291,45 @@ export class AuthService {
       throw new Error('Invalid or expired token');
     }
   }
+
+  async refreshToken(token: string) {
+    try {
+      const payload = JwtService.verifyToken(token);
+      const userId = payload.userId;
+
+      const client = await this.pool.connect();
+      try {
+        const userResult = await client.query(
+          `SELECT id, email, branch_id, role, is_active
+           FROM users
+           WHERE id = $1`,
+          [userId]
+        );
+        if (userResult.rows.length === 0) {
+          throw new Error('Invalid token');
+        }
+        const user = userResult.rows[0];
+        if (!user.is_active) {
+          throw new Error('Account is inactive');
+        }
+
+        const newToken = JwtService.generateToken({
+          userId: user.id,
+          branchId: user.branch_id,
+          role: user.role as 'PATIENT' | 'ADMIN_BRANCH' | 'DOCTOR',
+          email: user.email,
+        });
+        const newRefreshToken = JwtService.generateRefreshToken(user.id);
+
+        return { token: newToken, refreshToken: newRefreshToken };
+      } finally {
+        client.release();
+      }
+    } catch (error: unknown) {
+      logger.error({ error }, 'Refresh token error:');
+      throw new Error('Invalid or expired token');
+    }
+  }
 }
 
 // Singleton instance

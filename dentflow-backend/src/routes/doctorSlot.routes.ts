@@ -57,6 +57,13 @@ router.get(
 );
 
 router.put(
+  '/:id/schedule',
+  authMiddleware,
+  roleMiddleware(['ADMIN_BRANCH']),
+  doctorScheduleHandler.updateSchedule.bind(doctorScheduleHandler)
+);
+
+router.put(
   '/:id/leave',
   authMiddleware,
   roleMiddleware(['ADMIN_BRANCH', 'PATIENT', 'DOCTOR']),

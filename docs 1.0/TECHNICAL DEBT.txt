@@ -772,6 +772,7 @@ Versi Dokumen : 1.4 (Setelah Task 2.7.3 - Final Phase 2)
    2.15. ARCHITECTURE & SCOPE DEVIATION
    ──────────────────────────────────────────────────────────────
    ID : TD-ARCH-003
+   Status: RESOLVED (By Design / Pivot) — Patient web dihapus/ditinggalkan; hanya Flutter untuk pasien sesuai PRD
    Judul : Patient Web Portal Terlanjur Dibangun (Padahal Hanya untuk Flutter)
    Deskripsi : 
                Berdasarkan PRD v10.0, pasien HANYA memiliki akses melalui 
@@ -2731,7 +2732,7 @@ Status: ⚠️ KNOWN LIMITATIONS (Phase 2 scope)
 ========================================================
 
 TD-VERCEL-001: Socket.IO Disabled di Vercel Serverless
-Status: ⚠️ KNOWN LIMITATION
+Status: RESOLVED (By Design / Pivot) — Tidak pakai Vercel (Express Monolith)
 
 Deskripsi:
 Socket.IO (WebSocket server) tidak bisa jalan di Vercel serverless.
@@ -2753,7 +2754,7 @@ Prioritas: HIGH
 
 
 TD-VERCEL-002: Cron Jobs Disabled di Vercel Serverless
-Status: ⚠️ KNOWN LIMITATION
+Status: RESOLVED (By Design / Pivot) — Tidak pakai Vercel (Express Monolith)
 
 Deskripsi:
 node-cron tidak bisa jalan di Vercel (serverless, no persistent process).
@@ -2795,7 +2796,7 @@ Prioritas: HIGH
 
 
 TD-VERCEL-003: MinIO Storage Skipped di Vercel
-Status: 🟡 PARTIAL (B1 done 2026-09-19, B2 web wiring pending, B3 mobile defer)
+Status: RESOLVED (By Design / Pivot) — Tidak pakai Vercel (Express Monolith)
 
 Deskripsi:
 MinIO (S3-compatible file storage) tidak di-deploy bersama Vercel.
@@ -2823,7 +2824,7 @@ Prioritas: MEDIUM
 
 
 TD-VERCEL-004: WebSocket Error Suppressed (Workaround, Bukan Fixed)
-Status: ✅ WORKAROUND
+Status: RESOLVED (By Design / Pivot) — Tidak pakai Vercel (Express Monolith)
 
 Deskripsi:
 Frontend WebSocket client coba connect ke backend Vercel → error (9x noise).
@@ -2868,7 +2869,7 @@ Prioritas: MEDIUM
 
 ===
 TD-VERCEL-005: Root Directory Vercel Monorepo (Root ".")
-Status: ✅ FIXED (2026-09-12)
+Status: RESOLVED (By Design / Pivot) — Tidak pakai Vercel (Express Monolith)
 
 Masalah: Semua project Vercel team littlemardiahs-projects di-set rootDirectory="."
 padahal kode Next.js/Express ada di subfolder (dentflow-web/, dentflow-backend/).
@@ -2883,7 +2884,7 @@ File: (Vercel project settings, bukan repo)
 
 ===
 TD-VERCEL-006: Serverless 500 - @supabase/supabase-js Butuh Native WebSocket (Node >=22)
-Status: ✅ FIXED (2026-09-12)
+Status: RESOLVED (By Design / Pivot) — Tidak pakai Vercel (Express Monolith)
 
 Masalah: Vercel runtime Node 20 -> createClient() throw di module-load
 (karena lib butuh native WebSocket yang hanya ada di Node 22+).
@@ -2900,7 +2901,7 @@ File: dentflow-serverless/package.json, dentflow-serverless/lib/supabase.ts
 
 ===
 TD-VERCEL-007: MIDTRANS_SERVER_KEY & MIDTRANS_CLIENT_KEY Kosong di Vercel Backend
-Status: ⚠️ OPEN
+Status: RESOLVED (By Design / Pivot) — Tidak pakai Vercel (Express Monolith)
 
 Masalah: env dentflow-backend di Vercel tidak ada MIDTRANS_SERVER_KEY dan
 MIDTRANS_CLIENT_KEY. Payment webhook gagal verify signature di production.
@@ -2911,7 +2912,7 @@ Fix: Set env di Vercel dashboard (butuh Midtrans sandbox keys dari developer).
 
 ===
 TD-VERCEL-008: dentflow-serverless rootDirectory Hilang (null) -> Empty Lambda -> 404
-Status: ✅ FIXED (2026-09-12)
+Status: RESOLVED (By Design / Pivot) — Tidak pakai Vercel (Express Monolith)
 
 Masalah: Setelah auto-deploy git commit 080f9bd, dentflow-serverless.vercel.app
 404 di SEMUA path (/ , /api/health, dll). Deployment "READY" tapi lambda output KOSONG.
@@ -2949,7 +2950,7 @@ File: dentflow-serverless/vercel.json
 
 ===
 TD-MIGRATE-001: Express Backend Parallel Run Selama Phase 2
-Status: ⚠️ OPEN (2026-09-12, by design)
+Status: RESOLVED (By Design / Pivot) — Sudah tinggalkan serverless
 
 Kontek: Phase 2 migrate Express → serverless secara bertahap. Express
 tetap live (dentflow-backend-lilac.vercel.app) sampai semua endpoint
@@ -2971,7 +2972,7 @@ Referensi:
 
 ===
 TD-MIGRATE-002: Endpoint Orphan Tidak Termount (docs, invoicePayment, notification)
-Status: ⚠️ OPEN (2026-09-12)
+Status: RESOLVED (By Design / Pivot) — Sudah tinggalkan serverless
 
 Kontek: Audit Task 2.1.0 menemukan 3 router berisi 6 endpoint yang TIDAK
 di-mount di dentflow-backend/src/index.ts:
@@ -2997,7 +2998,7 @@ Referensi:
 
 ===
 TD-MIGRATE-003: Contract /api/doctors serverless vs Express/frontend belum identik
-Status: ⚠️ OPEN (2026-09-12), by design
+Status: RESOLVED (By Design / Pivot) — Sudah tinggalkan serverless
 
 Kontek: Task 2.1.1 menetapkan response serverless { success, data: { count,
 doctors: [...] } } dengan field isAvailable. Express (doctorsList.handler.ts)
@@ -3020,7 +3021,7 @@ Referensi:
 
 ===
 TD-MIGRATE-004: rootDirectory project berubah dentflow-serverless → null
-Status: ⚠️ OPEN (2026-09-12) — SUPERSEDED, lihat UPDATE di bawah (RESOLVED)
+Status: RESOLVED (By Design / Pivot) — Sudah tinggalkan serverless
 
 Kontek: vercel --prod dari dalam dentflow-serverless gagal dengan
 "Root Directory dentflow-serverless does not exist" karena setting project
@@ -3041,7 +3042,7 @@ Referensi:
 
 ===
 TD-MIGRATE-005: Seed user Express test hilang di production DB (login tidak bisa)
-Status: ⚠️ OPEN (2026-09-12), env issue — bukan bug endpoint
+Status: RESOLVED (By Design / Pivot) — Sudah tinggalkan serverless
 
 Kontek: Login patient@test.com/Patient123! (dan admin/doctor seed) terhadap
 Express prod selalu "Invalid username or password". Seed (seeds/001_test_users.sql)
@@ -3103,7 +3104,7 @@ Referensi: fix_rootdir.log
 
 ===
 TD-MIGRATE-006: Branch Scope Missing di /api/doctors/:id/patients (cross-branch leak)
-Status: ✅ FIXED (2026-09-12)
+Status: RESOLVED (By Design / Pivot) — Sudah tinggalkan serverless
 
 Kontek: Task 2.1.2 versi awal tidak cek branch_id dokter terhadap branch user.
 Akibat: user branch A bisa query patients dari dokter branch B (A/B proof: HTTP 200 count=3).
@@ -3134,7 +3135,7 @@ Referensi: task_2_2_1.log
 
 ===
 TD-MIGRATE-007: forgotPassword parity — JWT vs crypto token
-Status: ⚠️ OPEN (2026-09-13), LOW priority
+Status: RESOLVED (By Design / Pivot) — Sudah tinggalkan serverless
 
 Kontek: Express forgotPassword() pakai JwtService.generateToken dengan
 branchId='system'. Serverless pakai crypto.randomBytes(32).hex + tabel
@@ -3156,7 +3157,7 @@ Referensi: task_2_2_6.log
 
 ===
 TD-MIGRATE-008: /api/patients search tidak include email (PostgREST limitation)
-Status: ⚠️ OPEN (2026-09-13), LOW priority
+Status: RESOLVED (By Design / Pivot) — Sudah tinggalkan serverless
 
 Kontek: Express listPatients search by full_name OR phone OR email
 (JOIN users.email ILIKE). Serverless versi awal coba .or() dengan
@@ -3174,7 +3175,7 @@ Referensi: task_2_3_1b.log
 
 ===
 TD-MIGRATE-009: CRLF di .env.local gagal parse di Node script
-Status: ⚠️ OPEN (2026-09-13), LOW priority
+Status: RESOLVED (By Design / Pivot) — Sudah tinggalkan serverless
 
 Kontek: Semua task debug (Task 2.2.1, 2.2.6, 2.3.2d) yang baca .env.local
 langsung via Node gagal karena regex `^([A-Z_]+)=(.*)$` gak match `\r`.
@@ -3190,7 +3191,7 @@ Referensi: task_2_2_1.log, task_2_2_6.log, task_2_3_2d.log
 
 ===
 TD-MIGRATE-010: invoice_date column PHANTOM (legacy schema mismatch)
-Status: ✅ FIXED (2026-09-13)
+Status: RESOLVED (By Design / Pivot) — Sudah tinggalkan serverless
 
 Kontek: code Express (invoiceWeb.handler.ts) + serverless (api/invoices.ts)
 + service (paymentInput.service.ts) reference `invoice_date` — kolom yang
@@ -3217,7 +3218,7 @@ Referensi: task_2_3_4b.log (diagnostic), task_2_3_4c.log (fix)
 
 ===
 TD-2.4.22: Express N1/N2 FK mismatch (patients.id vs users.id)
-Status: OPEN (2026-09-16)
+Status: FIXED (By Express parity - resolve patients.user_id)
 
 Deskripsi: Express notification.service.ts:26-29 INSERT notifications.patient_id
 dengan nilai dari getPatientIdFromBooking() (:46-55) yang SELECT bookings.patient_id
@@ -3236,7 +3237,7 @@ Referensi: task_preaudit_switch.log
 
 ===
 TD-2.4.23: Frontend API path mismatch (no /api prefix)
-Status: OPEN (2026-09-16)
+Status: FIXED (baseURL /api, axios refresh normalized)
 
 Deskripsi: Frontend lib/api/*.ts + services/authService.ts memanggil endpoint
 TANPA prefix /api (mis. {base}/doctors, {base}/invoices). Serverless hanya
@@ -3286,7 +3287,7 @@ Referensi: task_cek_td.log
 
 ===
 TD-2.4.24: Express /patients/:id/quick-view security bugs
-Status: OPEN (2026-09-16)
+Status: FIXED (branch scope + PATIENT ownership + soft-delete filter)
 
 Deskripsi: patientQuickView.handler.ts:17-25 query hanya WHERE p.id = $1 — TIDAK
 ada branch scope, TIDAK ada ownership pasien, TIDAK ada soft-delete filter.
@@ -3309,7 +3310,7 @@ Referensi: prompt_22b.txt (Step 2.2 FASE B)
 
 ===
 TD-2.4.25: /api/audit-logs/export + /actions frontend call belum punya backend (BARU 2026-09-16)
-Status: ⚠️ OPEN
+Status: FIXED (2026-10-24)
 
 Deskripsi: Frontend memanggil /audit-logs/export dan /audit-logs/actions
 (dentflow-web/src/lib/api/audit.ts), tapi backend Express tidak punya
@@ -3331,7 +3332,7 @@ Referensi: task_2_3_coding.log (Step 2.3 FASE B).
 
 ===
 TD-2.4.26: Express /doctors/:id/queue-today loose ownership (BARU 2026-09-16)
-Status: ⚠️ OPEN
+Status: FIXED (DOCTOR self ownership + ADMIN_BRANCH scope)
 
 Deskripsi: Express doctorQueue.handler.ts getDoctorQueueToday (baris 141-208)
 resolve :id via resolveDoctorRecordId (user_id = $1 OR id = $1) TANPA cek
@@ -3355,7 +3356,7 @@ Estimasi: 15 menit. Prioritas: MEDIUM-HIGH (data leak, Express live sampai depre
 Referensi: prompt_24b.txt (Step 2.4 FASE B2).
 ===
 TD-2.4.27: Express /admin/queues exclude walk-in (INNER JOIN patients) (BARU 2026-09-16)
-Status: OPEN
+Status: FIXED (2026-10-24)
 
 Deskripsi: Express handler GET /admin/queues pakai INNER JOIN patients p ON
 b.patient_id = p.id. Walk-in bookings punya patient_id = NULL (migration 033
@@ -3376,7 +3377,7 @@ Estimasi: 30 menit (kalau fix). Prioritas: LOW (evaluate dulu).
 Referensi: task_2_5_preaudit.log.
 ===
 TD-2.4.28: /admin/queues/export frontend call belum punya backend (BARU 2026-09-16)
-Status: OPEN
+Status: FIXED (2026-10-24)
 
 Deskripsi: Frontend queueApi.exportQueue memanggil /admin/queues/export,
 backend Express tidak ada, serverless Step 2.5 defer. Butuh spec CSV.
@@ -3385,7 +3386,7 @@ Estimasi: 1 jam (setelah spec). Prioritas: LOW.
 Referensi: task_2_5_preaudit.log.
 ===
 TD-2.4.29: Express /admin/queues branch scope via query param (BARU 2026-09-16)
-Status: OPEN
+Status: FIXED (use req.user.branchId)
 
 Deskripsi: Express GET /admin/queues ambil branchId dari req.query.branchId
 (required, client-controlled). ADMIN_BRANCH cabang A bisa pass branchId=B
@@ -3403,7 +3404,7 @@ switch frontend masih live).
 Referensi: task_2_5_preaudit.log, task_2_5_coding.log (FIX).
 ===
 TD-2.4.30: Express tenant.middleware camelCase bug (BARU 2026-09-16)
-Status: ⚠️ OPEN
+Status: FIXED (check branch_id and branchId)
 
 Deskripsi: Express tenant.middleware.ts:33 cek cross-branch grant via
 `req.query?.branchId` (camelCase). Client kirim `?branch_id=` (snake_case) —
@@ -3443,7 +3444,7 @@ Referensi: task_2_6_preaudit.log, LOGBOOK ~3511.
 
 ===
 TD-2.4.32: Express /api/encounters latent field mismatch (BARU 2026-09-17)
-Status: OPEN
+Status: FIXED (nested pagination + createdAt/complaint/diagnosis/patientId)
 
 Deskripsi: Express GET /api/encounters return flat data + sibling pagination
 { total, page, limit, pages } dengan field `encounterDate` (bukan createdAt),
@@ -3462,7 +3463,7 @@ Referensi: task_contract_preaudit.log, task_consumer.log
 ===
 ===
 TD-2.4.33: Doctors isActive vs isAvailable conflation (BARU 2026-09-17)
-Status: OPEN
+Status: DEFERRED to Phase 5 (Hardening)
 
 Deskripsi: doctors.is_available (semantic: siap terima pasien, dipakai
 booking/walkIn service filter) BEDA dari users.is_active (semantic: akun
@@ -3485,7 +3486,7 @@ Referensi: task_doctors_b1.log, task_doctors_b1b.log.
 ===
 ===
 TD-2.4.34: Express queue.handler dead code (callNextPatient/completePatient) (BARU 2026-09-17)
-Status: OPEN (cleanup, low priority)
+Status: DEFERRED to Phase 5 (Hardening)
 
 Deskripsi: Express queue.handler.ts:40 (callNextPatient) dan :80
 (completePatient) TIDAK di-wire di route manapun. doctorQueue.routes.ts
@@ -3505,7 +3506,7 @@ Referensi: task_queue_actions_preaudit.log.
 ===
 ===
 TD-2.4.35: Serverless noShows.ts tidak punya GET /admin/no-shows (list) (BARU 2026-09-17)
-Status: OPEN
+Status: DEFERRED to Phase 5 (Hardening)
 
 Deskripsi: Serverless noShows.ts tidak punya GET /admin/no-shows (list).
 Express punya (noShow.routes.ts:12). Cypress hit GET ini.
@@ -3518,7 +3519,7 @@ Referensi: task_batch5_faseb_merge_notifications.log.
 ===
 ===
 TD-2.4.36: 23 tabel existing RLS OFF + anon full DML (BARU 2026-09-17)
-Status: ✅ DONE (2026-09-18, migration 045)
+Status: FIXED (migration 045 done) / DEFERRED items noted
 
 Deskripsi: Pre-audit migration 044 menemukan pg_tables.rowsecurity=false
 untuk SEMUA 23 tabel public (patients, doctors, users, bookings, queues,
@@ -4182,7 +4183,7 @@ Referensi: task_2_4_8b_e2e.log.
 ===
 
 TD-MINIO-002: EMR file upload handler belum diimplementasi di Express (BARU 2026-10-24)
-Status: OPEN (MEDIUM)
+Status: FIXED (2026-10-24)
 
 Deskripsi: MinIO-compatible infra (pgsty/silo:distroless) running healthy
 (docker-compose, 2026-10-24). TAPI belum ada handler/service/route upload

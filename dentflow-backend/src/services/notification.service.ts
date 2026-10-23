@@ -45,7 +45,10 @@ export class NotificationService {
    */
   private async getPatientIdFromBooking(bookingId: string): Promise<string> {
     const result = await this.pool.query(
-      `SELECT p.user_id FROM bookings b JOIN patients p ON p.id = b.patient_id WHERE b.id = $1`,
+      `SELECT p.user_id
+         FROM bookings b
+         JOIN patients p ON p.id = b.patient_id
+        WHERE b.id = $1`,
       [bookingId]
     );
     if (result.rows.length === 0) {

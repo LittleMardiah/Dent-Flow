@@ -152,7 +152,7 @@ function NewEMRContent() {
     }
     if (rejected.length > 0) {
       setUploadError(
-        `Ditolak: ${rejected.join('; ')}. Maks 4MB, format JPG, PNG, WebP, PDF.`
+        `Ditolak: ${rejected.join('; ')}. Maks 5MB, format JPG, PNG, PDF.`
       );
     } else {
       setUploadError(null);
@@ -171,8 +171,7 @@ function NewEMRContent() {
     try {
       for (const file of files) {
         try {
-          const ticket = await doctorEmrApi.uploadEncounterDocument(encounterId, file);
-          await doctorEmrApi.putToSignedUrl(ticket.signedUrl, file);
+          await doctorEmrApi.uploadEncounterDocument(encounterId, file);
         } catch (err) {
           console.warn('[EMR DOC] Upload gagal:', file.name, err);
           failed += 1;
@@ -472,11 +471,11 @@ function NewEMRContent() {
             </h2>
             <div className="border-2 border-dashed border-neutral rounded-lg p-6 text-center">
               <p className="text-sm text-gray-400">Pilih file untuk dilampirkan ke rekam medis</p>
-              <p className="text-xs text-gray-300 mt-1">Maks 4MB • JPG, PNG, WebP, PDF</p>
+              <p className="text-xs text-gray-300 mt-1">Maks 5MB • JPG, PNG, PDF</p>
               <input
                 type="file"
                 multiple
-                accept="image/jpeg,image/png,image/webp,application/pdf"
+                accept="image/jpeg,image/png,application/pdf"
                 onChange={handleFileSelect}
                 disabled={isUploading}
                 className="mt-3 block w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary file:text-white hover:file:bg-primary-dark cursor-pointer"

@@ -39,12 +39,11 @@ export interface InventoryItem {
   unit: string;
 }
 
-export const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB
+export const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 export const ALLOWED_MIME_TYPES = [
   'image/jpeg',
   'image/png',
-  'image/webp',
   'application/pdf',
 ] as const;
 
@@ -60,7 +59,7 @@ export interface EncounterDocument {
   mime: string;
   sizeBytes: number;
   createdAt: string;
-  signedUrl: string | null;
+  url: string | null;
 }
 
 export const doctorEmrApi = {
@@ -94,15 +93,15 @@ export const doctorEmrApi = {
     return response.data.data;
   },
 
-  // Issue upload ticket (signed URL) for an encounter document
+  // Upload an encounter document via multipart FormData
   uploadEncounterDocument: async (
     encounterId: string,
     file: File
-  ): Promise<{ docId: string; path: string; signedUrl: string; token: string }> => {
-    const response = await apiClient.post(`/encounters/${encounterId}/documents`, {
-      filename: file.name,
-      size: file.size,
-      mime: file.type,
+  ): Promise<{ id: string; url: string }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiClient.post(`/encounters/${encounterId}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data.data;
   },
@@ -113,18 +112,4 @@ export const doctorEmrApi = {
     return response.data.data || [];
   },
 
-  // PUT file to signed URL (no auth header — Supabase signed URL)
-  putToSignedUrl: async (signedUrl: string, file: File): Promise<void> => {
-    const response = await fetch(signedUrl, {
-      method: 'PUT',
-      body: file,
-      headers: {
-        'Content-Type': file.type,
-        'x-upsert': 'false',
-      },
-    });
-    if (!response.ok) {
-      throw new Error(`Upload gagal (status ${response.status})`);
-    }
-  },
 };

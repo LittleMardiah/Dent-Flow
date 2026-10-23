@@ -142,12 +142,34 @@ export const getDoctorQueueToday = async (req: Request, res: Response, next: Nex
   try {
     const doctorParam = String(req.params.id);
     const branchId = req.user?.branchId;
+    const userId = req.user?.userId;
+    const role = req.user?.role;
 
-    if (!branchId) {
+    if (!branchId || !userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     const realDoctorId = await resolveDoctorRecordId(doctorParam);
+
+    if (role === 'DOCTOR') {
+      const ownerCheck = await pool.query(
+        'SELECT id FROM doctors WHERE id = $1 AND user_id = $2',
+        [realDoctorId, userId]
+      );
+      if (ownerCheck.rows.length === 0) {
+        return res.status(403).json({ success: false, message: 'Forbidden' });
+      }
+    } else if (role === 'ADMIN_BRANCH') {
+      const branchCheck = await pool.query(
+        'SELECT id FROM doctors WHERE id = $1 AND branch_id = $2',
+        [realDoctorId, branchId]
+      );
+      if (branchCheck.rows.length === 0) {
+        return res.status(403).json({ success: false, message: 'Forbidden' });
+      }
+    } else {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
 
     const result = await pool.query(
       `SELECT q.id, q.booking_id, q.queue_number, q.status, q.created_at as check_in_time,

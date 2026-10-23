@@ -8,6 +8,7 @@ import { DoctorFormModal } from '@/components/admin/DoctorFormModal';
 import { DoctorScheduleModal } from '@/components/admin/DoctorScheduleModal';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import apiClient from '@/lib/axios';
 import { useRouter } from 'next/navigation';
 import {
   UserPlus,
@@ -22,6 +23,22 @@ import {
 } from 'lucide-react';
 
 type ViewMode = 'table' | 'schedule';
+
+const DAY_TO_NUMBER: Record<string, number> = {
+  Minggu: 0,
+  Senin: 1,
+  Selasa: 2,
+  Rabu: 3,
+  Kamis: 4,
+  Jumat: 5,
+  Sabtu: 6,
+};
+
+const showToast = (message: string, type: 'success' | 'error') => {
+  window.dispatchEvent(
+    new CustomEvent('websocket-toast', { detail: { message, type } })
+  );
+};
 
 export default function DoctorsPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
@@ -255,9 +272,32 @@ export default function DoctorsPage() {
         doctorName={selectedDoctor?.fullName || ''}
         schedule={selectedDoctor?.schedule || []}
         onSave={async (schedule) => {
-          // TODO: Implement save schedule API
-          console.log('Schedule saved:', schedule);
-          refresh();
+          if (!selectedDoctor) {
+            throw new Error('Dokter belum dipilih');
+          }
+
+          try {
+            const schedules = schedule.map((item) => ({
+              dayOfWeek: DAY_TO_NUMBER[item.day],
+              startTime: item.start,
+              endTime: item.end,
+              maxPatients: 4,
+            }));
+
+            await apiClient.put(`/api/doctors/${selectedDoctor.id}/schedule`, {
+              schedules,
+            });
+
+            showToast('Jadwal berhasil diperbarui', 'success');
+            refresh();
+          } catch (err: any) {
+            const message =
+              err?.response?.data?.message ||
+              err?.message ||
+              'Gagal menyimpan jadwal';
+            showToast(message, 'error');
+            throw new Error(message);
+          }
         }}
       />
     </AdminLayout>

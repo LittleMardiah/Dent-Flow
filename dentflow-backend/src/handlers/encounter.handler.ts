@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
+import { randomUUID } from 'crypto';
 import { EncounterService } from '../services/encounter.service';
 import { logger } from '../utils/logger';
 import { pool } from '../config/database';
+import { BUCKET, getPresignedUrl, uploadFile } from '../lib/storage';
 
 const encounterService = new EncounterService();
 
@@ -238,39 +240,184 @@ export const listEncounters = async (req: Request, res: Response, next: NextFunc
 
     const listResult = await pool.query(
       `SELECT e.id,
-              COALESCE(e.started_at, e.created_at) AS encounter_date,
+              e.patient_id,
+              COALESCE(e.started_at, e.created_at) AS created_at,
+              e.complaint,
+              e.diagnosis,
               e.treatment,
               e.status,
               p.full_name AS patient_name
        FROM encounters e
        JOIN patients p ON p.id = e.patient_id
        WHERE ${whereSql}
-       ORDER BY encounter_date DESC
+       ORDER BY COALESCE(e.started_at, e.created_at) DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
       [...params, limit, offset]
     );
 
     const data = listResult.rows.map((row) => ({
       id: row.id,
-      encounterDate: row.encounter_date || null,
+      patientId: row.patient_id,
       patientName: row.patient_name || '',
+      complaint: row.complaint || '',
+      diagnosis: row.diagnosis || null,
       treatment: row.treatment || '',
       status: row.status,
+      createdAt: row.created_at || null,
     }));
 
     res.status(200).json({
       success: true,
-      data,
-      pagination: {
+      data: {
+        data,
         total,
         page,
-        limit,
-        pages: Math.ceil(total / limit) || 0,
+        totalPages: Math.ceil(total / limit) || 0,
       },
     });
   } catch (error: unknown) {
     const err = error as Error;
     logger.error({ error: err.message, stack: err.stack }, 'Error listing encounters');
+    next(error);
+  }
+};
+
+
+const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'application/pdf',
+]);
+
+const DOCUMENT_EXTENSION_BY_MIME: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'application/pdf': '.pdf',
+};
+
+const MAX_DOCUMENT_SIZE_BYTES = 5 * 1024 * 1024;
+
+const findEncounterForBranch = async (encounterId: string, branchId: string) => {
+  const result = await pool.query(
+    'SELECT id, patient_id FROM encounters WHERE id = $1 AND branch_id = $2',
+    [encounterId, branchId]
+  );
+  return result.rows[0];
+};
+
+/**
+ * POST /api/encounters/:id/documents
+ * Upload an EMR document to object storage (doctor only).
+ */
+export const uploadEncounterDocument = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const encounterId = String(req.params.id);
+    const userId = req.user?.userId;
+    const branchId = req.user?.branchId;
+
+    if (!userId || !branchId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ success: false, message: 'File wajib diupload dengan field "file"' });
+    }
+    if (file.size <= 0) {
+      return res.status(400).json({ success: false, message: 'File kosong tidak diizinkan' });
+    }
+    if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
+      return res.status(400).json({ success: false, message: 'Ukuran file maksimal 5MB' });
+    }
+    if (!ALLOWED_DOCUMENT_MIME_TYPES.has(file.mimetype)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tipe file tidak diizinkan (hanya JPEG, PNG, PDF)',
+      });
+    }
+
+    const encounter = await findEncounterForBranch(encounterId, branchId);
+    if (!encounter) {
+      return res.status(404).json({ success: false, message: 'Pemeriksaan tidak ditemukan' });
+    }
+
+    const extension = DOCUMENT_EXTENSION_BY_MIME[file.mimetype];
+    const objectName = `emr/${encounterId}/${randomUUID()}${extension}`;
+
+    await uploadFile(file.buffer, objectName, file.mimetype);
+
+    const insertResult = await pool.query(
+      `INSERT INTO encounter_documents (
+         id, encounter_id, patient_id, bucket, path, original_name, mime, size_bytes, uploaded_by
+       ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, path`,
+      [
+        encounterId,
+        encounter.patient_id,
+        BUCKET,
+        objectName,
+        file.originalname,
+        file.mimetype,
+        file.size,
+        userId,
+      ]
+    );
+
+    const document = insertResult.rows[0];
+    const url = await getPresignedUrl(document.path);
+
+    return res.status(201).json({
+      success: true,
+      data: { id: document.id, url },
+    });
+  } catch (error: unknown) {
+    const err = error as Error;
+    logger.error({ error: err.message, stack: err.stack }, 'Error uploading encounter document');
+    next(error);
+  }
+};
+
+/**
+ * GET /api/encounters/:id/documents
+ * List EMR documents for an encounter with presigned download URLs.
+ */
+export const listEncounterDocuments = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const encounterId = String(req.params.id);
+    const branchId = req.user?.branchId;
+
+    if (!branchId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const encounter = await findEncounterForBranch(encounterId, branchId);
+    if (!encounter) {
+      return res.status(404).json({ success: false, message: 'Pemeriksaan tidak ditemukan' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, path, original_name, mime, size_bytes, created_at
+       FROM encounter_documents
+       WHERE encounter_id = $1 AND deleted_at IS NULL
+       ORDER BY created_at DESC`,
+      [encounterId]
+    );
+
+    const data = await Promise.all(
+      result.rows.map(async (row) => ({
+        id: row.id,
+        originalName: row.original_name,
+        mime: row.mime,
+        sizeBytes: Number(row.size_bytes),
+        createdAt: row.created_at,
+        url: await getPresignedUrl(row.path),
+      }))
+    );
+
+    return res.status(200).json({ success: true, data });
+  } catch (error: unknown) {
+    const err = error as Error;
+    logger.error({ error: err.message, stack: err.stack }, 'Error listing encounter documents');
     next(error);
   }
 };

@@ -53,3 +53,60 @@ export const getAuditLogs = async (req: Request, res: Response, next: NextFuncti
     next(error);
   }
 };
+
+const escapeCsvValue = (value: unknown): string => {
+  const text = value === null || value === undefined ? '' : String(value);
+  if (/[",\r\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+};
+
+/**
+ * GET /api/admin/audit-logs/export?branchId=...
+ * Export audit logs for a branch as CSV (no pagination).
+ */
+export const exportAuditLogs = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const branchId = Array.isArray(req.query.branchId)
+      ? req.query.branchId[0]
+      : req.query.branchId;
+
+    if (!branchId) {
+      return res.status(400).json({ success: false, message: 'branchId query parameter is required' });
+    }
+
+    const logs = await auditService.getEventsByBranch(String(branchId), 10000);
+
+    const header = ['Timestamp', 'User', 'Action', 'Entity', 'Description'];
+    const lines = [header.map(escapeCsvValue).join(',')];
+
+    logs.forEach((log) => {
+      const entity = log.entity_type
+        ? `${log.entity_type}${log.entity_id ? `:${log.entity_id}` : ''}`
+        : '';
+      const action = log.event_label || log.event_type || log.action || '';
+      lines.push(
+        [
+          log.created_at ? new Date(log.created_at).toISOString() : '',
+          log.user_id || 'SYSTEM',
+          action,
+          entity,
+          log.description || '',
+        ]
+          .map(escapeCsvValue)
+          .join(',')
+      );
+    });
+
+    const csv = lines.join('\r\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="audit-logs-export.csv"');
+    return res.status(200).send(csv);
+  } catch (error: unknown) {
+    const err = error as Error;
+    logger.error({ error: err.message, stack: err.stack }, 'Error exporting audit logs');
+    return next(error);
+  }
+};
