@@ -82,3 +82,7 @@ docs 1.0/.env.vercel.production
 *.env.vercel*
 
 .vercel
+
+# Backup files (created during consolidation/edits)
+*.bak-*
+docs 1.0/*.bak-*

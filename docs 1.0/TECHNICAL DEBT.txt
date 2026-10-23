@@ -3933,3 +3933,248 @@ Rekomendasi: (c) v1, (a) batch polish.
 Estimasi: 30 menit. Prioritas: LOW.
 Referensi: task_28b1_mig.log.
 ===
+
+
+================================================================================
+APPENDIX: RECOVERED FROM ROOT SNAPSHOT (2026-09-16)
+================================================================================
+
+Note: 12 TD entries berikut (TD-2.4.8 s/d TD-2.4.21) di-recover dari file
+root 'TECHNICAL DEBT.txt' (snapshot 2026-09-16 12:44, 233 lines) yang tidak
+ter-carry ke register canonical ini saat re-structuring (Task 2.5.x, Sep 16).
+Root file dihapus setelah merge. Status per-entry dipertahankan asli — beberapa
+mungkin sudah FIXED dan perlu re-verify saat audit berikutnya.
+
+
+===
+TD-2.4.8: Express setDoctorLeave/removeDoctorLeave FK mismatch (BARU 2026-09-14)
+Status: ⚠️ OPEN
+
+Deskripsi: doctor_leaves.doctor_id FK → users(id) (migration 007).
+Express handler setLeave pass req.params.id (=doctors.id) langsung ke service,
+tanpa resolve ke user_id. Akibatnya insert FK violation → 500 LEAVE_SET_FAILED
+jika dipanggil dengan doctors.id.
+
+Serverless (Task 2.4.2c) sudah fixed: resolve doctors.id → user_id sebelum insert.
+Express legacy MASIH broken.
+
+Dampak: PUT /api/doctors/:id/leave di Express → 500 saat dipanggil dengan doctors.id.
+
+Perbaikan: Resolve doctors.id → user_id di doctorSchedule.service.ts (setDoctorLeave
++ removeDoctorLeave). Atau ubah endpoint terima users.id saja (breaking change
+frontend). Rekomendasi: resolve (parity serverless).
+
+Estimasi: 1 jam
+Prioritas: HIGH (write path broken di Express legacy, akan deprecated di Phase 4
+tapi masih dipakai frontend saat ini).
+Referensi: task_2_4_2b.log (verify FAIL), task_2_4_2c.log (fix serverless).
+===
+
+===
+TD-2.4.9: Serverless list admin bookings belum dimigrate (BARU 2026-09-14)
+Status: ⚠️ OPEN
+
+Deskripsi: vercel.json rewrite /api/admin/bookings/:path* -> notifications domain
+(N1/N2). Tidak ada endpoint GET list admin bookings di serverless. Frontend/admin
+yang butuh filter booking per status -> 404.
+
+Dampak: E2E verify S1 (mark-no-show) terhambat karena discovery BOOK_ID via API
+tidak bisa. Frontend admin yang butuh list booking per status juga akan 404.
+
+Perbaikan: Migrate GET /api/admin/bookings (list + filter status) ke serverless
+(extend bookings.ts atau bikin file baru). Estimasi: 2 jam.
+
+Referensi: task_2_4_2b.log, task_2_4_2d.log, task_2_4_3b_prep.log.
+===
+
+===
+TD-2.4.10: Express C2 adminWalkInCheckin tidak punya audit log (BARU 2026-09-14)
+Status: ⚠️ OPEN
+
+Deskripsi: Express handler adminWalkInCheckin (C2, POST /api/admin/check-in/walk-in)
+TIDAK mencatat audit log. Gap pre-existing.
+
+Keputusan (Task 2.4.3b-PREP): A (replicate gap) — serverless replicate
+Express behavior, TIDAK audit C2. Parity 100%.
+
+Dampak: Walk-in check-in tidak ada audit trail. Compliance risk.
+
+Perbaikan: Tambah audit log event WALK_IN_CHECKED_IN di serverless C2 + Express C2.
+Estimasi: 1 jam.
+
+Referensi: task_2_4_3b_preaudit.log, task_2_4_3b_prep.log.
+===
+
+===
+TD-2.4.11: Express W2 bookAppointment broken — insert NULL ke patient_id NOT NULL (BARU 2026-09-14)
+Status: ⚠️ OPEN
+
+Deskripsi: bookings.patient_id deklarasikan NOT NULL di migration 001. Migration 014
+tambah temp_patient_id tapi TIDAK drop NOT NULL. Express W2 (bookWalkInAppointment)
+insert patient_id=NULL untuk walk-in patient (yang punya temp_patient_id) ->
+runtime FK/NOT NULL violation.
+
+Fix: migration 033 (DROP NOT NULL) applied 2026-09-14 (Task 2.4.3b-PREP2).
+
+Dampak: W2 Express broken pre-existing. Setelah migration 033, W2 Express kembali functional.
+
+Status: FIXED by migration 033 (schema). Express W2 code TIDAK perlu diubah.
+
+Referensi: task_2_4_3b_prep.log, task_2_4_3b_prep2.log.
+===
+
+===
+TD-2.4.12: temporary_patients.branch_id legacy VARCHAR(1) (BARU 2026-09-14)
+Status: ✅ FIXED by migration 034
+
+Deskripsi: migration 014 declared temporary_patients.branch_id VARCHAR(1) CHECK
+IN ('A','B','C') — legacy char-based, inkonsisten dengan tabel lain (UUID).
+Akibat: serverless C2 walk-in insert UUID -> PG error 22001 (value too long
+for type character varying(1)).
+
+Fix: migration 034 — mapping legacy 'A'/'B'/'C' ke UUID branches real, lalu
+ALTER TYPE VARCHAR(1) -> UUID, drop CHECK legacy, tambah FK REFERENCES
+branches(id) ON DELETE RESTRICT. Non-destructive (1 row test "Task 2.4.1
+Verify" di-mapping ke Cabang A, bukan dihapus).
+
+Status: FIXED (row count temp = 1, mapped 'A' -> 494a607c-...; schema verify
+branch_id uuid NOT NULL + FK fk_temp_patients_branch ok).
+
+Referensi: task_2_4_3c.log, task_2_4_3b_fix2.log.
+===
+
+===
+TD-2.4.13: CRLF line-ending noise recurring di dentflow-backend/src/index.ts (BARU 2026-09-14)
+Status: ⚠️ OPEN
+
+Deskripsi: git diff nunjukin dentflow-backend/src/index.ts "modified" recurring
+(2x dalam 1 jam), padahal content identical. Root cause: Windows editor/tool
+simpan dengan CRLF (\r\n), git index simpan LF (\n). Setiap file ke-sentuh ->
+CRLF lagi -> diff false positive.
+
+Dampak: git status noisy, risk commit noise bareng code change. Recurring.
+
+Perbaikan: Opsi A (cepat) - git update-index --skip-worktree file ini.
+Opsi B (proper) - .gitattributes + git add --renormalize . (commit besar sekali).
+
+Estimasi: 15-30 menit.
+Prioritas: LOW (cosmetic, tidak blocker).
+
+Referensi: task_2_4_3b_w2_verify.log (analisa CRLF), task_2_4_3b_w2_e2e_r2.log.
+===
+
+===
+TD-2.4.14: patients.walk_in_profile_id tanpa FK / index (BARU 2026-09-14)
+Status: ⚠️ OPEN
+
+Deskripsi: kolom patients.walk_in_profile_id (migration 001) TIDAK punya FK
+ke temporary_patients(id), TIDAK ada index. Nilai = temp_patients.id.
+Risiko: kalau temp di-soft-delete/hard-delete, ref jadi dangling. Query
+by walk_in_profile_id = full scan.
+
+Catatan 2.4.4a: migration 035 convert_walk_in_temp_to_patient mengisi
+walk_in_profile_id = temp id. Semakin layak punya FK+index.
+
+Perbaikan: migration tambah FK (ON DELETE SET NULL) + index.
+
+Estimasi: 30 menit. Prioritas: LOW (non-blocker).
+
+Referensi: task_2_4_4a.log (STEP 1 verdict).
+===
+
+===
+TD-2.4.15: bookings.status default 'PENDING' tidak ada di constraint (BARU 2026-09-14)
+Status: ⚠️ OPEN
+
+Deskripsi: column bookings.status DEFAULT 'PENDING'. Tapi bookings_status_check
+(migration 015) TIDAK mengizinkan 'PENDING' (hanya PENDING_PAYMENT,
+PAYMENT_CONFIRMED, CHECKED_IN, COMPLETED, NO_SHOW, CANCELLED).
+Akibat: INSERT booking tanpa explicit status -> default 'PENDING' -> constraint violation.
+
+Dampak: latent bug. Kalau ada code/serverless yang INSERT booking tanpa
+set status explicitly, akan 500 (check constraint).
+
+Perbaikan: (a) migration ALTER default ke 'PENDING_PAYMENT', atau
+(b) tambah 'PENDING' ke constraint (kurang ideal - semantic overlap).
+Rekomendasi: (a) karena PENDING lama tidak dipakai.
+
+Estimasi: 30 menit. Prioritas: MEDIUM (latent, belum trigger karena
+semua code set status explicit).
+
+Referensi: task_2_4_4a.log (temuan OpenCode).
+===
+
+===
+TD-2.4.18: Process lesson — prompt incomplete untuk FIX2 (BARU 2026-09-15)
+Status: ℹ️ INFO
+
+Insiden: FIX2 prompt (Task 2.4.5) dimaksudkan fix E1 status + walk-in,
+tapi prompt hanya berisi verify + E2 code align (no-op). Actual fix
+TIDAK pernah di-apply. VETO gate di E2E-R2 berhasil mendeteksi.
+
+Lesson: prompt FIX WAJIB include actual edit, bukan hanya verify.
+Pattern v2 (CEK -> VETO -> FIX -> VERIFY) valid dan tetap dipakai.
+
+Referensi: task_2_4_5_e2e.log, task_2_4_5_fix2.log, task_2_4_5_fix3.log.
+===
+
+===
+TD-2.4.19: Express E3 completeEncounter deadlock dengan trigger live (BARU 2026-09-15)
+Status: ⚠️ OPEN (Express legacy only, deprecate Phase 4)
+
+Deskripsi: Express encounter.service.completeEncounter buka tx A (conn A),
+UPDATE status=COMPLETED -> trigger INSERT shell (uncommitted di A).
+Lalu panggil generateInvoiceForEncounter yang buka tx B (conn B) ->
+SELECT existing invoice (tidak lihat shell A via MVCC) -> INSERT invoice
+-> BLOCK on UNIQUE(encounter_id) menunggu commit A -> HANG (no statement_timeout).
+
+Dampak: Express E3 HANG kalau dipanggil (trigger live). Serverless sudah
+pakai flow sequential yang aman.
+
+Perbaikan: (a) Express: satukan tx (pass client ke generateInvoiceForEncounter)
+atau refactor jadi trigger-shell + UPDATE amount (parity serverless),
+atau (b) DROP Express legacy di Phase 4 (rekomendasi).
+
+Estimasi: 2-3 jam. Prioritas: LOW (Express akan deprecated).
+
+Referensi: task_2_4_6_preaudit.log, task_2_4_6.log.
+===
+
+===
+TD-2.4.20: Trigger generate_invoice_on_encounter_complete VARCHAR(50) overflow (BARU 2026-09-15)
+Status: ✅ FIXED by migration 036
+
+Deskripsi: function declare v_invoice_number VARCHAR(50), tapi
+get_next_invoice_number return 53 chars (INV-{uuid36}-{yyyymmdd}-{seq}).
+Overflow -> exception -> rollback (encounter tetap ONGOING, invoice kosong).
+
+Dampak: E3 completeEncounter selalu 500 sebelum fix. Pre-existing bug
+migration 011, belum pernah fire sukses karena encounter belum pernah
+di-complete via serverless.
+
+Fix: migration 036 CREATE OR REPLACE FUNCTION VARCHAR(255).
+Catatan validasi: SELECT busuk (booking_id di bookings) -> dikoreksi
+jadi id AS booking_id sebelum apply final. INSERT pakai column list
+valid (created_at/updated_at), old body refer invoice_date (tidak ada).
+
+Referensi: task_2_4_6_e2e.log, task_2_4_6_fix.log.
+===
+
+===
+TD-2.4.21: E2E test data cleanup queue orphan (BARU 2026-09-15)
+Status: ⚠️ OPEN
+
+Deskripsi: E2E tests task-task sebelumnya insert queue WAITING tanpa cleanup
+konsisten (leftover 4+ queue untuk doctor 09baea2f). Menyebabkan test
+"empty queue" tidak terisolasi.
+
+Dampak: E2E D3/D4 yang butuh empty queue state susah diverifikasi. FIFO
+tetap works, tapi edge case tidak covered.
+
+Perbaikan: bikin script cleanup E2E (queue WAITING + booking orphan > X jam).
+Atau setiap E2E pre-setup cleanup doctor target queue.
+
+Estimasi: 30 menit. Prioritas: LOW.
+
+Referensi: task_2_4_8b_e2e.log.
+===
