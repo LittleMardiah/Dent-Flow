@@ -1,4 +1,4 @@
-import { logger } from '../utils/logger';
+
 import { EncounterService } from './encounter.service';
 import { QueueManagementService } from './queueManagement.service';
 import { QueuePatient, QueueStats } from './queueManagement.service';

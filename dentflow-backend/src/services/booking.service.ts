@@ -1,4 +1,4 @@
-import { getErrorMessage, getErrorStack } from "../utils/error.util";
+import { getErrorMessage } from "../utils/error.util";
 import { Pool } from 'pg';
 import { NotificationService } from "./notification.service";
 

@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { queueService } from '../services/queue.service';
+
 import { doctorQueueService } from '../services/doctorQueue.service';
 import { QueueManagementService } from '../services/queueManagement.service';
 import { broadcastQueueUpdated } from '../websocket';

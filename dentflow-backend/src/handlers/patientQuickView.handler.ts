@@ -61,7 +61,6 @@ export const getPatientQuickView = async (req: Request, res: Response, next: Nex
       },
     });
   } catch (error: unknown) {
-    const err = error as Error;
     logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Patient quick view error');
     next(error);
   }

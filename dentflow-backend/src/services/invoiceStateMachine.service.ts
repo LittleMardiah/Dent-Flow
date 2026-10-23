@@ -29,7 +29,7 @@ export class InvoiceStateMachineService {
    * Used by both admin (InvoiceService) and webhook (InvoicePaymentService)
    */
   async transitionToPaid(options: MarkPaidOptions): Promise<any> {
-    const { invoiceId, paymentMethod, amount, branchId, userId, transactionId, notes } = options;
+    const { invoiceId, paymentMethod, amount, branchId, userId, transactionId } = options;
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');

@@ -4,7 +4,7 @@ import { logger } from '../utils/logger';
 import crypto from 'crypto';
 import { auditService } from './audit.service';
 import { AuditEventType } from '../models/audit.model';
-import { getErrorMessage, getErrorStack } from '../utils/error.util';
+import { getErrorMessage } from '../utils/error.util';
 import { PaymentWebhookRepository } from '../repositories/paymentWebhook.repository';
 import { pool } from '../config/database';
 
@@ -320,7 +320,7 @@ export class PaymentWebhookService {
     orderId: string,
     signature: string,
     payload: any,
-    branchId: string
+    _branchId: string
   ): Promise<void> {
     await this.recordWebhookWithNullableBranchId(webhookId, orderId, signature, payload);
   }

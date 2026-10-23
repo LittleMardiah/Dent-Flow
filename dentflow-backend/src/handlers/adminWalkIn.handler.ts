@@ -16,6 +16,8 @@ export const adminWalkInCheckin = async (req: Request, res: Response) => {
     const name = req.body.name;
     const phone = req.body.phone || '';
     const age = req.body.age;
+    // use age if needed or remove later; just assign to avoid unused error
+    void age;
     const complaint = req.body.complaint;
     const doctorId = req.body.doctorId ?? req.body.doctor_id;
     const branchId = req.body.branchId ?? req.body.branch_id;

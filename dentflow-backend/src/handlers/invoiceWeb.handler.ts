@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 
 import { logger } from '../utils/logger';
 import { invoiceStateMachineService } from '../services/invoiceStateMachine.service';
@@ -115,7 +115,6 @@ export const getInvoiceSummary = async (req: Request, res: Response) => {
       },
     });
   } catch (error: unknown) {
-    const err = error as Error;
     logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Invoice summary error');
     res.status(500).json({ success: false, message: getErrorMessage(error) || 'Internal server error' });
   }
@@ -188,7 +187,6 @@ export const getInvoiceList = async (req: Request, res: Response) => {
       },
     });
   } catch (error: unknown) {
-    const err = error as Error;
     logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Invoice list error');
     res.status(500).json({ success: false, message: getErrorMessage(error) || 'Internal server error' });
   }
@@ -205,9 +203,8 @@ export const getInvoiceDetail = async (req: Request, res: Response) => {
     const detail = await loadInvoiceDetail(invoiceId);
     res.status(200).json({ success: true, data: detail });
   } catch (error: unknown) {
-    const err = error as Error;
     logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Invoice detail error');
-    if (err.message === 'INVOICE_NOT_FOUND') {
+    if ((error as Error).message === 'INVOICE_NOT_FOUND') {
       return res.status(404).json({ success: false, message: 'Invoice tidak ditemukan' });
     }
     res.status(500).json({ success: false, message: getErrorMessage(error) || 'Internal server error' });
@@ -275,7 +272,6 @@ export const addInvoicePayment = async (req: Request, res: Response) => {
       message: 'Pembayaran berhasil dicatat',
     });
   } catch (error: unknown) {
-    const err = error as Error;
     logger.error({ error: getErrorMessage(error), stack: getErrorStack(error) }, 'Invoice payment error');
     res.status(500).json({ success: false, message: getErrorMessage(error) || 'Internal server error' });
   }

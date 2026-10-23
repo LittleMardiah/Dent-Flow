@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import { config } from './config';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
-import { rateLimiter } from './middleware/rateLimiter';
+
 import { requestLoggerMiddleware } from './middleware/requestLogger';
 import walkInRoutes from './routes/walkIn.routes';
 import { walkInRateLimiter } from './middleware/rateLimiter';

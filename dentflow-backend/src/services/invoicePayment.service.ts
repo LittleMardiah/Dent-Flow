@@ -1,6 +1,5 @@
 import { InvoiceStateRepository } from '../repositories/invoiceState.repository';
-import { auditService } from './audit.service';
-import { AuditEventType } from '../models/audit.model';
+
 import { logger } from '../utils/logger';
 import { invoiceStateMachineService } from './invoiceStateMachine.service';
 import { getErrorMessage, getErrorStack } from '../utils/error.util';

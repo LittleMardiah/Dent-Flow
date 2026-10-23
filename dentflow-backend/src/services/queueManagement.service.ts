@@ -1,10 +1,6 @@
 import { Pool } from 'pg';
 
-import { logger } from '../utils/logger';
 import { QueueService } from './queue.service';
-import { auditService } from './audit.service';
-import { AuditEventType } from '../models/audit.model';
-import { getErrorMessage, getErrorStack } from '../utils/error.util';
 import { pool } from '../config/database';
 
 export interface QueuePatient {

@@ -40,8 +40,7 @@ export const getPatientAttendance = async (req: Request, res: Response, next: Ne
       },
     });
   } catch (error: unknown) {
-    const err = error as Error;
-    logger.error({ error: err.message, stack: err.stack }, 'Error getting patient attendance');
+    logger.error({ error: (error as Error).message, stack: (error as Error).stack }, 'Error getting patient attendance');
     next(error);
   }
 };
@@ -89,8 +88,7 @@ export const getNoShowSummary = async (req: Request, res: Response, next: NextFu
       count: summary.length,
     });
   } catch (error: unknown) {
-    const err = error as Error;
-    logger.error({ error: err.message, stack: err.stack }, 'Error getting no-show summary');
+    logger.error({ error: (error as Error).message, stack: (error as Error).stack }, 'Error getting no-show summary');
     next(error);
   }
 };

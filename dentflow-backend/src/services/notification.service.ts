@@ -62,8 +62,7 @@ export class NotificationService {
    */
   async sendBookingConfirmation(bookingId: string): Promise<void> {
     const patientId = await this.getPatientIdFromBooking(bookingId);
-    const content = `Booking Anda telah dikonfirmasi. Kode booking: ${bookingId}. Terima kasih!`;
-    await this.logNotification(bookingId, patientId, 'CONFIRMATION', content);
+    await this.logNotification(bookingId, patientId, 'CONFIRMATION', `Booking Anda telah dikonfirmasi. Kode booking: ${bookingId}. Terima kasih!`);
   }
 
   /**
@@ -137,7 +136,7 @@ export class NotificationService {
     invoiceId?: string,
     bookingId?: string
   ): Promise<void> {
-    const content = `Webhook permanently failed: ${webhookId}, Order: ${orderId}, Retry: ${retryCount}/3, Error: ${lastError}, Branch: ${branchId || "N/A"}, Invoice: ${invoiceId || "N/A"}, Booking: ${bookingId || "N/A"}`;
+    // const content = `Webhook permanently failed: ${webhookId}, Order: ${orderId}, Retry: ${retryCount}/3, Error: ${lastError}, Branch: ${branchId || "N/A"}, Invoice: ${invoiceId || "N/A"}, Booking: ${bookingId || "N/A"}`;
 
     // Log to console
     logger.error({
