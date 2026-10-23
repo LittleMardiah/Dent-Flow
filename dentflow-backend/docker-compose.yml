@@ -36,7 +36,7 @@
       - dentflow-network
 
   minio:
-    image: minio/minio:latest
+    image: pgsty/silo:distroless
     container_name: dentflow-storage
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -46,7 +46,7 @@
       - "9003:9001"
     volumes:
       - minio_data:/minio_data
-    command: minio server /minio_data --console-address ":9001"
+    command: server /minio_data --console-address ":9001"
     networks:
       - dentflow-network
 

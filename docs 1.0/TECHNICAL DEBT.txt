@@ -4178,3 +4178,28 @@ Estimasi: 30 menit. Prioritas: LOW.
 
 Referensi: task_2_4_8b_e2e.log.
 ===
+
+===
+
+TD-MINIO-002: EMR file upload handler belum diimplementasi di Express (BARU 2026-10-24)
+Status: OPEN (MEDIUM)
+
+Deskripsi: MinIO-compatible infra (pgsty/silo:distroless) running healthy
+(docker-compose, 2026-10-24). TAPI belum ada handler/service/route upload
+di Express backend. Serverless (Task 2.10 B1+B2) sudah implement via Supabase
+Storage; Express belum ada.
+
+Dampak: Fitur EMR documents (foto X-ray, PDF lab, attachment) tidak tersedia
+di Express runtime.
+
+Perbaikan: Port dari dentflow-serverless/lib/storage.ts tapi target S3/MinIO
+(bukan Supabase). Buat lib/storage.ts + 2 endpoint POST/GET
+/api/encounters/:id/documents + wiring EMR form.
+
+Estimasi: 4-6 jam.
+Prioritas: MEDIUM (bukan blocker pivot, tapi PRD parity gap).
+Referensi: Task 2.10 B1 serverless impl (commit 081001e + 227ff8c).
+Catatan: Silo image = drop-in MinIO fork (env vars MINIO_ROOT_USER/PASSWORD
+kompatibel). Bisa return to official MinIO saat available lagi.
+
+===
