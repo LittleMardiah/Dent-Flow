@@ -219,14 +219,34 @@ class _PatientQuickViewScreenState extends State<PatientQuickViewScreen> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
+                final authProvider = Provider.of<DoctorAuthProvider>(context, listen: false);
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => EMRFormScreen(
-                      patientId: widget.patientId,
+                  PageRouteBuilder(
+                    transitionDuration: const Duration(milliseconds: 350),
+                    pageBuilder: (context, animation, secondaryAnimation) =>
+                        EMRFormScreen(
                       bookingId: widget.bookingId,
+                      patientId: widget.patientId,
                       doctorId: authProvider.doctor?.id ?? '',
                     ),
+                    transitionsBuilder:
+                        (context, animation, secondaryAnimation, child) {
+                      final curvedAnimation = CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      );
+                      return FadeTransition(
+                        opacity: curvedAnimation,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0.0, 0.02),
+                            end: Offset.zero,
+                          ).animate(curvedAnimation),
+                          child: child,
+                        ),
+                      );
+                    },
                   ),
                 );
               },

@@ -104,11 +104,22 @@ export function useTVDisplay({
       setStatus('connected');
       console.debug('[useTVDisplay] realtime live, polling stopped');
     } else {
+      setStatus('polling');
       if (pollIntervalRef.current === null) {
         startPolling();
       }
     }
   }, [isLive, startPolling, stopPolling]);
+
+  // Tambahan: watch isLive change to false (WS disconnect) dan pastikan polling aktif
+  useEffect(() => {
+    if (!isLive && status !== 'polling') {
+      setStatus('polling');
+      if (pollIntervalRef.current === null) {
+        startPolling();
+      }
+    }
+  }, [isLive, status]);
 
   const refresh = useCallback(() => {
     fetchData();

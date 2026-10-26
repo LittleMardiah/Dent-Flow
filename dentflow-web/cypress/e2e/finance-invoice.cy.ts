@@ -8,7 +8,7 @@ describe('Admin Finance & Invoice Flow', () => {
 
     // Buka halaman keuangan
     cy.visit('/admin/finance')
-    cy.get('h2').contains('Manajemen Keuangan & Invoice').should('be.visible')
+    cy.get('h1').contains('Keuangan', { timeout: 20000 }).should('be.visible')
 
     // Filter status "Belum Bayar" (UNPAID)
     cy.get('select').first().select('UNPAID')

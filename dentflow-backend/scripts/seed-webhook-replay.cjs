@@ -76,8 +76,8 @@ async function seedWebhookReplay() {
     await pool.query(
       `INSERT INTO invoices
        (branch_id, encounter_id, patient_id, amount_due, amount_paid, status, payment_status,
-        paid_amount, invoice_number, invoice_date)
-       VALUES ($1, $2, $3, 150000, 0, 'UNPAID', 'UNPAID', NULL, $4, CURRENT_DATE)`,
+        paid_amount, invoice_number)
+       VALUES ($1, $2, $3, 150000, 0, 'UNPAID', 'UNPAID', NULL, $4)`,
       [BRANCH_ID, encounter.rows[0].id, patientId, INVOICE_NUMBER]
     );
     console.log(`✅ UNPAID invoice created (${INVOICE_NUMBER} - Rp 150.000)`);

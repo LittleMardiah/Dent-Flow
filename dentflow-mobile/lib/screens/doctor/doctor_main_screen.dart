@@ -41,7 +41,6 @@ class _DoctorMainScreenState extends State<DoctorMainScreen> {
     final doctorId = authProvider.doctor?.id;
     if (doctorId != null) {
       // Connect WebSocket
-      final token = wsProvider.isConnected ? null : '';
       wsProvider.connect('', doctorId, 'DOCTOR');
       // Initialize provider with WebSocket listener
       doctorProvider.init(doctorId: doctorId, context: context);
@@ -237,11 +236,30 @@ class _DoctorMainScreenState extends State<DoctorMainScreen> {
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (_) => PatientQuickViewScreen(
+          PageRouteBuilder(
+            transitionDuration: const Duration(milliseconds: 350),
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                PatientQuickViewScreen(
               patientId: current.patientId,
-              bookingId: current.id,
+              bookingId: current.bookingId ?? '',
             ),
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) {
+              final curvedAnimation = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              );
+              return FadeTransition(
+                opacity: curvedAnimation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.0, 0.02),
+                    end: Offset.zero,
+                  ).animate(curvedAnimation),
+                  child: child,
+                ),
+              );
+            },
           ),
         );
       },

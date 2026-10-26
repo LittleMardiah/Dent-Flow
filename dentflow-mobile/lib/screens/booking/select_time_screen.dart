@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:async';
+import 'package:shimmer/shimmer.dart';
+
 import '../../providers/booking_provider.dart';
 import '../../providers/websocket_provider.dart';
 
@@ -16,20 +19,21 @@ class _SelectTimeScreenState extends State<SelectTimeScreen> {
   Timer? _timer;
   String? _branchId;
 
+  static const rose = Color(0xFFD08080);
+
   @override
   void initState() {
     super.initState();
-    
-    // Get booking provider untuk ambil branchId
-    final bookingProvider = Provider.of<BookingProvider>(context, listen: false);
+
+    final bookingProvider =
+        Provider.of<BookingProvider>(context, listen: false);
     _branchId = bookingProvider.selectedBranch?.id ?? 'A';
-    
-    // Subscribe ke WebSocket slot updates
+
     final wsProvider = Provider.of<WebSocketProvider>(context, listen: false);
     if (_branchId != null && _branchId!.isNotEmpty) {
       wsProvider.subscribeSlot(_branchId!);
     }
-    
+
     _loadSlots(_date);
     _timer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (mounted) {
@@ -44,7 +48,6 @@ class _SelectTimeScreenState extends State<SelectTimeScreen> {
   @override
   void dispose() {
     _timer?.cancel();
-    // Unsubscribe dari WebSocket
     if (_branchId != null && _branchId!.isNotEmpty) {
       final wsProvider = Provider.of<WebSocketProvider>(context, listen: false);
       wsProvider.unsubscribeSlot(_branchId!);
@@ -71,6 +74,30 @@ class _SelectTimeScreenState extends State<SelectTimeScreen> {
     return '';
   }
 
+  Widget _buildShimmer() {
+    return Expanded(
+      child: ListView.builder(
+        itemCount: 4,
+        itemBuilder: (_, __) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Shimmer.fromColors(
+              baseColor: Colors.grey.shade300,
+              highlightColor: Colors.grey.shade100,
+              child: Container(
+                height: 72,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = Provider.of<BookingProvider>(context);
@@ -91,7 +118,7 @@ class _SelectTimeScreenState extends State<SelectTimeScreen> {
           ),
           const SizedBox(height: 12),
           SizedBox(
-            height: 50,
+            height: 56,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: 7,
@@ -104,19 +131,38 @@ class _SelectTimeScreenState extends State<SelectTimeScreen> {
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
                     onTap: () => _loadSlots(d),
-                    child: Container(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
+                        horizontal: 18,
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: sel ? Colors.blue : Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(12),
+                        gradient: sel
+                            ? const LinearGradient(
+                                colors: [Color(0xFFD08080), Color(0xFF8F4A4B)],
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                              )
+                            : null,
+                        color: sel ? null : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: sel ? Colors.blue : Colors.transparent,
-                          width: 2,
+                          color: sel ? Colors.transparent : Colors.grey.shade200,
+                          width: 1.5,
                         ),
+                        boxShadow: sel
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFF8F4A4B)
+                                      .withValues(alpha: 0.18),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 3),
+                                )
+                              ]
+                            : null,
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -125,9 +171,7 @@ class _SelectTimeScreenState extends State<SelectTimeScreen> {
                             label.isNotEmpty ? label : '${d.day}',
                             style: TextStyle(
                               color: sel ? Colors.white : Colors.black87,
-                              fontWeight: sel
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
+                              fontWeight: sel ? FontWeight.bold : FontWeight.w600,
                             ),
                           ),
                           if (label.isEmpty)
@@ -148,7 +192,7 @@ class _SelectTimeScreenState extends State<SelectTimeScreen> {
           ),
           const SizedBox(height: 16),
           if (p.isLoading)
-            const Center(child: CircularProgressIndicator())
+            _buildShimmer()
           else if (p.slots.isEmpty)
             const Center(
               child: Padding(
@@ -163,44 +207,83 @@ class _SelectTimeScreenState extends State<SelectTimeScreen> {
                 itemBuilder: (_, i) {
                   final s = p.slots[i];
                   final sel = p.selectedSlot?.id == s.id;
-                  return Card(
-                    elevation: sel ? 4 : 1,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(
-                        color: sel ? Colors.blue : Colors.transparent,
-                        width: 2,
+                  final available = s.isAvailable;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: sel && available
+                            ? [
+                                BoxShadow(
+                                  color: rose.withValues(alpha: 0.2),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                )
+                              ]
+                            : null,
                       ),
-                    ),
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: s.isAvailable
-                            ? Colors.green.shade100
-                            : Colors.red.shade100,
-                        child: Icon(
-                          s.isAvailable ? Icons.check : Icons.close,
-                          color: s.isAvailable ? Colors.green : Colors.red,
-                          size: 20,
+                      child: Card(
+                        elevation: 0,
+                        margin: EdgeInsets.zero,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(
+                            color: sel && available
+                                ? rose
+                                : available
+                                    ? Colors.grey.shade200
+                                    : Colors.grey.shade300.withValues(alpha: 0.6),
+                            width: sel && available ? 2.2 : 1,
+                          ),
+                        ),
+                        child: Opacity(
+                          opacity: available ? 1.0 : 0.5,
+                          child: ListTile(
+                            enabled: available,
+                            leading: CircleAvatar(
+                              backgroundColor: available
+                                  ? rose.withValues(alpha: 0.16)
+                                  : Colors.grey.shade200,
+                              child: Icon(
+                                available ? Icons.access_time_rounded : Icons.block,
+                                color: available ? rose : Colors.grey,
+                                size: 20,
+                              ),
+                            ),
+                            title: Text(
+                              s.timeDisplay,
+                              style: TextStyle(
+                                fontWeight:
+                                    sel && available ? FontWeight.w700 : FontWeight.w600,
+                                color: available ? Colors.black87 : Colors.grey,
+                              ),
+                            ),
+                            subtitle: Text(
+                              available
+                                  ? '${s.availableSpots} slot tersedia'
+                                  : 'Penuh',
+                              style: TextStyle(
+                                color: available ? rose : Colors.grey,
+                                fontSize: 12,
+                              ),
+                            ),
+                            trailing: sel && available
+                                ? const Icon(Icons.check_circle_rounded, color: rose)
+                                : available
+                                    ? Icon(Icons.chevron_right_rounded,
+                                        color: Colors.grey.shade400)
+                                    : null,
+                            onTap: available
+                                ? () {
+                                    p.setSlot(s);
+                                    p.nextStep();
+                                  }
+                                : null,
+                          ),
                         ),
                       ),
-                      title: Text(s.timeDisplay),
-                      subtitle: Text(
-                        s.isAvailable
-                            ? '${s.availableSpots} slot tersedia'
-                            : 'Penuh',
-                        style: TextStyle(
-                          color: s.isAvailable ? Colors.green : Colors.red,
-                        ),
-                      ),
-                      trailing: sel
-                          ? const Icon(Icons.check_circle, color: Colors.blue)
-                          : null,
-                      onTap: s.isAvailable
-                          ? () {
-                              p.setSlot(s);
-                              p.nextStep();
-                            }
-                          : null,
                     ),
                   );
                 },

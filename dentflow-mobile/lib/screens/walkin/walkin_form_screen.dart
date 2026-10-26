@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/widgets/premium_button.dart';
 import '../../providers/walkin_provider.dart';
 import 'walkin_confirmation_screen.dart';
 
@@ -74,10 +76,21 @@ class _WalkInFormScreenState extends State<WalkInFormScreen> {
               // Nama
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(
+                cursorColor: AppTheme.primary,
+                decoration: InputDecoration(
                   labelText: 'Nama Lengkap',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.person),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+                  ),
+                  prefixIcon: const Icon(Icons.person, color: AppTheme.primary),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -94,10 +107,21 @@ class _WalkInFormScreenState extends State<WalkInFormScreen> {
               // Nomor HP
               TextFormField(
                 controller: _phoneController,
-                decoration: const InputDecoration(
+                cursorColor: AppTheme.primary,
+                decoration: InputDecoration(
                   labelText: 'Nomor HP',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.phone),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+                  ),
+                  prefixIcon: const Icon(Icons.phone, color: AppTheme.primary),
                 ),
                 keyboardType: TextInputType.phone,
                 validator: (value) {
@@ -114,10 +138,20 @@ class _WalkInFormScreenState extends State<WalkInFormScreen> {
 
               // Service dropdown
               DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Layanan (opsional)',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.medical_services),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+                  ),
+                  prefixIcon: const Icon(Icons.medical_services, color: AppTheme.primary),
                 ),
                 value: _selectedService,
                 items: _services.map((service) {
@@ -136,10 +170,20 @@ class _WalkInFormScreenState extends State<WalkInFormScreen> {
 
               // Doctor dropdown (optional)
               DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Dokter (opsional)',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.health_and_safety),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+                  ),
+                  prefixIcon: const Icon(Icons.health_and_safety, color: AppTheme.primary),
                 ),
                 value: _selectedDoctor,
                 items: _doctors.map((doctor) {
@@ -180,27 +224,18 @@ class _WalkInFormScreenState extends State<WalkInFormScreen> {
 
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: walkinProvider.isLoading
-                      ? null
-                      : _submitForm,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                  child: walkinProvider.isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'Daftar Walk-in',
-                          style: TextStyle(fontSize: 16),
+                child: walkinProvider.isLoading
+                    ? const Center(
+                        child: SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         ),
-                ),
+                      )
+                    : PremiumButton(
+                        text: 'Daftar Walk-in',
+                        onPressed: _submitForm,
+                      ),
               ),
             ],
           ),

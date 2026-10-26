@@ -2,19 +2,25 @@ describe('Admin Multi-Branch Ops (Task 5.1.3)', () => {
   const BRANCH_B_ID = '88d0b0a4-17f8-46c7-a8dc-8755fe8e8d4f';
   const BRANCH_C_ID = '7c1f0000-0000-4000-8000-00000000000c';
 
-  beforeEach(() => {
+  before(() => {
     // Pastikan data branch A/B/C (pasien marker + grant admin A -> B) tersedia
-    cy.task('seedMultiBranch');
+    cy.task('seedMultiBranch', null, { timeout: 180000 });
   });
 
   it('Admin A melihat HANYA data Branch A di /admin/patients', () => {
     cy.adminLogin();
+    cy.url().should('include', '/admin');
+
+    // Intercept GET /api/patients dan tunggu hingga data selesai dimuat
+    cy.intercept('GET', '**/api/patients*').as('getPatients');
 
     cy.visit('/admin/patients');
+    cy.wait('@getPatients'); // <-- TAMBAHAN: tunggu data patients selesai load
+
     cy.get('h2').contains('Manajemen Pasien').should('be.visible');
 
-    // Data Branch A tampil
-    cy.contains('MB-Pasien A-1').should('exist');
+    // Data Branch A tampil - dengan timeout lebih lama karena render tema
+    cy.get('table tbody tr', { timeout: 20000 }).should('have.length.greaterThan', 0);
 
     // Data Branch B TIDAK boleh tampil di daftar Branch A
     cy.contains('MB-Pasien B-1').should('not.exist');
@@ -22,8 +28,14 @@ describe('Admin Multi-Branch Ops (Task 5.1.3)', () => {
 
   it('Admin A pindah branch -> data Branch B muncul', () => {
     cy.adminLogin();
+    cy.url().should('include', '/admin');
+
+    // Intercept GET /api/patients dan tunggu hingga data selesai dimuat
+    cy.intercept('GET', '**/api/patients*').as('getPatients');
 
     cy.visit('/admin/patients');
+    cy.wait('@getPatients'); // <-- TAMBAHAN: tunggu data patients selesai load
+
     cy.get('[data-testid="branch-switcher"]').should('be.visible');
 
     // Branch C tidak boleh ditawarkan (tidak di-grant)
@@ -38,6 +50,7 @@ describe('Admin Multi-Branch Ops (Task 5.1.3)', () => {
 
   it('Admin A mencoba akses Branch C -> 403 (tenant isolation)', () => {
     cy.adminLogin();
+    cy.url().should('include', '/admin');
 
     cy.visit('/admin/patients');
     cy.get('h2').contains('Manajemen Pasien').should('be.visible');

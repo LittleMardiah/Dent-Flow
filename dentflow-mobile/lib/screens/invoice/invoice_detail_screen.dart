@@ -46,8 +46,27 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       if (paymentUrl != null && mounted) {
         final result = await Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (_) => PaymentWebview(paymentUrl: paymentUrl),
+          PageRouteBuilder(
+            transitionDuration: const Duration(milliseconds: 350),
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                PaymentWebview(paymentUrl: paymentUrl),
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) {
+              final curvedAnimation = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              );
+              return FadeTransition(
+                opacity: curvedAnimation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.0, 0.02),
+                    end: Offset.zero,
+                  ).animate(curvedAnimation),
+                  child: child,
+                ),
+              );
+            },
           ),
         );
 

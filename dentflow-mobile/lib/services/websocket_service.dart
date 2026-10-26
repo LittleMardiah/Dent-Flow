@@ -32,7 +32,7 @@ class WebSocketService {
     _currentUserId = userId;
     _currentRole = role;
 
-    final baseUrl = 'http://10.45.200.135:3001'; // Ganti dengan IP backend lo
+    final baseUrl = 'wss://sari-inartificial-dwain.ngrok-free.dev'; // Ganti dengan IP backend lo
     final uri = baseUrl.replaceFirst('http', 'ws');
 
     try {

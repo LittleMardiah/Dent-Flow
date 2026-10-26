@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_stack" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "tertiary-fixed-dim": "#ffb3b1", "error-container": "#ffdad6", "on-primary": "#ffffff", "surface-container-highest": "#efdfe1", "on-tertiary": "#ffffff", "tertiary": "#964646", "on-background": "#22191b", "on-primary-container": "#531c1e", "surface-container-low": "#fff0f2", "surface-container-lowest": "#ffffff", "on-primary-fixed": "#3a090d", "inverse-primary": "#ffb3b2", "primary-fixed": "#ffdad9", "surface-container": "#fbeaec", "on-primary-fixed-variant": "#723335", "on-secondary": "#ffffff", "tertiary-fixed": "#ffdad8", "on-error": "#ffffff", "secondary-fixed": "#fbdbdb", "inverse-on-surface": "#feedef", "outline": "#867372", "on-tertiary-fixed-variant": "#782f30", "secondary-fixed-dim": "#debfbf", "secondary": "#705959", "on-secondary-fixed-variant": "#574142", "primary-fixed-dim": "#ffb3b2", "background": "#fff8f8", "secondary-container": "#f8d8d8", "on-tertiary-container": "#58171a", "on-surface-variant": "#534342", "surface-container-high": "#f5e4e7", "surface-variant": "#efdfe1", "primary": "#8f4a4b", "on-secondary-container": "#755d5d", "on-error-container": "#93000a", "on-secondary-fixed": "#281717", "surface-bright": "#fff8f8", "surface-dim": "#e6d6d9", "surface": "#fff8f8", "error": "#ba1a1a", "inverse-surface": "#372e30", "tertiary-container": "#d97b7a", "outline-variant": "#d8c1c0", "on-surface": "#22191b", "on-tertiary-fixed": "#3e0409", "primary-container": "#d08080", "surface-tint": "#8f4a4b" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "space-lg": "1.5rem", "space-xl": "2rem", "space-md": "1rem", "space-xs": "0.25rem", "margin": "1.25rem", "space-sm": "0.5rem", "gutter": "1rem" }, fontFamily: { "body-sm": ["Plus Jakarta Sans"], "label-md": ["Plus Jakarta Sans"], "label-lg": ["Plus Jakarta Sans"], "headline-lg": ["Plus Jakarta Sans"], "body-lg": ["Plus Jakarta Sans"], "headline-sm": ["Plus Jakarta Sans"], "label-sm": ["Plus Jakarta Sans"], "headline-md": ["Plus Jakarta Sans"], "display-lg": ["Plus Jakarta Sans"], "body-md": ["Plus Jakarta Sans"] }, fontSize: { "body-sm": ["13px", { "lineHeight": "18px", "letterSpacing": "0.01em", "fontWeight": "400" }], "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }], "label-lg": ["14px", { "lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "600" }], "headline-lg": ["26px", { "lineHeight": "34px", "letterSpacing": "-0.015em", "fontWeight": "700" }], "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0", "fontWeight": "400" }], "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "0", "fontWeight": "600" }], "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.04em", "fontWeight": "600" }], "headline-md": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }], "display-lg": ["34px", { "lineHeight": "42px", "letterSpacing": "-0.02em", "fontWeight": "700" }], "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0", "fontWeight": "400" }] } } } }</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-md text-on-surface flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/85 backdrop-blur-xl shadow-[0_1px_8px_rgba(208,128,128,0.08)]"><div class="h-16 px-margin flex items-center justify-between"><div class="flex items-center gap-space-sm"><button aria-label="Kembali" class="w-11 h-11 -ml-space-sm flex items-center justify-center rounded-full text-on-surface hover:bg-surface-container transition-colors" onclick="history.back()"><span class="material-symbols-outlined text-[24px]">arrow_back</span></button><div class="flex flex-col"><h1 class="font-headline-sm text-headline-sm text-on-surface leading-tight">Pendaftaran Walk In</h1><span class="font-label-sm text-label-sm text-on-surface-variant">DentFlow Clinic</span></div></div><div class="flex items-center gap-space-sm"><button aria-label="Bantuan &amp; Info" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-primary text-[22px]">info</span></button></div></div></header><main class="flex-1 flex flex-col relative w-full pt-16 bg-surface"><div class="flex flex-col w-full pb-10">
+<!-- Ambient Rose Glow Background Accent -->
+<div class="relative px-margin pt-4 pb-2">
+<!-- Clinic Highlight Card -->
+<div class="relative overflow-hidden bg-surface-container-lowest rounded-2xl p-space-md shadow-md">
+<!-- Decorative Atmospheric Glow inside card -->
+<div class="absolute -right-10 -top-10 w-36 h-36 bg-primary-container/20 rounded-full blur-2xl pointer-events-none"></div>
+<div class="relative z-10 flex flex-col gap-space-sm">
+<div class="flex items-center justify-between gap-space-xs">
+<div class="flex items-center gap-1.5 bg-surface-container px-2.5 py-1 rounded-full">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+<span class="font-label-sm text-label-sm text-primary">Buka Hari Ini • Walk-in Aktif</span>
+</div>
+<span class="flex items-center gap-1 font-label-sm text-label-sm text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px] text-primary">location_on</span>
+            Senopati, JKT
+          </span>
+</div>
+<div class="flex items-start justify-between mt-1">
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Klinik DentFlow Senopati</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Lounge perawatan gigi premium tanpa reservasi panjang</p>
+</div>
+</div>
+<!-- Live Queue Estimator Pill -->
+<div class="flex items-center justify-between mt-1 bg-surface-container-low px-3 py-2.5 rounded-xl">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[18px]">groups</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Antrean Berjalan</span>
+<span class="font-headline-sm text-headline-sm text-primary font-bold">4 Pasien <span class="font-body-sm text-body-sm text-on-surface-variant font-normal">di depan Anda</span></span>
+</div>
+</div>
+<div class="text-right">
+<span class="font-label-sm text-label-sm text-on-surface-variant block">Est. Tunggu</span>
+<span class="font-label-lg text-label-lg text-on-surface font-semibold">~15 - 25 mnt</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Form Section -->
+<form class="flex flex-col px-margin gap-space-lg mt-2" id="walkinForm" onsubmit="event.preventDefault(); handleSubmit();">
+<!-- Section: Data Pasien -->
+<div class="flex flex-col gap-space-md">
+<div>
+<label class="font-label-lg text-label-lg text-on-surface block mb-1" for="patientName">
+          Nama Lengkap Pasien <span class="text-primary">*</span>
+</label>
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-3.5 text-outline text-[20px]">person</span>
+<input class="w-full h-[50px] pl-11 pr-4 bg-surface-container-lowest rounded-xl font-body-md text-body-md text-on-surface placeholder:text-outline-variant focus:outline-none focus:bg-surface-container-low transition-colors shadow-sm" id="patientName" placeholder="mis. Sarah Jenkins" required="" type="text"/>
+</div>
+</div>
+<div>
+<label class="font-label-lg text-label-lg text-on-surface block mb-1" for="phoneNumber">
+          No. WhatsApp Aktif <span class="text-primary">*</span>
+</label>
+<div class="relative flex items-center">
+<div class="absolute left-3.5 flex items-center gap-1 text-on-surface-variant font-label-md text-label-md">
+<span class="material-symbols-outlined text-[18px] text-outline">phone_iphone</span>
+<span class="font-semibold">+62</span>
+</div>
+<input class="w-full h-[50px] pl-20 pr-4 bg-surface-container-lowest rounded-xl font-body-md text-body-md text-on-surface placeholder:text-outline-variant focus:outline-none focus:bg-surface-container-low transition-colors shadow-sm" id="phoneNumber" pattern="[0-9]{9,13}" placeholder="812-3456-7890" required="" type="tel"/>
+</div>
+<p class="mt-1 flex items-center gap-1 font-label-sm text-label-sm text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px] text-primary">notifications_active</span>
+          Tiket dan nomor panggilan akan dikirim via pesan WhatsApp.
+        </p>
+</div>
+</div>
+<!-- Section: Dokter Jaga On-Site -->
+<div class="flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<label class="font-label-lg text-label-lg text-on-surface">
+          Pilih Dokter Jaga On-Site <span class="text-primary">*</span>
+</label>
+<span class="font-label-sm text-label-sm text-primary">Tersedia Saat Ini</span>
+</div>
+<!-- Doctor Selection Radio Cards -->
+<div class="flex flex-col gap-2.5" id="doctorGroup">
+<!-- Doctor 1: Drg Amanda -->
+<label class="relative flex items-center gap-3 p-3 bg-surface-container-lowest rounded-2xl cursor-pointer shadow-sm hover:bg-surface-container-low transition-all">
+<input checked="" class="sr-only peer" name="selectedDoctor" type="radio" value="drg_amanda"/>
+<div class="w-12 h-12 rounded-xl overflow-hidden bg-surface-container-high shrink-0">
+<img class="w-full h-full object-cover" data-alt="A portrait of a warm smiling female Indonesian dentist wearing a light rose medical scrub and protective dental loupes in a high-end bright clinic room with soft natural illumination" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCA9HVRU0Mpv1S5Xj16AToDX3mmepSi59mt7X78TeJJLqqxi0kOGNPSHkQC7mkF93F1kU3MNObkQmMDykLjE90ha8kYIS3Jaf18QlUrc4iJl0aoROMDhmnemQdjBb96TdYuGsf-NWNOZW6stH7-WtfFbl2oOtRHPbeFi-dkiNbe1tE5yj6Cah37SX1vec6AKvtmuHHVv-VBubcriV2yVeSgzrKhBDdP9GsNamgd1PE"/>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-on-surface truncate text-[15px]">drg. Amanda Sp.Ort</span>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-high text-primary font-label-sm text-[10px]">Siap Periksa</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Spesialis Orthodonti &amp; Estetika</p>
+<div class="flex items-center gap-1 mt-0.5">
+<span class="material-symbols-outlined text-[14px] text-primary" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="font-label-sm text-label-sm text-on-surface font-semibold">4.9</span>
+<span class="font-label-sm text-label-sm text-outline-variant">• 12 pasien hari ini</span>
+</div>
+</div>
+<!-- Custom indicator circle -->
+<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center peer-checked:bg-primary transition-colors shrink-0">
+<span class="material-symbols-outlined text-[16px] text-transparent peer-checked:text-on-primary">check</span>
+</div>
+</label>
+<!-- Doctor 2: Drg Reza -->
+<label class="relative flex items-center gap-3 p-3 bg-surface-container-lowest rounded-2xl cursor-pointer shadow-sm hover:bg-surface-container-low transition-all">
+<input class="sr-only peer" name="selectedDoctor" type="radio" value="drg_reza"/>
+<div class="w-12 h-12 rounded-xl overflow-hidden bg-surface-container-high shrink-0">
+<img class="w-full h-full object-cover" data-alt="A distinguished professional male Southeast Asian dentist with gentle friendly expression in warm dental studio uniform, clean luxury background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBcwi7g6MDcyCVYSLMBxlSeinX-54TkkvgJduAqC85aXyxeGmHHaLh232Mfe7WP2sftY1bxB864gw15YWMWikw9ZkICJ-Dur6QsY106fitTgph2rk3hj6fs8pms1xvkE9KfYNqkxfe5ugGCi5ccQvJ4tn4koUKft7obZ4525PmxximzExEZvILTokh6VD24IaojZjmeO-8QTTVjYUcZj57JM3JGM4hN-1jt4fW0byc"/>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-on-surface truncate text-[15px]">drg. Reza Pratama Sp.KG</span>
+<span class="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-label-sm text-[10px]">1 Sesi Selesai</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Konservasi Gigi &amp; Endodontik</p>
+<div class="flex items-center gap-1 mt-0.5">
+<span class="material-symbols-outlined text-[14px] text-primary" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="font-label-sm text-label-sm text-on-surface font-semibold">4.95</span>
+<span class="font-label-sm text-label-sm text-outline-variant">• 8 pasien hari ini</span>
+</div>
+</div>
+<!-- Custom indicator circle -->
+<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center peer-checked:bg-primary transition-colors shrink-0">
+<span class="material-symbols-outlined text-[16px] text-transparent peer-checked:text-on-primary">check</span>
+</div>
+</label>
+</div>
+</div>
+<!-- Section: Jenis Keluhan / Layanan Cepat -->
+<div class="flex flex-col gap-2">
+<label class="font-label-lg text-label-lg text-on-surface">
+        Keluhan atau Layanan Cepat <span class="text-primary">*</span>
+</label>
+<div class="flex flex-wrap gap-2" id="serviceChips">
+<button class="service-chip flex items-center gap-1.5 px-3.5 py-2 rounded-full font-label-md text-label-md bg-primary text-on-primary shadow-sm transition-all" data-selected="true" onclick="toggleChip(this)" type="button">
+<span class="material-symbols-outlined text-[16px]">forum</span>
+          Konsultasi Cepat
+        </button>
+<button class="service-chip flex items-center gap-1.5 px-3.5 py-2 rounded-full font-label-md text-label-md bg-surface-container-lowest text-on-surface hover:bg-surface-container transition-all shadow-sm" data-selected="false" onclick="toggleChip(this)" type="button">
+<span class="material-symbols-outlined text-[16px]">emergency</span>
+          Sakit Gigi Mendadak
+        </button>
+<button class="service-chip flex items-center gap-1.5 px-3.5 py-2 rounded-full font-label-md text-label-md bg-surface-container-lowest text-on-surface hover:bg-surface-container transition-all shadow-sm" data-selected="false" onclick="toggleChip(this)" type="button">
+<span class="material-symbols-outlined text-[16px]">cleaning_services</span>
+          Pembersihan Karang
+        </button>
+<button class="service-chip flex items-center gap-1.5 px-3.5 py-2 rounded-full font-label-md text-label-md bg-surface-container-lowest text-on-surface hover:bg-surface-container transition-all shadow-sm" data-selected="false" onclick="toggleChip(this)" type="button">
+<span class="material-symbols-outlined text-[16px]">dentistry</span>
+          Kontrol Behel Lepas
+        </button>
+</div>
+</div>
+<!-- Section: Persetujuan S&K -->
+<div class="p-3 bg-surface-container rounded-2xl flex items-start gap-3">
+<div class="pt-0.5">
+<label class="relative flex items-center cursor-pointer">
+<input class="sr-only peer" id="agreementCheck" required="" type="checkbox"/>
+<div class="w-5 h-5 rounded-md bg-surface-container-lowest peer-checked:bg-primary flex items-center justify-center transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[16px] text-transparent peer-checked:text-on-primary">check</span>
+</div>
+</label>
+</div>
+<label class="font-body-sm text-body-sm text-on-surface cursor-pointer select-none" for="agreementCheck">
+        Saya menyetujui syarat &amp; ketentuan layanan walk-in dan bersedia hadir di klinik saat antrean dipanggil.
+      </label>
+</div>
+<!-- Micro Hospitality Note Box -->
+<div class="p-3.5 bg-surface-container-low rounded-xl flex items-center gap-3">
+<div class="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0 text-primary">
+<span class="material-symbols-outlined text-[20px]">local_cafe</span>
+</div>
+<div class="flex-1">
+<h4 class="font-label-md text-label-md text-on-surface font-semibold">Santai di Boutique Waiting Lounge</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Minuman hangat aromatik &amp; handuk segar tersedia gratis selama Anda menunggu giliran.</p>
+</div>
+</div>
+<!-- Sticky Bottom CTA Area -->
+<div class="pt-2 flex flex-col gap-2">
+<button class="w-full h-[52px] rounded-2xl bg-gradient-to-r from-primary via-primary to-primary-container text-on-primary font-label-lg text-label-lg font-bold flex items-center justify-center gap-2 shadow-lg active:scale-[0.985] transition-transform duration-150" id="submitBtn" type="submit">
+<span class="material-symbols-outlined text-[20px]">confirmation_number</span>
+<span>Daftar Walk-in Sekarang</span>
+<span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</button>
+<div class="flex items-center justify-center gap-1.5 text-center">
+<span class="material-symbols-outlined text-[14px] text-primary">verified_user</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Data rekam medis terjaga aman &amp; terenkripsi standar HIPAA</span>
+</div>
+</div>
+</form>
+<!-- Success Toast Modal (Hidden by Default) -->
+<div class="fixed inset-x-4 bottom-8 z-50 transform translate-y-32 opacity-0 pointer-events-none transition-all duration-300" id="toastSuccess">
+<div class="bg-inverse-surface text-inverse-on-surface p-4 rounded-2xl shadow-2xl flex items-center gap-3">
+<div class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-on-primary shrink-0">
+<span class="material-symbols-outlined text-[22px]">check_circle</span>
+</div>
+<div class="flex-1 min-w-0">
+<h5 class="font-label-lg text-label-lg font-bold">Nomor Antrean: #W-08</h5>
+<p class="font-body-sm text-body-sm text-surface-container-high truncate">Tiket konfirmasi dikirim ke WhatsApp Anda!</p>
+</div>
+</div>
+</div>
+</div>
+<script>
+  function toggleChip(btn) {
+    const isSelected = btn.getAttribute('data-selected') === 'true';
+    if (!isSelected) {
+      btn.setAttribute('data-selected', 'true');
+      btn.classList.remove('bg-surface-container-lowest', 'text-on-surface');
+      btn.classList.add('bg-primary', 'text-on-primary');
+    } else {
+      // Keep at least one selected for UX clarity
+      const totalSelected = document.querySelectorAll('.service-chip[data-selected="true"]').length;
+      if (totalSelected > 1) {
+        btn.setAttribute('data-selected', 'false');
+        btn.classList.remove('bg-primary', 'text-on-primary');
+        btn.classList.add('bg-surface-container-lowest', 'text-on-surface');
+      }
+    }
+  }
+
+  function handleSubmit() {
+    const toast = document.getElementById('toastSuccess');
+    const submitBtn = document.getElementById('submitBtn');
+    
+    // Tactile button reaction
+    submitBtn.classList.add('opacity-75');
+    submitBtn.innerHTML = `
+      <span class="w-5 h-5 border-2 border-on-primary border-t-transparent rounded-full animate-spin"></span>
+      <span>Memproses Tiket...</span>
+    `;
+
+    setTimeout(() => {
+      submitBtn.classList.remove('opacity-75');
+      submitBtn.innerHTML = `
+        <span class="material-symbols-outlined text-[20px]">check</span>
+        <span>Terdaftar!</span>
+      `;
+      
+      // Trigger Delight Toast
+      toast.classList.remove('translate-y-32', 'opacity-0', 'pointer-events-none');
+      toast.classList.add('translate-y-0', 'opacity-100');
+
+      setTimeout(() => {
+        toast.classList.add('translate-y-32', 'opacity-0', 'pointer-events-none');
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        submitBtn.innerHTML = `
+          <span class="material-symbols-outlined text-[20px]">confirmation_number</span>
+          <span>Daftar Walk-in Sekarang</span>
+          <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+        `;
+      }, 3500);
+    }, 700);
+  }
+</script></main></body></html>

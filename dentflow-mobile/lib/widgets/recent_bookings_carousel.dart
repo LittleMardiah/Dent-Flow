@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/theme/app_theme.dart';
 import '../models/booking_model.dart';
 
 class RecentBookingsCarousel extends StatelessWidget {
@@ -37,6 +38,7 @@ class RecentBookingsCarousel extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
+              color: AppTheme.textPrimary,
             ),
           ),
         ),
@@ -50,20 +52,21 @@ class RecentBookingsCarousel extends StatelessWidget {
             itemBuilder: (context, index) {
               final booking = bookings[index];
               return Container(
-                width: 120,
+                width: 110,
                 margin: const EdgeInsets.only(right: 12),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.grey.withOpacity(0.2),
-                      spreadRadius: 1,
-                      blurRadius: 4,
+                      color: Colors.black.withOpacity(0.1),
+                      spreadRadius: 2,
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -73,6 +76,7 @@ class RecentBookingsCarousel extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -82,7 +86,7 @@ class RecentBookingsCarousel extends StatelessWidget {
                       booking.date,
                       style: const TextStyle(
                         fontSize: 10,
-                        color: Colors.grey,
+                        color: AppTheme.textSecondary,
                       ),
                     ),
                     const SizedBox(height: 4),

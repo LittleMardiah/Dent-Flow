@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/theme/app_theme.dart';
 import '../../providers/walkin_provider.dart';
 
 class WalkInQueueScreen extends StatefulWidget {
@@ -37,6 +38,9 @@ class _WalkInQueueScreenState extends State<WalkInQueueScreen> {
       );
     }
 
+    final statusColor = _getStatusColor(response.status);
+    final statusBg = statusColor.withValues(alpha: 0.08);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Antrian Walk-in'),
@@ -58,22 +62,24 @@ class _WalkInQueueScreenState extends State<WalkInQueueScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // Queue number
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
               decoration: BoxDecoration(
-                color: response.isBeingCalled
-                    ? Colors.orange.shade50
-                    : response.isCompleted
-                        ? Colors.green.shade50
-                        : Colors.blue.shade50,
+                color: statusBg,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: response.isBeingCalled
-                      ? Colors.orange
-                      : response.isCompleted
-                          ? Colors.green
-                          : Colors.blue,
+                  color: statusColor,
+                  width: 1.5,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: statusColor.withValues(alpha: 0.12),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Column(
                 children: [
@@ -81,16 +87,14 @@ class _WalkInQueueScreenState extends State<WalkInQueueScreen> {
                     'Nomor Antrian',
                     style: TextStyle(fontSize: 14, color: Colors.grey),
                   ),
+                  const SizedBox(height: 4),
                   Text(
                     '#${response.queueNumber}',
                     style: TextStyle(
-                      fontSize: 48,
-                      fontWeight: FontWeight.bold,
-                      color: response.isBeingCalled
-                          ? Colors.orange
-                          : response.isCompleted
-                              ? Colors.green
-                              : Colors.blue,
+                      fontSize: 64,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 2,
+                      color: AppTheme.primary,
                     ),
                   ),
                 ],
@@ -99,18 +103,21 @@ class _WalkInQueueScreenState extends State<WalkInQueueScreen> {
             const SizedBox(height: 16),
 
             // Status badge
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
               decoration: BoxDecoration(
-                color: _getStatusColor(response.status).withOpacity(0.1),
+                color: statusColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: statusColor.withValues(alpha: 0.4)),
               ),
               child: Text(
                 _getStatusLabel(response.status),
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: _getStatusColor(response.status),
+                  color: statusColor,
                 ),
               ),
             ),
@@ -118,6 +125,7 @@ class _WalkInQueueScreenState extends State<WalkInQueueScreen> {
 
             // Estimated wait time
             if (response.isWaiting) ...[
+              const SizedBox(height: 8),
               const Text(
                 'Estimasi waktu tunggu:',
                 style: TextStyle(fontSize: 14, color: Colors.grey),
@@ -134,24 +142,26 @@ class _WalkInQueueScreenState extends State<WalkInQueueScreen> {
 
             if (response.isBeingCalled) ...[
               const SizedBox(height: 16),
-              Container(
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
+                  color: AppTheme.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.orange),
+                  border: Border.all(color: AppTheme.primary),
                 ),
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.notifications_active, color: Colors.orange),
+                    Icon(Icons.notifications_active, color: AppTheme.primary),
                     SizedBox(width: 8),
                     Text(
-                      '📢 Sedang dipanggil!',
+                      'Sedang dipanggil',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: Colors.orange,
+                        color: AppTheme.primary,
                       ),
                     ),
                   ],
@@ -161,10 +171,12 @@ class _WalkInQueueScreenState extends State<WalkInQueueScreen> {
 
             if (response.isCompleted) ...[
               const SizedBox(height: 16),
-              Container(
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade50,
+                  color: Colors.green.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.green),
                 ),
@@ -174,7 +186,7 @@ class _WalkInQueueScreenState extends State<WalkInQueueScreen> {
                     Icon(Icons.check_circle, color: Colors.green),
                     SizedBox(width: 8),
                     Text(
-                      '✅ Selesai',
+                      'Selesai',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -273,9 +285,9 @@ class _WalkInQueueScreenState extends State<WalkInQueueScreen> {
   Color _getStatusColor(String status) {
     switch (status) {
       case 'WAITING':
-        return Colors.blue;
+        return Colors.amber.shade700;
       case 'BEING_CALLED':
-        return Colors.orange;
+        return AppTheme.primary;
       case 'COMPLETED':
         return Colors.green;
       default:
