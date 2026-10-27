@@ -26,5 +26,4 @@ DentFlow adalah sistem manajemen klinik gigi komprehensif yang dirancang untuk m
 2. `npm install && npm run migrate && npm run dev`
 3. `cd dentflow-web && npm install && npm run dev`
 
-## Lisensi
 Proyek ini dibuat untuk tujuan portofolio. Silakan lihat dokumentasi di folder `docs 1.0/` untuk detail arsitektur lengkap.
