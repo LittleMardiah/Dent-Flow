@@ -8,7 +8,7 @@ describe('Doctor Queue & EMR Flow', () => {
 
     // Buka antrian dokter
     cy.visit('/doctor/queue')
-    cy.get('h1').contains('Antrian Hari Ini').should('be.visible')
+    cy.contains('Antrian Hari Ini').should('be.visible')
 
     // Buka detail pasien pertama
     cy.contains('button', 'Detail').first().click()
@@ -33,7 +33,7 @@ describe('Doctor Queue & EMR Flow', () => {
     cy.doctorLogin()
 
     cy.visit('/doctor/queue')
-    cy.get('h1').contains('Antrian Hari Ini').should('be.visible')
+    cy.contains('Antrian Hari Ini').should('be.visible')
 
     cy.contains('button', 'Detail').first().click()
     cy.contains('Detail Pasien').should('be.visible')
@@ -57,7 +57,7 @@ describe('Doctor Queue & EMR Flow', () => {
     cy.doctorLogin()
 
     cy.visit('/doctor/queue')
-    cy.get('h1').contains('Antrian Hari Ini').should('be.visible')
+    cy.contains('Antrian Hari Ini').should('be.visible')
 
     cy.contains('button', 'Detail').first().click()
     cy.contains('Detail Pasien').should('be.visible')

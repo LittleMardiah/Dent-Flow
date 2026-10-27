@@ -94,8 +94,7 @@ async function ensurePatient(
   phone: string
 ): Promise<string> {
   const email = `mb_patient_${key.toLowerCase()}_${index}@clinic.com`;
-  // Gunakan format MB-Pasien A-1 agar sesuai dengan E2E test expectation
-  const username = `MB-Pasien ${key}-${index}`;
+  const username = `mb_patient_${key.toLowerCase()}_${index}`;
   const hash = await bcrypt.hash('Patient123!', 10);
   const userRes = await client.query(
     `INSERT INTO users (id, branch_id, role, email, username, password_hash, is_active)

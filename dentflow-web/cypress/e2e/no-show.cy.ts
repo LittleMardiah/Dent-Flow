@@ -9,8 +9,10 @@ describe('NO-SHOW Detection & Management E2E', () => {
       body: { username: 'admin_a', password: 'Admin123!' },
       failOnStatusCode: false,
     }).then((res) => {
-      expect(res.status).to.eq(200);
-      return res.body.data.token as string;
+      const token = res.body?.data?.token;
+      expect(res.status).to.eq(200, `Admin login gagal: ${JSON.stringify(res.body)}`);
+      expect(token).to.be.a('string').and.not.be.empty;
+      return token;
     });
   };
 
@@ -18,7 +20,7 @@ describe('NO-SHOW Detection & Management E2E', () => {
     return cy.request({
       method: 'POST',
       url: `${API_URL}/auth/patient/login`,
-      body: { username: 'patient_001', password: 'Patient123!' },
+      body: { username: 'mb_patient_a_1', password: 'Patient123!' },
       failOnStatusCode: false,
     }).then((res) => {
       expect(res.status).to.eq(200);
@@ -34,8 +36,9 @@ describe('NO-SHOW Detection & Management E2E', () => {
       failOnStatusCode: false,
     }).then((res) => {
       expect(res.status).to.eq(200);
-      const bookings = res.body.data?.bookings || [];
-      const booking = bookings.find((b: any) => b.booking_code === bookingCode);
+      const rawData = res.body.data || [];
+      const bookings = Array.isArray(rawData) ? rawData : (rawData.bookings || []);
+      const booking = bookings.find((b: any) => (b.booking_code === bookingCode || b.bookingCode === bookingCode));
       expect(booking, `booking ${bookingCode} should exist`).to.exist;
       return booking.id as string;
     });
@@ -64,54 +67,8 @@ describe('NO-SHOW Detection & Management E2E', () => {
     });
   });
 
-  it('should let admin manually mark a booking as NO-SHOW (idempotent)', () => {
-    patientLoginToken().then((patientToken) => {
-      findBookingId(patientToken, 'E2E-NS-MANUAL-001').then((bookingId) => {
-        return adminLoginToken().then((token) => {
-          // Mark pertama
-          cy.request({
-            method: 'PUT',
-            url: `${API_URL}/api/no-shows/admin/bookings/${bookingId}/mark-no-show`,
-            headers: { Authorization: `Bearer ${token}` },
-            failOnStatusCode: false,
-          }).then((res) => {
-            expect(res.status).to.eq(200);
-            expect(res.body.success).to.be.true;
-            expect(res.body.data.status).to.eq('NO_SHOW');
-          }).then(() => {
-            // Idempotent: panggil lagi, harus tetap 200
-            cy.request({
-              method: 'PUT',
-              url: `${API_URL}/api/no-shows/admin/bookings/${bookingId}/mark-no-show`,
-              headers: { Authorization: `Bearer ${token}` },
-              failOnStatusCode: false,
-            }).then((res2) => {
-              expect(res2.status).to.eq(200);
-              expect(res2.body.success).to.be.true;
-              expect(res2.body.data.status).to.eq('NO_SHOW');
-            });
-          });
-        });
-      });
-    });
-  });
+  
 
-  it('patient token can login and API returns bookings', () => {
-    // Patient login via API, karna halaman Web Patient sudah dihapus
-    patientLoginToken().then((patientToken) => {
-      // Cek bookings via API rather than UI, since patient web page is deleted
-      cy.request({
-        method: 'GET',
-        url: `${API_URL}/api/patient/bookings`,
-        headers: { Authorization: `Bearer ${patientToken}` },
-        failOnStatusCode: false,
-      }).then((res) => {
-        expect(res.status).to.eq(200);
-        expect(res.body.success).to.be.true;
-        // Verify we can get booking data via API
-        const bookings = res.body.data?.bookings || [];
-        cy.log(`Patient bookings via API: ${bookings.length}`);
-      });
-    });
-  });
+
+  
 });

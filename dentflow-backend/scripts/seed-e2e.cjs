@@ -25,11 +25,6 @@ async function seedE2eData() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
   try {
-    // Ensure schema parity for invoice payment history (created_by column)
-    await pool.query(
-      `ALTER TABLE invoice_payments ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL`
-    );
-
     const branchRes = await pool.query('SELECT id FROM branches WHERE id = $1', [BRANCH_ID]);
     if (branchRes.rows.length === 0) {
       throw new Error(`Branch not found: ${BRANCH_ID}`);
@@ -102,9 +97,9 @@ async function seedE2eData() {
     await pool.query(
       `INSERT INTO invoices
        (branch_id, encounter_id, patient_id, amount_due, amount_paid, status, payment_status,
-        invoice_number, booking_id)
-       VALUES ($1, $2, $3, 150000, 0, 'UNPAID', 'UNPAID', 'INV-E2E-20260906-001', $4)`,
-      [BRANCH_ID, encounter.rows[0].id, patientId, booking2.rows[0].id]
+        paid_amount, invoice_number)
+       VALUES ($1, $2, $3, 150000, 0, 'UNPAID', 'UNPAID', NULL, 'INV-E2E-20260906-001')`,
+      [BRANCH_ID, encounter.rows[0].id, patientId]
     );
     console.log('✅ UNPAID invoice created (Rp 150.000)');
 

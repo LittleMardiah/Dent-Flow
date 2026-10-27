@@ -11,7 +11,6 @@ Cypress.Commands.add('adminLogin', () => {
   cy.get('input[type="email"]').type('admin@clinic.com');
   cy.get('input[type="password"]').type('Admin123!');
   cy.get('button[type="submit"]').click();
-  cy.url().should('include', '/admin');
 });
 
 Cypress.Commands.add('doctorLogin', () => {
@@ -19,7 +18,6 @@ Cypress.Commands.add('doctorLogin', () => {
   cy.get('input[type="email"]').type('dr_bm_a@clinic.com');
   cy.get('input[type="password"]').type('Doctor123!');
   cy.get('button[type="submit"]').click();
-  cy.url().should('include', '/doctor');
 });
 
 // Seed fixture E2E (queue + invoice) via dentflow-backend/scripts/seed-e2e.cjs

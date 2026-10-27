@@ -29,21 +29,31 @@ export const tenantMiddleware = async (req: Request, res: Response, next: NextFu
     const userBranchId = user.branchId;
 
     if (user.role === 'ADMIN_BRANCH' || user.role === 'DOCTOR') {
-      const requestedBranch: string | undefined =
+      let targetBranchId: string | undefined =
         req.params?.branchId ||
         (req.query as any)?.branch_id ||
         (req.query as any)?.branchId ||
         (req.body as any)?.branch_id ||
         (req.body as any)?.branchId;
 
+      // Map legacy branch code (e.g. "A") to UUID to avoid PostgreSQL UUID type errors.
+      const LEGACY_BRANCH_MAP: Record<string, string> = {
+        A: '494a607c-d109-4330-a3a9-68f54326f0c7',
+        B: '88d0b0a4-17f8-46c7-a8dc-8755fe8e8d4f',
+        C: '7c1f0000-0000-4000-8000-00000000000c',
+      };
+      if (targetBranchId && LEGACY_BRANCH_MAP[targetBranchId as string]) {
+        targetBranchId = LEGACY_BRANCH_MAP[targetBranchId as string];
+      }
+
       // User mengakses branch lain (bukan branch utamanya)
-      if (requestedBranch && requestedBranch !== userBranchId) {
-        const granted = await hasBranchGrant(user.userId, requestedBranch);
+      if (targetBranchId && targetBranchId !== userBranchId) {
+        const granted = await hasBranchGrant(user.userId, targetBranchId);
         if (!granted) {
           logger.warn({
             message: 'Tenant isolation violation',
             userBranchId,
-            requestedBranch,
+            targetBranchId,
             path: req.path,
             userId: user.userId,
           });
@@ -52,11 +62,11 @@ export const tenantMiddleware = async (req: Request, res: Response, next: NextFu
             message: 'Forbidden: You do not have access to this branch data',
           });
         }
-        (req as any).branchId = requestedBranch;
+        (req as any).branchId = targetBranchId;
         return next();
       }
 
-      (req as any).branchId = requestedBranch || userBranchId;
+      (req as any).branchId = targetBranchId || userBranchId;
       return next();
     }
 

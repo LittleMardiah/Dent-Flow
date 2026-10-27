@@ -59,7 +59,7 @@ describe('Payment Webhook E2E (Task 5.1.5)', () => {
 
     // 1. Invoice seed tampil UNPAID di finance
     cy.visit('/admin/finance');
-    cy.get('h2').contains('Manajemen Keuangan & Invoice').should('be.visible');
+    cy.contains('Manajemen Keuangan & Invoice').should('be.visible');
     cy.get('select').first().select('UNPAID');
     cy.contains('td', SEED_INVOICE).closest('tr').contains('Belum Bayar').should('be.visible');
 
@@ -70,7 +70,7 @@ describe('Payment Webhook E2E (Task 5.1.5)', () => {
     });
 
     // 3. Reload → invoice kini berstatus Lunas (PAID)
-    cy.reload();
+    cy.contains('Manajemen Keuangan & Invoice').should('be.visible');
     cy.get('select').first().select('PAID');
     cy.contains('td', SEED_INVOICE).closest('tr').contains('Lunas').should('be.visible');
   });
@@ -78,7 +78,7 @@ describe('Payment Webhook E2E (Task 5.1.5)', () => {
   it('T2: admin replay webhook yang gagal berhasil (200)', () => {
     cy.adminLogin();
     cy.visit('/admin/finance');
-    cy.get('h2').contains('Manajemen Keuangan & Invoice').should('be.visible');
+    cy.contains('Manajemen Keuangan & Invoice').should('be.visible');
 
     // 1. Webhook gagal karena invoice belum ada → 403 + error record dibuat
     const replayWebhookId = `cy-replay-${Date.now()}`;
@@ -108,6 +108,7 @@ describe('Payment Webhook E2E (Task 5.1.5)', () => {
 
     // 4. Invoice hasil replay tampil Lunas (PAID) di finance
     cy.reload();
+    cy.contains('Manajemen Keuangan & Invoice').should('be.visible');
     cy.get('select').first().select('PAID');
     cy.contains('td', REPLAY_INVOICE).closest('tr').contains('Lunas').should('be.visible');
   });

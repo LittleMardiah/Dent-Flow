@@ -69,11 +69,6 @@ export function useRealtime(
   }, []);
 
   useEffect(() => {
-    const handleOffline = () => setStatus('DISCONNECTED');
-    const handleOnline = () => setStatus('CONNECTING');
-    window.addEventListener('offline', handleOffline);
-    window.addEventListener('online', handleOnline);
-
     if (!supabase || !branchId) {
       setLastEvent(null);
       setChannelStatus('DISABLED');
@@ -101,11 +96,6 @@ export function useRealtime(
         if (disposed) return;
         setChannelStatus(status);
         console.debug('[realtime] channel status:', status);
-        // Saat channel disconnected, isLive akan menjadi false (karena status !== SUBSCRIBED)
-        // ini akan memaksa useTVDisplay beralih ke polling mode
-        if (status === 'DISCONNECTED') {
-          console.debug('[realtime] WebSocket disconnected detected');
-        }
         if (previousStatus === 'CHANNEL_ERROR' && status === 'SUBSCRIBED') {
           emit(buildReconnectEvent(), true);
         }
@@ -113,9 +103,6 @@ export function useRealtime(
       });
 
     return () => {
-      window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('online', handleOnline);
-
       disposed = true;
       void client.removeChannel(channel);
     };

@@ -2,25 +2,24 @@ describe('Admin Multi-Branch Ops (Task 5.1.3)', () => {
   const BRANCH_B_ID = '88d0b0a4-17f8-46c7-a8dc-8755fe8e8d4f';
   const BRANCH_C_ID = '7c1f0000-0000-4000-8000-00000000000c';
 
-  before(() => {
+  beforeEach(() => {
     // Pastikan data branch A/B/C (pasien marker + grant admin A -> B) tersedia
-    cy.task('seedMultiBranch', null, { timeout: 180000 });
+    cy.task('seedMultiBranch');
   });
 
   it('Admin A melihat HANYA data Branch A di /admin/patients', () => {
     cy.adminLogin();
     cy.url().should('include', '/admin');
 
-    // Intercept GET /api/patients dan tunggu hingga data selesai dimuat
     cy.intercept('GET', '**/api/patients*').as('getPatients');
-
     cy.visit('/admin/patients');
-    cy.wait('@getPatients'); // <-- TAMBAHAN: tunggu data patients selesai load
+    cy.wait('@getPatients');
+    cy.wait(1000);
+    cy.contains('h2.text-xl.font-bold', 'Manajemen Pasien').should('be.visible');
 
-    cy.get('h2').contains('Manajemen Pasien').should('be.visible');
-
-    // Data Branch A tampil - dengan timeout lebih lama karena render tema
-    cy.get('table tbody tr', { timeout: 20000 }).should('have.length.greaterThan', 0);
+    // Data Branch A tampil (cari dulu karena daftar dipaginasi 20 per halaman)
+    cy.get('input[placeholder*="Cari pasien"]').type('MB-Pasien{enter}');
+    cy.contains('MB-Pasien', { timeout: 10000 }).should('exist');
 
     // Data Branch B TIDAK boleh tampil di daftar Branch A
     cy.contains('MB-Pasien B-1').should('not.exist');
@@ -30,19 +29,17 @@ describe('Admin Multi-Branch Ops (Task 5.1.3)', () => {
     cy.adminLogin();
     cy.url().should('include', '/admin');
 
-    // Intercept GET /api/patients dan tunggu hingga data selesai dimuat
+    // Tambahkan intercept ALAM sebelum visit agar @getPatients terdaftar
     cy.intercept('GET', '**/api/patients*').as('getPatients');
-
     cy.visit('/admin/patients');
-    cy.wait('@getPatients'); // <-- TAMBAHAN: tunggu data patients selesai load
-
-    cy.get('[data-testid="branch-switcher"]').should('be.visible');
+    cy.wait('@getPatients');
+    cy.get('select[data-testid="branch-switcher"]').should('be.visible');
 
     // Branch C tidak boleh ditawarkan (tidak di-grant)
-    cy.get('[data-testid="branch-switcher"] option').should('not.contain', 'Cabang C');
+    cy.get('select[data-testid="branch-switcher"] option').should('not.contain', 'Cabang C');
 
     // Ganti branch ke B -> daftar berisi data B, data A hilang
-    cy.get('[data-testid="branch-switcher"]').select(BRANCH_B_ID);
+    cy.get('select[data-testid="branch-switcher"]').select(BRANCH_B_ID);
     cy.contains('MB-Pasien B-1').should('exist');
     cy.contains('MB-Pasien A-1').should('not.exist');
     cy.contains('MB-Pasien B-2').should('exist');
@@ -52,8 +49,11 @@ describe('Admin Multi-Branch Ops (Task 5.1.3)', () => {
     cy.adminLogin();
     cy.url().should('include', '/admin');
 
+    // Tambahkan intercept ALAM sebelum visit agar @getPatients terdaftar
+    cy.intercept('GET', '**/api/patients*').as('getPatients');
     cy.visit('/admin/patients');
-    cy.get('h2').contains('Manajemen Pasien').should('be.visible');
+    cy.wait('@getPatients');
+    cy.contains('h2.text-xl.font-bold', 'Manajemen Pasien').should('be.visible');
 
     // Ambil token dari localStorage dan paksa request ke Branch C
     cy.window().then((win) => {
